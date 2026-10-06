@@ -1,5 +1,9 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 // The REAL layout store, deliberately. Mocking it away is what hid the bug
 // this file exists to prevent: terminal tabs are a singleton per column, so
@@ -95,6 +99,62 @@ describe("shellLine", () => {
   it("escapes an embedded single quote the only way a shell accepts", () => {
     expect(shellQuote("it's")).toBe(`'it'\\''s'`);
   });
+
+  it("invokes the Windows adapter login with PowerShell's call operator", () => {
+    expect(
+      shellLine(
+        "C:\\Atlas Dev\\node.exe",
+        ["C:\\agents\\index.js", "--cli", "auth", "login"],
+        [],
+        true,
+      ),
+    ).toBe("& 'C:\\Atlas Dev\\node.exe' 'C:\\agents\\index.js' '--cli' 'auth' 'login'");
+    expect(shellQuote("it's $literal`", true)).toBe("'it''s $literal`'");
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "runs the generated login line and restores its environment",
+    () => {
+      const dir = mkdtempSync(path.join(tmpdir(), "atlas auth "));
+      try {
+        const script = path.join(dir, "adapter.cjs");
+        writeFileSync(
+          script,
+          "console.log(JSON.stringify({args: process.argv.slice(2), value: process.env.ATLAS_AUTH_TEST}));",
+        );
+        const line = shellLine(
+          process.execPath,
+          [script, "--cli", "auth", "login", "it's $literal`"],
+          [
+            ["ATLAS_AUTH_TEST", "it's $literal`"],
+            ["BAD;NAME", "discard"],
+          ],
+          true,
+        );
+        const run = spawnSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `$env:ATLAS_AUTH_TEST = 'original'; ${line}; Write-Output $env:ATLAS_AUTH_TEST; Write-Output (Test-Path variable:atlasAuthEnv)`,
+          ],
+          { encoding: "utf8", timeout: 15_000 },
+        );
+        expect(run.error).toBeUndefined();
+        expect(run.status, run.stderr).toBe(0);
+        const [result, restored, leaked] = run.stdout.trim().split(/\r?\n/);
+        expect(JSON.parse(result)).toEqual({
+          args: ["--cli", "auth", "login", "it's $literal`"],
+          value: "it's $literal`",
+        });
+        expect(restored).toBe("original");
+        expect(leaked).toBe("False");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("openCommandTerminal", () => {

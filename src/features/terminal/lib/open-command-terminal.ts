@@ -12,10 +12,12 @@
 // user's own interactive shell once it exists.
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { isWindows } from "@/lib/platform";
 import { useTerminalStore } from "../stores/terminal-store";
 
-/** POSIX-quote a token so a path with spaces survives reaching a shell. */
-export function shellQuote(token: string): string {
+/** Quote a token for the platform's interactive shell. */
+export function shellQuote(token: string, windows = isWindows): string {
+  if (windows) return `'${token.replace(/'/g, "''")}'`;
   return /^[A-Za-z0-9_./:@%+=-]+$/.test(token) ? token : `'${token.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -39,12 +41,26 @@ export function shellLine(
   command: string,
   args: string[] = [],
   env: [string, string][] = [],
+  windows = isWindows,
 ): string {
-  const assignments = env
-    .filter(([name]) => ENV_NAME.test(name))
-    .map(([name, value]) => `${name}=${shellQuote(value)}`);
+  const validEnv = env.filter(([name]) => ENV_NAME.test(name));
+  if (windows) {
+    const invocation = `& ${[command, ...args].map((part) => shellQuote(part, true)).join(" ")}`;
+    if (!validEnv.length) return invocation;
+
+    // PowerShell has no command-scoped NAME=value prefix. Restore the shell's
+    // environment even when login fails; the block also keeps our variable local.
+    const entries = [...new Map(validEnv.map(([name, value]) => [name.toUpperCase(), value]))];
+    const saved = entries.map(([name]) => `${name} = $env:${name}`).join("; ");
+    const assignments = entries
+      .map(([name, value]) => `$env:${name} = ${shellQuote(value, true)}`)
+      .join("; ");
+    const restore = entries.map(([name]) => `$env:${name} = $atlasAuthEnv.${name}`).join("; ");
+    return `& { $atlasAuthEnv = @{ ${saved} }; try { ${assignments}; ${invocation} } finally { ${restore} } }`;
+  }
+  const assignments = validEnv.map(([name, value]) => `${name}=${shellQuote(value, false)}`);
   return [...assignments, command, ...args]
-    .map((part, i) => (i < assignments.length ? part : shellQuote(part)))
+    .map((part, i) => (i < assignments.length ? part : shellQuote(part, false)))
     .join(" ");
 }
 
