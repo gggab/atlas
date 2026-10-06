@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { RailGlyph } from "@/ui/animated-icon";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import { Popover } from "@base-ui/react/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
@@ -315,8 +315,8 @@ function ProjectLabel({
           Clicking it opens capture setup. Capture is per project, and this is
           the one control in the app that always names the project it would
           apply to — which the Timeline board, spanning every project, cannot. */}
-      <Popover.Root open={captureOpen} onOpenChange={setCaptureOpen}>
-        <Popover.Trigger
+      <Popover open={captureOpen} onOpenChange={setCaptureOpen}>
+        <PopoverTrigger
           render={
             <button
               // `leading-none` is what actually centres the capture dot: with the
@@ -345,27 +345,16 @@ function ProjectLabel({
           }
         />
         {path && (
-          <Popover.Portal>
-            <Popover.Positioner className="z-popover" side="bottom" align="start" sideOffset={6}>
-              <Popover.Popup
-                // Enter is animated by the panel itself (`atlas-panel-in-tl`), not
-                // here: this wrapper would hold a transform for the duration, and
-                // a transformed ancestor becomes the backdrop root — which
-                // flattens the panel's blur while it plays. Exit stays here
-                // because Base UI holds the popup mounted through it.
-                className="origin-[var(--transform-origin)] data-closed:animate-scale-out"
-              >
-                <CapturePopover
-                  projectPath={path}
-                  health={health}
-                  onChanged={readCapture}
-                  onClose={() => setCaptureOpen(false)}
-                />
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
+          <PopoverContent align="start" sideOffset={6} className="w-auto p-0">
+            <CapturePopover
+              projectPath={path}
+              health={health}
+              onChanged={readCapture}
+              onClose={() => setCaptureOpen(false)}
+            />
+          </PopoverContent>
         )}
-      </Popover.Root>
+      </Popover>
     </div>
   );
 }
