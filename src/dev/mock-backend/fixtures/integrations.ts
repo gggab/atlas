@@ -266,7 +266,11 @@ const SPEC_PDF = abs("docs/spec.pdf");
  * tooltip, rather than the one-word note everyone writes by hand.
  *
  * Geometry is normalized 0..1 of the page, so these land in the same place at
- * every zoom level.
+ * every zoom level. The highlights are measured off `SPEC_PDF_BASE64`'s page 1
+ * (Letter, 612×792pt; body text is 11pt Helvetica at x=72): "1. Base tokens…"
+ * has its glyph box at y 0.2288–0.2427 and "3. Dark mode…" at 0.2692–0.2831,
+ * and each rect pads that by ~0.0025 above and below. Change the PDF's text
+ * and these must be re-measured, or they float onto the blank line above.
  */
 const SEEDED_ANNOTATIONS: PdfAnnotation[] = [
   {
@@ -275,7 +279,7 @@ const SEEDED_ANNOTATIONS: PdfAnnotation[] = [
     page: 1,
     color: "#F5C542",
     createdAt: iso(-2),
-    rect: { x: 0.12, y: 0.21, w: 0.63, h: 0.028 },
+    rect: { x: 0.112, y: 0.226, w: 0.29, h: 0.019 },
   },
   {
     kind: "highlight",
@@ -283,7 +287,7 @@ const SEEDED_ANNOTATIONS: PdfAnnotation[] = [
     page: 1,
     color: "#6796E6",
     createdAt: iso(-2),
-    rect: { x: 0.12, y: 0.42, w: 0.41, h: 0.028 },
+    rect: { x: 0.112, y: 0.2665, w: 0.448, h: 0.019 },
   },
   {
     kind: "note",
