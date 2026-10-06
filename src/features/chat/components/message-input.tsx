@@ -10,18 +10,15 @@ import {
   X,
   Check,
   Loader2,
-  Brain,
   Database,
   Cpu,
   ChevronDown,
   Search,
   Plus,
-  RotateCw,
   AtSign,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chat-store";
-import { useNativeModelsOrgRefresh, useNativeModelsStore } from "../stores/native-models-store";
 import { agents } from "../lib/agents-api";
 import {
   CLAUDE_PERMISSION_MODE_LABEL,
@@ -32,19 +29,17 @@ import {
 } from "@/types/agent";
 import {
   agentMeta,
-  catalogEntry as agentCatalogEntry,
   switchableAgentOf,
   useSwitchableAgents,
 } from "@/features/agents/lib/agent-meta";
 import { canSignIn, promptSignIn } from "../lib/agent-signin";
-import { forkSessionToNewTab } from "../lib/fork-session";
+
 import {
   SESSION_HANDOFF_EVENT,
   switchAgentForTab,
   type SessionHandoffDetail,
 } from "@/features/chat/lib/switch-agent";
 import { AgentMark } from "@/components/agent-mark";
-import { loadNativeEffort } from "../lib/native-model-pref";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { modelLabel } from "../lib/model-label";
 // `ChatInput` pulls in CodeMirror (~870 KB) via `cm-mention-extension`.
@@ -77,16 +72,9 @@ import { composerPillLabelClass } from "./composer-dropup";
 import { ImageAttachmentStrip } from "./image-attachments";
 import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
-import { AiGrantBar } from "./ai-grant-bar";
 import { RemovedAgentBar } from "./removed-agent-bar";
 import { ModeRestoreBar, OPEN_MODE_PICKER_EVENT } from "./mode-restore-bar";
-import { useAiGrantProbe, useNoAiGrant } from "../stores/ai-grant-store";
-import {
-  QUALITY_LADDER,
-  aggregateExceedsBudget,
-  exceedsBudget,
-  targetDimensions,
-} from "../lib/image-policy";
+import { QUALITY_LADDER, exceedsBudget, targetDimensions } from "../lib/image-policy";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { ComposerAddMenu } from "./composer-add-menu";
 import type { GithubRepo } from "@/features/github/types";
@@ -112,7 +100,6 @@ import type { SlashTrigger } from "../lib/cm-slash-extension";
 // vendor chunk lands in the eager boot graph.
 import { clearSlashRange } from "../lib/cm-clear-range";
 import type { MentionData } from "../lib/mentions";
-import { COMMENT_LINK_EVENT, type CommentLinkDetail } from "../lib/comment-mentions";
 
 // Start the CodeMirror chunk download at module-evaluation time. Vite still
 // excludes it from `<link rel="modulepreload">` because the static analysis
@@ -148,18 +135,7 @@ async function fileToImageAttachment(file: File): Promise<ImageAttachment | null
   });
 }
 
-/**
- * Shrink an attachment that would not fit the gateway's body cap (D15c).
- *
- * Done once, here, rather than on every turn: the engine replays the whole
- * conversation on each request, so an image re-encoded on the way out would be
- * re-encoded for as long as the thread lives.
- *
- * Failure is not fatal. A browser that cannot decode the image, or a canvas
- * that will not export, leaves the original in place — a too-large attachment
- * that the gateway refuses with a clear `413` is a better outcome than an
- * attachment silently dropped on the floor here.
- */
+/** Optimize a large pasted image once; retain the original if decoding fails. */
 async function downscaleAttachment(image: ImageAttachment): Promise<ImageAttachment> {
   if (!exceedsBudget(image.dataBase64.length)) return image;
   try {
@@ -185,7 +161,7 @@ async function downscaleAttachment(image: ImageAttachment): Promise<ImageAttachm
     bitmap.close?.();
 
     // Down the quality ladder until it fits. A legible 400 KB JPEG beats a
-    // pristine 6 MB PNG the gateway refuses outright.
+    // pristine 6 MB PNG sent over the CLI transport.
     for (const quality of QUALITY_LADDER) {
       const encoded = canvas.toDataURL("image/jpeg", quality);
       const data = encoded.slice(encoded.indexOf(",") + 1);
@@ -235,18 +211,7 @@ function acpModeColor(modeId: string | undefined): string {
   return "var(--muted-foreground)";
 }
 
-interface CodebaseIndexStatus {
-  indexed: boolean;
-  // Rust serializes this struct as camelCase (see codebase_index.rs).
-  fileCount: number;
-  summaryCount: number;
-  builtAtMs: number;
-}
-
-/** Codebase-index status pill for the native agent — the index that grounds
- *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
- *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
-function NativeMemoryPill() {
+function CodebaseMemoryPill() {
   const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
   const [status, setStatus] = useState<CodebaseIndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -314,37 +279,21 @@ function NativeMemoryPill() {
   );
 }
 
-const EFFORT_CYCLE = ["", "low", "medium", "high", "max"] as const;
+interface CodebaseIndexStatus {
+  indexed: boolean;
+  // Rust serializes this struct as camelCase (see codebase_index.rs).
+  fileCount: number;
+  summaryCount: number;
+  builtAtMs: number;
+}
+
+/** Codebase-index status pill for the native agent — the index that grounds
+ *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
+ *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
 
 /** Reasoning-effort pill for the native agent on Anthropic models (maps to a
  *  thinking budget). Cycles off → low → medium → high → max. Hidden for
  *  providers that don't support a thinking budget. */
-function EffortPill({ tabId }: { tabId: string }) {
-  const provider = useChatStore((s) => s.sessions[tabId]?.nativeProvider ?? "");
-  const effort = useChatStore((s) => s.sessions[tabId]?.nativeEffort ?? "");
-  const { setNativeEffort } = useChatStore.use.actions();
-  if (provider !== "anthropic") return null;
-  const cycle = () => {
-    const i = EFFORT_CYCLE.indexOf(effort as (typeof EFFORT_CYCLE)[number]);
-    setNativeEffort(tabId, EFFORT_CYCLE[(i + 1) % EFFORT_CYCLE.length]);
-  };
-  const active = effort !== "";
-  return (
-    <button
-      onClick={cycle}
-      className="flex items-center px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--secondary-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
-      title="Reasoning effort (thinking budget) — Anthropic models"
-    >
-      <Brain
-        size={11}
-        className={active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"}
-      />
-      <span className={composerPillLabelClass("early")}>
-        {active ? `Think: ${effort}` : "Think"}
-      </span>
-    </button>
-  );
-}
 
 /**
  * Composer permission-mode picker for non-Claude ACP agents (Codex). Unlike
@@ -466,25 +415,15 @@ function ComposerGroupsMenu({
     return () => window.removeEventListener(OPEN_MODE_PICKER_EVENT, onOpen);
   }, [tabId]);
 
-  const isNative = agentType === "atlas-agent";
-  const refreshingModels = useNativeModelsStore.use.refreshing();
-  const refreshNativeModels = useNativeModelsStore.use.actions().refresh;
-
   // Self-heal: the store is fed by the bind-time snapshot and the
   // `config_options_updated` delta, and a tab can render before either has
   // landed. Fall back to the persisted per-agent cache so the pill does not
   // flicker away in that gap.
   //
-  // Not for the native agent. Its list is the gateway's, fetched and cached
-  // by the seam (ADR-0007), and it arrives with the bind-time snapshot; when
-  // it does NOT arrive that is the failure the user must see — an empty
-  // picker with the refresh hint — and a localStorage pre-fill would paper
-  // over it with whatever list some earlier launch saw.
   const models = useMemo(() => {
     if (availableModels && availableModels.length > 0) return availableModels;
-    if (isNative) return [];
     return loadCachedAcpModels(agentType)?.availableModels ?? [];
-  }, [availableModels, agentType, isNative]);
+  }, [availableModels, agentType]);
   const filteredModels = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return models;
@@ -499,16 +438,7 @@ function ComposerGroupsMenu({
   const isClaude = agentType === "claude-code";
   const hasAcpModes = !!availableModes && availableModes.length > 0;
   const showMode = isClaude || hasAcpModes || modesPending;
-  // The native agent shows the same model pill as everyone else. It used to be
-  // excluded here because its picker was the BYOK ProviderModelPills — a list
-  // of the user's own provider keys, which the gateway agent cannot use. The
-  // seam now publishes the gateway catalogue through the standard snapshot, so
-  // the exclusion would hide the right list to keep showing the wrong one.
-  //
-  // And shown for the native agent even when the list is EMPTY: an empty
-  // list is the gateway not having answered (ADR-0007), and the pill is where
-  // the refresh that fixes it lives. Hiding the pill would hide the fix.
-  const showModel = models.length > 0 || isNative;
+  const showModel = models.length > 0;
 
   const toggle = (g: ComposerGroup) => {
     setQ("");
@@ -693,37 +623,11 @@ function ComposerGroupsMenu({
                     spellCheck={false}
                     className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
                   />
-                  {isNative && (
-                    // The gateway's list, re-fetched on demand (ADR-0007).
-                    // Same icon, spin and disabled idiom as the grant bar's
-                    // Refresh — no new pattern.
-                    <Hint label="Refresh models" side="top">
-                      <button
-                        type="button"
-                        disabled={refreshingModels}
-                        onClick={() => void refreshNativeModels()}
-                        className={cn(
-                          "shrink-0 rounded p-0.5 text-[var(--muted-foreground)] transition-colors",
-                          refreshingModels
-                            ? "cursor-default"
-                            : "cursor-pointer hover:text-[var(--foreground)]",
-                        )}
-                      >
-                        <RotateCw size={12} className={cn(refreshingModels && "animate-spin")} />
-                      </button>
-                    </Hint>
-                  )}
                 </div>
                 <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
                   {filteredModels.length === 0 ? (
                     <div className="px-2.5 py-2 text-xs text-[var(--muted-foreground)]">
                       No models
-                      {isNative && models.length === 0 && (
-                        <span className="mt-0.5 block text-3xs leading-snug">
-                          Couldn't load the model list. Check your connection or sign in, then
-                          refresh.
-                        </span>
-                      )}
                     </div>
                   ) : (
                     filteredModels.map((m) => {
@@ -838,7 +742,7 @@ export function MessageInput({
   disabled: disabledProp = false,
   placeholder = "Message Atlas... (@ to mention, / for commands)",
 }: MessageInputProps) {
-  const { enqueueMessage, removeQueueItem, setAcpModes, setAcpModesPending, setNativeEffort } =
+  const { enqueueMessage, removeQueueItem, setAcpModes, setAcpModesPending } =
     useChatStore.use.actions();
   // Show the picker as soon as the agent is non-Claude — even before its modes
   // load — so the composer can render a loading pill instead of nothing during
@@ -919,49 +823,10 @@ export function MessageInput({
   // Owned here because this component always renders while a chat is open;
   // `AiGrantBar` below only reads the result (see `ai-grant-store.ts` for why
   // the two must not probe independently).
-  useAiGrantProbe();
-  useNativeModelsOrgRefresh();
-  const noAiGrant = useNoAiGrant();
-  // Scoped to the NATIVE agent, which is the only one that talks to the Atlas
-  // gateway. Claude Code, Codex and every registry agent run on the user's own
-  // credentials — an org with no AI grant says nothing about them, and locking
-  // their composer would break agents that work fine.
-  //
-  // This is the one thing ADR-0002 permits: the ban is on a composer disabled
-  // by an agent's *readiness*, because the agent switcher lives inside it. The
-  // `disabled` path below pointer-blocks only the text area and the send
-  // button — the toolbar, and with it the switcher, stays live, so the user can
-  // always move to an agent that runs. Verified against the escape hatch: this
-  // must never disable the toolbar.
-  const blockedByGrant = noAiGrant && agentType === "atlas-agent";
-  const disabled = disabledProp || blockedByGrant;
+  const disabled = disabledProp;
   // A resume could not restore the user's mode (`ModeRestoreBar`): no send
   // until they pick one. Only the send — typing and the mode picker stay live.
   const modeUnrestored = useChatStore((s) => !!s.sessions[tabId]?.unrestoredModeId);
-  // The BYOK provider/model bindings for the native agent stood here — the
-  // provider pick, the model re-push on bind, the whole BYOK selection path.
-  // Gone: the native agent's model comes from the seam's published catalogue
-  // through the same `setAcpModel` path every other agent uses, and its
-  // "provider" is the Atlas gateway, which is not a choice.
-  // Seed the reasoning-effort from the saved preference once per native session,
-  // then re-push it whenever the session is bound (mirrors the model re-push).
-  const nativeEffort = useChatStore((s) => s.sessions[tabId]?.nativeEffort);
-  const nativeBound = useChatStore((s) => {
-    const sess = s.sessions[tabId];
-    return sess?.agentType === "atlas-agent" && !!sess.acpAgentId && !!sess.acpSessionId
-      ? `${sess.acpAgentId}::${sess.acpSessionId}`
-      : null;
-  });
-  useEffect(() => {
-    if (agentType !== "atlas-agent") return;
-    // Undefined = never set for this session → seed from the global pref.
-    const eff = nativeEffort ?? loadNativeEffort();
-    if (nativeBound || nativeEffort === undefined) setNativeEffort(tabId, eff);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabId, agentType, nativeBound]);
-  // The RTK compression toggle was seeded and re-pushed here. It is gone with
-  // the runtime that implemented it (#54) — the ported engine has no
-  // tool-output compressor, so the control had nothing to switch (D8).
   // ACP-reported slash commands for this session. Every agent advertises its
   // real command list via `available_commands_update` — Codex's arrives with
   // the binding, Claude's a few seconds after session/new (the SDK discovers
@@ -1022,14 +887,7 @@ export function MessageInput({
     // capability as the header's "branch from here"; /queue exists for every
     // agent, because the queue does.
     const local: SlashCommand[] = [];
-    if (agentCatalogEntry(agentType)?.supportsFork === true) {
-      local.push({
-        name: "fork",
-        signature: "/fork",
-        description: "Branch this conversation into a new tab",
-        handler: "fork" as const,
-      });
-    }
+
     local.push({
       name: "queue",
       signature: "/queue <message>",
@@ -1250,25 +1108,6 @@ export function MessageInput({
   useEffect(() => {
     if (!imageSupported) setStagedImages([]);
   }, [imageSupported]);
-
-  // The per-image budget is per image only: several in-budget attachments
-  // plus the prompt, tools and history can still blow the gateway's body cap
-  // (#71). The gateway's 413 stays the backstop — this is the warning the
-  // user is owed BEFORE pressing send, once per crossing, cleared when they
-  // remove enough to fit again.
-  const stagedOverAggregateBudget = aggregateExceedsBudget(
-    stagedImages.map((img) => img.dataBase64.length),
-  );
-  const warnedAggregateRef = useRef(false);
-  useEffect(() => {
-    if (stagedOverAggregateBudget && !warnedAggregateRef.current) {
-      warnedAggregateRef.current = true;
-      toast.warning(
-        "These attachments together are near the 2 MB request limit — the send may be refused. Consider removing one.",
-      );
-    }
-    if (!stagedOverAggregateBudget) warnedAggregateRef.current = false;
-  }, [stagedOverAggregateBudget]);
 
   // ── Attaching files by path ──────────────────────────────────────────────
   // The one routing rule for every way a file with a path arrives — dropped
@@ -1542,14 +1381,7 @@ export function MessageInput({
         inputRef.current?.focus();
         return;
       }
-      if (cmd.handler === "fork") {
-        // Same flow as the header's "branch from here" menu item.
-        clearSlashRange(view, t.from, t.to);
-        setSlashTrigger(null);
-        forkSessionToNewTab(tabId);
-        inputRef.current?.focus();
-        return;
-      }
+
       // "queue" needs a message, so its signature carries `<message>` and the
       // requires-args branch below inserts "/queue " for the user to fill in;
       // the actual queueing happens in `submit`, which intercepts the typed
@@ -1806,30 +1638,6 @@ export function MessageInput({
   // A comment popover's link button: this tab's own recorded session's
   // comment, as a chip at the caret. Linking one already in the draft just
   // focuses — the agent needs to be pointed at it once.
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<CommentLinkDetail>).detail;
-      if (!detail || detail.tabId !== tabId || disabled) return;
-      const input = inputRef.current;
-      if (!input) return;
-      const linked = input
-        .getMentions()
-        .some((m) => m.kind === "comment" && m.id === detail.mention.id);
-      if (!linked) {
-        const view = input.view();
-        const doc = view?.state.doc;
-        const head = view?.state.selection.main.head ?? 0;
-        const before = doc && head > 0 ? doc.sliceString(head - 1, head) : "";
-        if (before && !/\s/.test(before)) {
-          view?.dispatch({ changes: { from: head, insert: " " }, selection: { anchor: head + 1 } });
-        }
-        input.insertMention(detail.mention);
-      }
-      requestAnimationFrame(() => inputRef.current?.focus());
-    };
-    window.addEventListener(COMMENT_LINK_EVENT, handler);
-    return () => window.removeEventListener(COMMENT_LINK_EVENT, handler);
-  }, [tabId, disabled]);
 
   // An agent switch with `agentSwitchBehavior: "handoff"`: the conversation
   // the tab just left, as a past-session chip at the start of the draft, so
@@ -1867,12 +1675,7 @@ export function MessageInput({
     }
     // Atlas-surface commands, typed in full (the picker's Enter lands here
     // too). They drive app affordances, so they never reach the agent.
-    if (trimmed === "/fork" && agentCatalogEntry(agentType)?.supportsFork === true) {
-      forkSessionToNewTab(tabId);
-      inputRef.current?.clear();
-      setValue("");
-      return;
-    }
+
     if (trimmed === "/queue" || trimmed.startsWith("/queue ")) {
       const queued = trimmed.slice("/queue".length).trim();
       if (queued) enqueueMessage(tabId, queued);
@@ -1966,7 +1769,6 @@ export function MessageInput({
             Scoped to the native agent for the same reason the lock is: the
             other agents do not use the Atlas gateway, so an org with no grant
             is not their problem and a bar over a working composer is noise. */}
-        {agentType === "atlas-agent" && <AiGrantBar />}
 
         {/* The tab's agent was uninstalled — same strip, same reason: the
             input below cannot send until the chat is switched. */}
@@ -2197,6 +1999,7 @@ export function MessageInput({
                   pills double as its tab strip. Cycling shortcuts (⌥/ agents,
                   ⇧⇥ Claude modes) are unchanged. The native agent's BYOK
                   pickers (ProviderModelPills etc.) stay separate below. */}
+              <CodebaseMemoryPill />
               <ComposerGroupsMenu
                 tabId={tabId}
                 currentAgent={switchableAgent}
@@ -2207,8 +2010,6 @@ export function MessageInput({
                   gateway agent cannot use. Model choice now goes through the
                   same ACP model pill as every other agent, fed by the seam's
                   published catalogue. */}
-              {agentType === "atlas-agent" && <EffortPill tabId={tabId} />}
-              {agentType === "atlas-agent" && <NativeMemoryPill />}
             </div>
             {/* Right side, in this order: the session's usage, the agent's own
                 knobs, then the live

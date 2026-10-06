@@ -184,9 +184,9 @@ describe("the retired names stay out of the tree", () => {
     for (const rel of files) readText(rel);
   }, 120_000);
 
-  it("the engine no longer lives under its upstream name", () => {
+  it("ships no vendored engine", () => {
     expect(existsSync(path.join(REPO_ROOT, "vendor", "codex"))).toBe(false);
-    expect(existsSync(path.join(REPO_ROOT, "vendor", "atlas-engine", "NOTICE"))).toBe(true);
+    expect(existsSync(path.join(REPO_ROOT, "vendor", "atlas-engine", "NOTICE"))).toBe(false);
   });
 
   it("nothing spells the retired SDK name", () => {

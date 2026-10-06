@@ -57,7 +57,6 @@ const RUST_FILES = [
 ];
 
 const TS_APP_STORE = path.join(REPO_ROOT, "src", "features", "app", "stores", "app-store.ts");
-const TS_ORG_TYPES = path.join(REPO_ROOT, "src", "features", "organisations", "types.ts");
 const TS_PROJECT_STORE = path.join(
   REPO_ROOT,
   "src",
@@ -261,8 +260,6 @@ const PAIRS: Pair[] = [
     ts: { file: TS_APP_STORE, name: "AppStateWire" },
     direction: "out",
     rustOnly: {
-      telemetryAnonId:
-        "Rust-owned. Minted and persisted by `lib.rs` setup; the frontend must never see or echo it (see the `AppStatePatch` doc).",
       settingsConfigMigrated:
         "Rust-owned. Records the one-time state.json→config.toml export (#64).",
     },
@@ -276,11 +273,7 @@ const PAIRS: Pair[] = [
         "Legacy v1 field. The frontend still sends an explicit `null`; `AppStatePatch` deliberately does not accept it, and `apply_patch` hardcodes `None` so it can never be re-adopted.",
     },
   },
-  {
-    rust: "Organisation",
-    ts: { file: TS_ORG_TYPES, name: "OrganisationWire" },
-    direction: "both",
-  },
+
   { rust: "Project", ts: { file: TS_PROJECT_STORE, name: "Project" }, direction: "both" },
   { rust: "ProjectGroup", ts: { file: TS_PROJECT_STORE, name: "ProjectGroup" }, direction: "both" },
   { rust: "RecentProject", ts: { file: TS_APP_STORE, name: "RecentProject" }, direction: "both" },
@@ -360,23 +353,9 @@ describe("app-state payload contract", () => {
    * The specific regression. Spelled out separately from the derived checks so
    * the failure message names the bug rather than a set difference.
    */
-  it("keeps the frozen storage keys, including the nested one", () => {
+  it("keeps the frozen project storage keys", () => {
     const patch = rustKeys(rustStructs, "AppStatePatch").all;
     expect(patch.has("workspaces")).toBe(true);
     expect(patch.has("activeWorkspaceId")).toBe(true);
-
-    const org = rustKeys(rustStructs, "Organisation").all;
-    expect(org.has("activeWorkspaceId")).toBe(true);
-    expect(org.has("activeProjectId")).toBe(false);
-
-    const wire = parseTsInterface(tsSource(TS_ORG_TYPES), "OrganisationWire").all;
-    expect(wire.has("activeWorkspaceId")).toBe(true);
-    expect(wire.has("activeProjectId")).toBe(false);
-
-    // …and the store-side type keeps the app's own vocabulary, so the seam is
-    // a real translation rather than the rename having been reverted.
-    const store = parseTsInterface(tsSource(TS_ORG_TYPES), "Organisation").all;
-    expect(store.has("activeProjectId")).toBe(true);
-    expect(store.has("activeWorkspaceId")).toBe(false);
   });
 });

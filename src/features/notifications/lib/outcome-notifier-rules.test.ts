@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_KIND_PREFS, type NotificationEnv } from "./decide";
+import { type NotificationEnv } from "./decide";
 import {
   decideGitOp,
   decideModelDownload,
-  decideUpdateReady,
   GIT_SUCCESS_MIN_MS,
-  shouldNotifyUpdate,
   trimError,
   type GitOpResult,
 } from "./outcome-notifier-rules";
@@ -20,33 +18,6 @@ const env = (over: Partial<NotificationEnv> = {}): NotificationEnv => ({
 });
 const AWAY = { windowFocused: false, away: true, sinceInputMs: 60_000 };
 const prefs = {};
-
-describe("shouldNotifyUpdate", () => {
-  it("fires once per version", () => {
-    expect(shouldNotifyUpdate(null, "1.2.0")).toBe(true);
-    expect(shouldNotifyUpdate("1.1.0", "1.2.0")).toBe(true);
-    expect(shouldNotifyUpdate("1.2.0", "1.2.0")).toBe(false);
-    expect(shouldNotifyUpdate(null, "")).toBe(false);
-  });
-});
-
-describe("decideUpdateReady", () => {
-  it("records, toasts and targets the updater; banner only when away", () => {
-    const here = decideUpdateReady("1.2.0", env(), prefs)!;
-    expect(here.channels).toMatchObject({ center: true, toast: true, native: false });
-    expect(here.target).toEqual({ type: "app-update" });
-    expect(here.dedupeKey).toBe("update:1.2.0");
-    expect(decideUpdateReady("1.2.0", env(AWAY), prefs)!.channels.native).toBe(true);
-  });
-
-  it("is silent when disabled", () => {
-    expect(
-      decideUpdateReady("1.2.0", env(), {
-        "app-update-ready": { ...DEFAULT_KIND_PREFS, enabled: false },
-      }),
-    ).toBeNull();
-  });
-});
 
 describe("decideModelDownload", () => {
   const done = { id: "m", name: "MiniLM", success: true, error: null, seq: 1 };

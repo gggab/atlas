@@ -1,3 +1,5 @@
+> Historical upstream service reference. The local workbench does not link this gateway, authenticate to it, or call its endpoints. Current scope: [local-workbench.md](local-workbench.md).
+
 # Atlas AI API
 
 API reference and integration guide for the **AI broker** (`apps/ai`, worker `atlas-ai`) —

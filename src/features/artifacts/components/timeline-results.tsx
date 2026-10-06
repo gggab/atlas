@@ -71,7 +71,7 @@ export function TimelineResults({
   onClearQuery: () => void;
   onClearFacet: (key: FacetKey) => void;
   onClearProject: () => void;
-  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
+  onOpen: (id: string, projectPath: string) => void;
 }) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const virtualizer = useVirtualizer({
@@ -163,14 +163,14 @@ function Row({
   onOpen,
 }: {
   session: BoardSession;
-  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
+  onOpen: (id: string, projectPath: string) => void;
 }) {
   const title = sessionTitle(session.title);
   const live = sessionState(session) === "live";
   return (
     <button
       type="button"
-      onClick={() => onOpen(session.id, session.projectPath, session.remoteProjectId)}
+      onClick={() => onOpen(session.id, session.projectPath)}
       title={title ?? undefined}
       className={cn(
         GRID,

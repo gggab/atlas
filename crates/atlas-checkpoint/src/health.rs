@@ -26,7 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{DrainGate, ProjectMode, SyncState};
+
 use crate::store::Store;
 
 /// How capture is doing for one Project.
@@ -81,11 +81,6 @@ pub struct CaptureHealth {
     pub issues: Vec<HealthIssue>,
     /// Sessions flagged during capture (redaction or storage failure).
     pub flagged_sessions: i64,
-    /// Rows the drain gave up on.
-    pub failed_rows: i64,
-    /// Rows waiting to be sent. Not a problem — shown so a developer knows
-    /// whether their work has reached their team.
-    pub pending_rows: i64,
 }
 
 /// What the host knows that the store cannot.
@@ -148,7 +143,7 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
     // writer lock for something nobody asked to record: three alarms for a
     // Project whose only real state is "not set up yet". That turns the first
     // thing a new user sees into an incident.
-    let binding = match store.binding()? {
+    match store.binding()? {
         None => return off(store, workspace_id, "Session capture is off"),
         Some(binding) if !binding.is_capturing() => {
             return off(store, workspace_id, "Session capture is paused")
@@ -211,22 +206,6 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
 
     // ── Degraded: recording, but something needs attention ──────────────────
 
-    // Degraded rather than Stopped, deliberately: capture itself keeps
-    // recording locally and nothing is lost — only the drain is gated, so
-    // "capture stopped" would be a lie that teaches users to ignore the red
-    // state. The reason still says plainly that nothing is reaching the team.
-    if binding.mode == ProjectMode::Cloud && binding.drain_state == DrainGate::NotAuthorized {
-        issues.push(HealthIssue {
-            state: HealthState::Degraded,
-            reason: "No longer authorized to sync with your Organisation — new work stays on \
-                     this machine."
-                .into(),
-            next_step: "Reconnect or re-register this Project to resume syncing. Capture \
-                        itself continues."
-                .into(),
-        });
-    }
-
     let flagged_sessions = store.flagged_session_count(workspace_id)?;
     if flagged_sessions > 0 {
         issues.push(HealthIssue {
@@ -237,19 +216,6 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
             ),
             next_step: "Open the Session to see what was flagged. Content that could not be \
                         scrubbed was not stored."
-                .into(),
-        });
-    }
-
-    let failed_rows = store.row_count_in_state(workspace_id, SyncState::Failed)?;
-    if failed_rows > 0 {
-        issues.push(HealthIssue {
-            state: HealthState::Degraded,
-            reason: format!(
-                "{failed_rows} record{} could not be sent to your Organisation.",
-                plural(failed_rows)
-            ),
-            next_step: "They are skipped so the rest keep syncing. Retry from the sync status."
                 .into(),
         });
     }
@@ -268,19 +234,15 @@ pub fn evaluate(store: &Store, workspace_id: &str, host: HostSignals) -> Result<
         issues.push(issue);
     }
 
-    let pending_rows = store.row_count_in_state(workspace_id, SyncState::Pending)?;
-
     // Worst first, so the summary and the indicator agree.
     issues.sort_by_key(|issue| std::cmp::Reverse(issue.state));
     let state = issues.first().map(|i| i.state).unwrap_or(HealthState::Ok);
 
     Ok(CaptureHealth {
         state,
-        summary: summarize(state, &issues, pending_rows),
+        summary: summarize(state, &issues),
         issues,
         flagged_sessions,
-        failed_rows,
-        pending_rows,
     })
 }
 
@@ -348,19 +310,12 @@ fn off(store: &Store, workspace_id: &str, summary: &str) -> Result<CaptureHealth
         summary: summary.into(),
         issues: Vec::new(),
         flagged_sessions: store.flagged_session_count(workspace_id)?,
-        failed_rows: store.row_count_in_state(workspace_id, SyncState::Failed)?,
-        pending_rows: store.row_count_in_state(workspace_id, SyncState::Pending)?,
     })
 }
 
-fn summarize(state: HealthState, issues: &[HealthIssue], pending_rows: i64) -> String {
+fn summarize(state: HealthState, issues: &[HealthIssue]) -> String {
     match state {
-        // The healthy line still carries the one number a developer wants
-        // continuously: has my work reached my team?
-        HealthState::Ok if pending_rows > 0 => {
-            format!("{pending_rows} pending")
-        }
-        HealthState::Ok => "Synced".into(),
+        HealthState::Ok => "Recording locally".into(),
         // Set by `off`, which passes its own summary and never reaches here.
         HealthState::Off => "Session capture is off".into(),
         // One issue reads better as itself than as a count of one.
@@ -400,13 +355,8 @@ mod tests {
     }
 
     #[test]
-    fn a_healthy_project_with_nothing_pending_reads_as_synced() {
-        assert_eq!(summarize(HealthState::Ok, &[], 0), "Synced");
-    }
-
-    #[test]
-    fn a_healthy_project_still_reports_its_pending_count() {
-        assert_eq!(summarize(HealthState::Ok, &[], 47), "47 pending");
+    fn a_healthy_project_reads_as_recording_locally() {
+        assert_eq!(summarize(HealthState::Ok, &[]), "Recording locally");
     }
 
     #[test]

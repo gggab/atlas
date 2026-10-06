@@ -24,11 +24,9 @@ import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import {
   ChevronDown,
   Search,
-  GitBranch,
   TerminalSquare,
   ClipboardList,
   ListFilter,
-  MessageSquare,
   User,
   Sparkles,
   Check,
@@ -89,13 +87,11 @@ interface ChatHeaderProps {
   onTogglePlans: () => void;
   /** Comments on this session in the shared Timeline, or `null` when the
    *  session is not in the cloud — then there is no button at all. */
-  commentCount: number | null;
-  commentsPanelOpen: boolean;
-  onToggleComments: () => void;
+
   /** P3.4: only rendered when the agent advertised `sessionCapabilities.fork`.
    *  Absent for every agent that did not, so the menu never offers a branch
    *  that would fail on the wire. */
-  onForkSession?: () => void;
+
   onNewSession: () => void;
 }
 
@@ -116,10 +112,7 @@ function ChatHeaderImpl({
   onToggleBash,
   plansPanelOpen,
   onTogglePlans,
-  commentCount,
-  commentsPanelOpen,
-  onToggleComments,
-  onForkSession,
+
   onNewSession,
 }: ChatHeaderProps) {
   const findHint = useActionShortcut("chat.find")?.label;
@@ -208,24 +201,6 @@ function ChatHeaderImpl({
 
           {/* Only on a session the Organisation can see. The badge counts
               comments, capped where the circle runs out of room. */}
-          {commentCount !== null && (
-            <HeaderCircleButton
-              title={commentsPanelOpen ? "Close comments" : "Comments"}
-              onClick={onToggleComments}
-              aria-pressed={commentsPanelOpen}
-              className={cn(
-                "relative",
-                commentsPanelOpen && "bg-[var(--atlas-element-active)] text-[var(--foreground)]",
-              )}
-            >
-              <MessageSquare size={13} />
-              {commentCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-[14px] min-w-[14px] items-center justify-center rounded-full bg-[var(--primary)] px-1 font-mono text-3xs leading-none text-[var(--primary-foreground)] tabular-nums">
-                  {commentCount > 9 ? "9+" : commentCount}
-                </span>
-              )}
-            </HeaderCircleButton>
-          )}
 
           <HeaderCircleButton
             title={findHint ? `Find in chat (${findHint})` : "Find in chat"}
@@ -290,18 +265,6 @@ function ChatHeaderImpl({
                     <span className="flex-1">Plans</span>
                     {plansPanelOpen && <Check size={11} />}
                   </DropdownMenu.Item>
-                  {onForkSession && (
-                    <>
-                      <DropdownMenu.Separator className="my-1 h-px bg-[var(--atlas-border-subtle)]" />
-                      <DropdownMenu.Item
-                        onClick={onForkSession}
-                        className="flex h-[26px] cursor-default items-center gap-2 px-3 text-xs text-[var(--secondary-foreground)] outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
-                      >
-                        <GitBranch size={11} />
-                        <span className="flex-1">Branch from here</span>
-                      </DropdownMenu.Item>
-                    </>
-                  )}
                 </DropdownMenu.Popup>
               </DropdownMenu.Positioner>
             </DropdownMenu.Portal>

@@ -491,25 +491,10 @@ const ICON_MESSAGE_SQUARE = lucideSvg(
 // Lucide "user", "messages-square" and "layers" — the organisation kinds
 // (issue 122). Keep in sync with `CategoryIcon` in mention-picker.tsx; "layers" is
 // the Timeline tab's icon, so a recorded session never reads as a past session.
-const ICON_USER = lucideSvg(
-  `<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`,
-);
-const ICON_MESSAGES_SQUARE = lucideSvg(
-  `<path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>` +
-    `<path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1"/>`,
-);
-const ICON_LAYERS = lucideSvg(
-  `<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/>` +
-    `<path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/>` +
-    `<path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>`,
-);
+
 // Lucide "message-square-quote" — a linked comment. Keep in sync with
 // `CategoryIcon` in mention-picker.tsx and `MENTION_GLYPH` in markdown-render.ts.
-const ICON_MESSAGE_SQUARE_QUOTE = lucideSvg(
-  `<path d="M14 14a2 2 0 0 0 2-2V8h-2"/>` +
-    `<path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/>` +
-    `<path d="M8 14a2 2 0 0 0 2-2V8H8"/>`,
-);
+
 // Lucide "zap" — pack-component mentions. Keep in sync with the `Zap` icon
 // used in mention-picker.tsx's CategoryIcon.
 const ICON_ZAP = lucideSvg(`<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>`);
@@ -536,14 +521,6 @@ function kindGlyph(kind: MentionKind): string {
       return ICON_MESSAGE_SQUARE;
     case "past_session":
       return ICON_MESSAGE_SQUARE;
-    case "member":
-      return ICON_USER;
-    case "conversation":
-      return ICON_MESSAGES_SQUARE;
-    case "recorded_session":
-      return ICON_LAYERS;
-    case "comment":
-      return ICON_MESSAGE_SQUARE_QUOTE;
   }
 }
 
@@ -569,14 +546,6 @@ function chipTitle(m: MentionData): string {
       return m.sessionTitle;
     case "past_session":
       return `session · ${m.sessionTitle}`;
-    case "member":
-      return `member · ${m.email}`;
-    case "conversation":
-      return `conversation · ${m.displayName}`;
-    case "recorded_session":
-      return `recorded session · ${m.displayName}`;
-    case "comment":
-      return `${m.parentId ? "reply" : "comment"} on ${m.anchorLabel} · ${m.authorName}: ${m.body}`;
   }
 }
 

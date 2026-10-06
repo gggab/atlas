@@ -105,10 +105,9 @@ export function computeAway(windowFocused: boolean, sinceInputMs: number): boole
 const TARGET_LABEL: Record<NotificationTarget["type"], string> = {
   terminal: "Terminal",
   session: "Agent",
-  "atlas-sign-in": "Atlas",
+
   "agent-sign-in": "Agent",
-  "chat-conversation": "Chat",
-  "app-update": "Atlas",
+
   settings: "Atlas",
   "git-panel": "Git",
   "config-file": "Atlas",

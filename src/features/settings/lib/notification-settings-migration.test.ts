@@ -78,13 +78,11 @@ describe("migrateNotificationSettings", () => {
     });
   });
 
-  it("does not leave the warning and team tiers at anything but their defaults", () => {
+  it("does not leave the warning tier at anything but their defaults", () => {
     const out = apply(DEFAULT_SETTINGS, { enabled: true, native: false, sound: false });
     expect(out).toMatchObject({
       notifyWarningNative: false,
       notifyWarningSound: false,
-      notifyTeamNative: true,
-      notifyTeamSound: true,
     });
   });
 });

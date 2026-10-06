@@ -49,9 +49,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, LazyLock};
-
-use tauri::{AppHandle, Manager};
+use std::sync::LazyLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -2178,7 +2176,6 @@ pub async fn skills_read(
 /// Enable/disable a single agent for a skill (create/remove its symlink).
 #[tauri::command]
 pub async fn skills_set_enabled(
-    app: AppHandle,
     scope: String,
     name: String,
     agent: String,
@@ -2186,55 +2183,24 @@ pub async fn skills_set_enabled(
     project_path: Option<String>,
 ) -> Result<(), String> {
     let root = root_for(&scope, project_path.as_deref())?;
-    let (name_ev, agent_ev) = (name.clone(), agent.clone());
     let res =
         tokio::task::spawn_blocking(move || set_enabled(&root, &scope, &name, &agent, enabled))
             .await
             .map_err(|e| e.to_string())?;
-    if res.is_ok() {
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                if enabled {
-                    "skill_enabled"
-                } else {
-                    "skill_disabled"
-                },
-                serde_json::json!({ "skill": telemetry_skill_id(&name_ev), "agent": agent_ev }),
-            );
-    }
     res
-}
-
-/// A skill name is user-authored for project-scoped skills, so the analytics
-/// event carries a stable hash instead — enough to count and correlate,
-/// nothing to read.
-fn telemetry_skill_id(name: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    name.hash(&mut h);
-    format!("sk_{:016x}", h.finish())
 }
 
 /// Delete a skill: remove every agent symlink, then the canonical dir.
 #[tauri::command]
 pub async fn skills_delete(
-    app: AppHandle,
     scope: String,
     name: String,
     project_path: Option<String>,
 ) -> Result<(), String> {
     let root = root_for(&scope, project_path.as_deref())?;
-    let (name_ev, scope_ev) = (name.clone(), scope.clone());
     let res = tokio::task::spawn_blocking(move || delete_skill(&root, &scope, &name))
         .await
         .map_err(|e| e.to_string())?;
-    if res.is_ok() {
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                "skill_deleted",
-                serde_json::json!({ "skill": telemetry_skill_id(&name_ev), "scope": scope_ev }),
-            );
-    }
     res
 }
 
@@ -3052,7 +3018,6 @@ pub async fn pack_remote_preview(source: String) -> Result<Pack, String> {
 /// (Phase 3) and no script execution.
 #[tauri::command]
 pub async fn pack_install_remote(
-    app: AppHandle,
     scope: String,
     source: String,
     force: Option<bool>,
@@ -3060,8 +3025,6 @@ pub async fn pack_install_remote(
 ) -> Result<PackInstallResult, String> {
     let root = root_for(&scope, project_path.as_deref())?;
     let force = force.unwrap_or(false);
-    let source_ev = source.clone();
-    let scope_ev = scope.clone();
     let res = tokio::task::spawn_blocking(move || {
         let (owner, repo) = parse_owner_repo(&source)?;
         let (tmp, commit) = fetch_repo_to_temp(&owner, &repo)?;
@@ -3071,17 +3034,6 @@ pub async fn pack_install_remote(
     })
     .await
     .map_err(|e| e.to_string())?;
-    if let Ok(result) = &res {
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                "pack_installed",
-                serde_json::json!({
-                    "source": source_ev,
-                    "scope": scope_ev,
-                    "skill_count": result.pack.components.len(),
-                }),
-            );
-    }
     res
 }
 
@@ -3148,22 +3100,12 @@ fn install_skill_from_dir(
 /// skill. Granular alternative to `pack_install_remote`.
 #[tauri::command]
 pub async fn pack_install_skill(
-    app: AppHandle,
     scope: String,
     source: String,
     skill_id: String,
     project_path: Option<String>,
 ) -> Result<SkillMeta, String> {
     let root = root_for(&scope, project_path.as_deref())?;
-    // Cloned for the telemetry event (the closure moves the originals). `source`
-    // is a public GitHub `owner/repo` slug; `scope` is "global"/"project".
-    let source_ev = source.clone();
-    let scope_ev = scope.clone();
-    // The REGISTRY id, which `skill` (the installed SKILL.md's frontmatter name)
-    // is not: the two can differ, so a per-skill install rollup keyed on `skill`
-    // could not be joined back to the registry row the Discover table renders.
-    // `(source, skill_id)` is that row's identity.
-    let skill_id_ev = skill_id.clone();
     let res = tokio::task::spawn_blocking(move || {
         let (owner, repo) = parse_owner_repo(&source)?;
         let (tmp, _commit) = fetch_repo_to_temp(&owner, &repo)?;
@@ -3173,18 +3115,6 @@ pub async fn pack_install_skill(
     })
     .await
     .map_err(|e| e.to_string())?;
-    if let Ok(meta) = &res {
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                "skill_downloaded",
-                serde_json::json!({
-                    "skill": meta.name,
-                    "skill_id": skill_id_ev,
-                    "source": source_ev,
-                    "scope": scope_ev,
-                }),
-            );
-    }
     res
 }
 

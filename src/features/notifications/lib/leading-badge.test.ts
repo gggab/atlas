@@ -9,7 +9,4 @@ describe("leadingBadge", () => {
     expect(leadingBadge("agent-question")).toBe("needs-you");
     expect(leadingBadge("agent-context-warning")).toBe("warning");
   });
-  it("gives team-tier kinds no badge", () => {
-    expect(leadingBadge("chat-dm")).toBeNull();
-  });
 });

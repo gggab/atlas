@@ -9,8 +9,7 @@
 //!
 //! A spawn site counts as gated when, within `WINDOW` lines after
 //! `Command::new(`, the code calls one of `GATES` (the `atlas-process`
-//! helper, the atlas-agent git-utils helper, a raw `creation_flags`, or the
-//! `quiet(..)` wrapper in atlas-engine-shell-command).
+//! helper or a raw `creation_flags`).
 //!
 //! `KNOWN_GAPS` is the action-plan backlog: paths that still spawn without a
 //! gate. The test fails when a NEW ungated site appears, and it also fails
@@ -26,20 +25,14 @@ const GATES: &[&str] = &[
     "no_console_window(",
     ".creation_flags(",
     "quiet(&mut",
-    // atlas-engine-utils-pty's job object spawns with CREATE_NO_WINDOW itself.
     ".spawn_contained(",
     ".prepare_suspended_spawn(",
-    // atlas-engine-git-utils runs every git command through the job object.
     "run_git_command_with_timeout",
 ];
 
 /// Ungated spawn sites that are reachable on Windows and still open for work.
 /// Keep in sync with the action plan in docs/archive/windows-terminal-spawn.md.
-const KNOWN_GAPS: &[&str] = &[
-    // Runs inside the sandbox `command_runner` binary, itself a console
-    // process, so its `cmd.exe` child inherits that console: no new window.
-    "vendor/atlas-engine/windows-sandbox-rs/src/bin/command_runner/win/cwd_junction.rs",
-];
+const KNOWN_GAPS: &[&str] = &[];
 
 /// Files that only ever run off Windows, or only in tests/tooling.
 fn skipped(path: &str) -> bool {
@@ -202,7 +195,7 @@ fn repo_root() -> PathBuf {
 fn every_windows_reachable_spawn_is_gated_or_a_known_gap() {
     let root = repo_root();
     let mut files = Vec::new();
-    for dir in ["src-tauri/src", "crates", "vendor/atlas-engine"] {
+    for dir in ["src-tauri/src", "crates"] {
         walk(&root.join(dir), &mut files);
     }
     assert!(files.len() > 100, "expected to walk the whole workspace");

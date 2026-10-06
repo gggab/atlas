@@ -110,14 +110,7 @@ import { createHash } from "node:crypto";
 import { closeSync, openSync, readFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  REPO_ROOT,
-  changedFiles,
-  dialectPackages,
-  loadWorkspace,
-  plan,
-  readCrateMatrix,
-} from "./ci-affected.mjs";
+import { REPO_ROOT, changedFiles, loadWorkspace, plan, readCrateMatrix } from "./ci-affected.mjs";
 
 if (typeof Bun === "undefined") {
   console.error("ci-local: run this with bun (`bun run ci:local`); it parses ci.yml with Bun.YAML");
@@ -135,7 +128,7 @@ const HOST_OS = { darwin: "macos", win32: "windows" }[process.platform] ?? proce
 /** Linux jobs no other OS can stand in for (see the docblock): the crates
  *  whose suites run the engine's sandbox, and the app's Linux compile. */
 function needsLinux(job) {
-  return Boolean(job.flags.sandbox) || job.id === "app-linux";
+  return job.id === "app-linux";
 }
 
 /** The Rust target triple CI's runner for this job builds for. */
@@ -222,13 +215,11 @@ function plannedNames(argv) {
   const p = plan(changedFiles(base, undefined), {
     workspace: loadWorkspace(),
     crates,
-    dialect: dialectPackages(ciYmlText),
   });
   const names = new Set(["frontend", ...p.crates.map((c) => c.crate)]);
   if (p.app) {
     for (const id of ["app", "app-linux", "app-windows"]) names.add(ciYml.jobs[id].name);
   }
-  if (p.engineDialect) names.add(ciYml.jobs["engine-dialect"].name);
   return { names, why: `${p.reason} since ${base.slice(0, 12)}` };
 }
 
@@ -260,21 +251,6 @@ const DOCKER = process.env.ATLAS_CI_DOCKER || "docker";
 /** Where scripts/ci-linux/Dockerfile installs entrypoint.sh. */
 const ENTRYPOINT = "/usr/local/bin/ci-linux-entrypoint";
 const IMAGE_DIR = path.join(REPO_ROOT, "scripts", "ci-linux");
-
-/**
- * What bubblewrap needs from the container: seccomp off so it can create a
- * user namespace, /proc unmasked so it can mount a fresh one (Podman spells
- * that `unmask=ALL`), and AppArmor off, since Docker's default profile on
- * Ubuntu and Debian hosts denies mount. On OrbStack the first two are each
- * required; with any one missing bwrap fails before running anything.
- */
-function sandboxOpts(podman) {
-  return [
-    "seccomp=unconfined",
-    "apparmor=unconfined",
-    podman ? "unmask=ALL" : "systempaths=unconfined",
-  ].flatMap((o) => ["--security-opt", o]);
-}
 
 function docker(args) {
   return spawnSync(DOCKER, args, { encoding: "utf8" });
@@ -407,7 +383,6 @@ function containerContext(probe = runtimeInfo()) {
     arch,
     image: ensureImage(),
     opts: [
-      ...sandboxOpts(podman),
       ...mounts.flatMap((m) => ["-v", m]),
       "-e",
       `ATLAS_UID=${uid}`,
@@ -558,7 +533,7 @@ async function main(argv) {
     console.log(`ci-local: ${jobs.length} of ${all.length} jobs (${why})`);
   }
   // Fastest feedback first: the frontend takes about a minute, the app longest.
-  const rank = { frontend: 0, crates: 1, "engine-dialect": 2, "app-linux": 3, app: 4 };
+  const rank = { frontend: 0, crates: 1, "app-linux": 3, app: 4 };
   jobs.sort((a, b) => (rank[a.id] ?? 1) - (rank[b.id] ?? 1));
 
   // Ask for a runtime only when a job would use one, so a plan with nothing
@@ -653,7 +628,7 @@ async function main(argv) {
         : `no container runtime answered (${probe?.error || "not running"})`;
     console.log(
       `\n  Not run on Linux, because ${why}: ${untested.map((j) => j.name).join(", ")}. ` +
-        "Their Linux-only behaviour (the engine's sandbox, the app's GTK build) is untested until CI runs them.",
+        "Their Linux-only behaviour (the app's GTK build) is untested until CI runs them.",
     );
   }
   process.exit(failures ? 1 : 0);

@@ -64,7 +64,7 @@ export SDKROOT="${SDKROOT:-$(xcrun --show-sdk-path)}"
 # mounted volume's icon, with no config to change it. layout-dmg.sh builds the
 # dmg instead — same as release-macos.sh — and gives the volume the drive icon.
 log "Building Atlas for ${TARGET}"
-node scripts/with-posthog-env.mjs tauri build --target "${TARGET}" --bundles app
+bun run tauri build --target "${TARGET}" --bundles app
 
 # Cargo's target dir is the workspace root's `target/`, not
 # `src-tauri/target/` — the repo became a cargo workspace in #38.

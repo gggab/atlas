@@ -11,8 +11,7 @@
 //!   cold [`Job::IndexCorpus`].
 //! - [`MemoryIndexer`] — one owned Tokio task draining a **bounded** `mpsc` queue.
 //!   Every [`Job`] carries a `cwd` so projects stay isolated: corpus indexing,
-//!   the extractor's passes (turn finished and session end, see
-//!   `super::memory_extract`), and global promotion (`Compact`).
+//!   explicit local index nudges and global promotion (`Compact`).
 //!
 //! Heavy work (corpus gather + embed + persist) runs off the IPC thread on the
 //! async runtime / blocking pool; the FS watcher coalesces bursts via a ~2s
@@ -46,21 +45,9 @@ const DEBOUNCE_WINDOW: Duration = Duration::from_millis(2000);
 pub enum Job {
     /// (Re)index a project's whole corpus into its HNSW store. Step 4.
     IndexCorpus { cwd: String },
-    /// A turn finished: the extractor's gated pass over the session's
-    /// conversation so far (read when the turn finished).
-    ExtractSession {
-        cwd: String,
-        writer: super::shared_memory::Writer,
-        turns: Vec<atlas_memory::TranscriptTurn>,
-    },
-    /// A session ended: the extractor's one end-of-session pass.
-    SessionEnded {
-        cwd: String,
-        writer: super::shared_memory::Writer,
-    },
     /// Offer the repository's high-confidence Facts to global memory
     /// (`atlas_memory::global`): run once when a project opens and after an
-    /// extractor pass stores entries.
+    /// MCP write stores entries.
     Compact { cwd: String },
 }
 
@@ -162,7 +149,7 @@ impl MemoryRegistry {
             });
             // One global-promotion pass per open: it only reads the record's
             // Facts and the small global ledger, so it is cheap; drop-on-full
-            // is fine (the next open or extraction re-enqueues).
+            // is fine (the next open or MCP write re-enqueues).
             let _ = self.job_tx.try_send(Job::Compact {
                 cwd: cwd.to_string(),
             });
@@ -399,12 +386,6 @@ impl MemoryIndexer {
                         tracing::warn!(target: "atlas::memory_indexer", "IndexCorpus {cwd} failed: {e}");
                     }
                 }
-                Job::ExtractSession { cwd, writer, turns } => {
-                    extract(&app, &registry, &cwd, writer, Some(turns)).await;
-                }
-                Job::SessionEnded { cwd, writer } => {
-                    extract(&app, &registry, &cwd, writer, None).await;
-                }
                 Job::Compact { cwd } => {
                     if let Err(e) = compact_one(&registry, &cwd).await {
                         tracing::warn!(
@@ -467,7 +448,7 @@ async fn index_one(
 /// confidence ≥ 0.8 are recorded in the global candidates ledger, and any seen
 /// in two or more repositories are promoted to `~/.atlas/memory`
 /// (`atlas_memory::global`). Idempotent, so running it on every open and after
-/// every storing extraction is safe.
+/// every explicit memory write is safe.
 async fn compact_one(registry: &MemoryRegistry, cwd: &str) -> Result<(), String> {
     // Get-only for the same reason as `index_one`: don't resurrect a closed
     // project. Its promotion runs again next open.
@@ -485,41 +466,6 @@ async fn compact_one(registry: &MemoryRegistry, cwd: &str) -> Result<(), String>
         tracing::info!(target: "atlas::memory_indexer", "promoted {promoted} facts to global memory");
     }
     Ok(())
-}
-
-/// One extractor pass (`super::memory_extract`): a finished turn's gated one
-/// (`turns` = the session's conversation so far) or the session's end one
-/// (`turns` = `None`). Recorded entries are made searchable by a reindex.
-async fn extract(
-    app: &AppHandle,
-    registry: &MemoryRegistry,
-    cwd: &str,
-    writer: super::shared_memory::Writer,
-    turns: Option<Vec<atlas_memory::TranscriptTurn>>,
-) {
-    let Some(extractor) = app.try_state::<Arc<super::memory_extract::Extractor>>() else {
-        return;
-    };
-    let sharing = app.state::<super::memory_sharing::MemorySharingState>();
-    let stored = match turns {
-        Some(turns) => extractor.turn_finished(&sharing, cwd, &writer, turns).await,
-        None => extractor.session_ended(&sharing, cwd, &writer).await,
-    };
-    reindex_after(registry, cwd, stored);
-}
-
-/// Make freshly extracted entries searchable in the retrieval index, and offer
-/// any new high-confidence Facts to global memory.
-fn reindex_after(registry: &MemoryRegistry, cwd: &str, stored: usize) {
-    if stored > 0 {
-        tracing::info!(target: "atlas::memory_indexer", "extracted {stored} memories; reindexing {cwd}");
-        let _ = registry.enqueue(Job::IndexCorpus {
-            cwd: cwd.to_string(),
-        });
-        let _ = registry.enqueue(Job::Compact {
-            cwd: cwd.to_string(),
-        });
-    }
 }
 
 /// Text actually embedded for a doc — title prepended for short-doc signal.
@@ -803,22 +749,6 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&root).ok();
-    }
-
-    /// An extractor pass that stored entries reindexes and then offers the new
-    /// Facts to global memory; one that stored nothing enqueues nothing.
-    #[test]
-    fn a_storing_extraction_enqueues_reindex_then_promotion() {
-        let (job_tx, mut job_rx) = mpsc::channel::<Job>(16);
-        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
-
-        reindex_after(&registry, "/proj/a", 0);
-        assert!(job_rx.try_recv().is_err());
-
-        reindex_after(&registry, "/proj/a", 2);
-        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd }) if cwd == "/proj/a"));
-        assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { cwd }) if cwd == "/proj/a"));
-        assert!(job_rx.try_recv().is_err());
     }
 
     /// A job for cwd-A only ever touches cwd-A's `.atlas/memory/`; cwd-B's engine

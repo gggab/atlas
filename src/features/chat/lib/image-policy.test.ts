@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  AGGREGATE_IMAGE_BUDGET_BYTES,
-  BODY_CAP_BYTES,
   MAX_EDGE_PX,
   PER_IMAGE_BUDGET_BYTES,
-  aggregateExceedsBudget,
   encodedSize,
   exceedsBudget,
   targetDimensions,
@@ -41,34 +38,22 @@ describe("image sizing policy (D15c)", () => {
   });
 
   it("measures the budget in base64, because base64 is what travels", () => {
-    // The gateway counts the body it receives, before parsing. Judging by raw
-    // bytes would let an image a third over the line through.
+    // Base64 grows the transport payload.
     expect(encodedSize(3)).toBe(4);
     expect(encodedSize(1024 * 1024)).toBeGreaterThan(1024 * 1024);
   });
 
-  it("budgets one image at a fraction of the cap, not the whole of it", () => {
+  it("optimizes images only above the local attachment budget", () => {
     // The body also carries the system prompt, the tool schemas and the whole
     // conversation so far — and a user attaching two images in one turn must
     // not be refused for it.
-    expect(PER_IMAGE_BUDGET_BYTES).toBeLessThan(BODY_CAP_BYTES);
     expect(exceedsBudget(PER_IMAGE_BUDGET_BYTES)).toBe(false);
     expect(exceedsBudget(PER_IMAGE_BUDGET_BYTES + 1)).toBe(true);
   });
 
   it("would reject a typical unscaled screenshot", () => {
     // The case this exists for: a 4 MB retina screenshot, ~5.3 MB once base64
-    // encoded, against a 2 MB cap.
+    // encoded, requiring optimization.
     expect(exceedsBudget(encodedSize(4 * 1024 * 1024))).toBe(true);
-  });
-
-  it("warns when in-budget attachments together would still blow the cap", () => {
-    // The per-image budget is per image only: four images each exactly on
-    // budget total a full body cap before a byte of prompt, tools or history
-    // is counted (#71). Three fit under the aggregate line; four do not.
-    const onBudget = PER_IMAGE_BUDGET_BYTES;
-    expect(aggregateExceedsBudget([onBudget, onBudget, onBudget])).toBe(false);
-    expect(aggregateExceedsBudget([onBudget, onBudget, onBudget, onBudget])).toBe(true);
-    expect(AGGREGATE_IMAGE_BUDGET_BYTES).toBeLessThan(BODY_CAP_BYTES);
   });
 });

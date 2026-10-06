@@ -285,12 +285,7 @@ describe("applyAgentDelta: one delta kind at a time", () => {
       deltas: () => [d("model_changed", { model_id: "opus" })],
       expect: () => expect(session().acpCurrentModel).toBe("opus"),
     },
-    {
-      name: "model_changed is ignored for the native agent, whose model the UI owns",
-      agentType: "atlas-agent",
-      deltas: () => [d("model_changed", { model_id: "google/gemini" })],
-      expect: () => expect(session().acpCurrentModel).toBeUndefined(),
-    },
+
     {
       name: "mode_changed to a Claude permission mode moves the permission pill",
       deltas: () => [d("mode_changed", { mode_id: "acceptEdits" })],

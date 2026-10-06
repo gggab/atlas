@@ -68,7 +68,7 @@ export function AppLayout() {
   }, [showLeft]);
   // Source control needs a project; team chat is org-scoped and is reachable
   // with no project open, so the slot stays available in chat mode.
-  const showRight = rightPanel.visible && (!!currentProject || rightPanel.mode === "chat");
+  const showRight = rightPanel.visible && !!currentProject;
   const isLinux =
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 

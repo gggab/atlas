@@ -157,7 +157,7 @@ impl SyncState {
 pub enum ProjectMode {
     /// Never drains. A complete mode, not a buffer.
     Local,
-    /// Drains to the Organisation.
+    /// Historical database mode; app startup converts existing bindings to Local.
     Cloud,
 }
 

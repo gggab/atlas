@@ -16,16 +16,8 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { isWindowFocused, lastInteraction } from "@/lib/window-focus";
 import { computeAway, type NotificationEnv } from "./decide";
 import { deliverNotification } from "./deliver";
-import {
-  decideGitOp,
-  decideModelDownload,
-  decideUpdateReady,
-  shouldNotifyUpdate,
-  type GitRemoteOp,
-} from "./outcome-notifier-rules";
+import { decideGitOp, decideModelDownload, type GitRemoteOp } from "./outcome-notifier-rules";
 import { prefsFromSettings } from "./prefs";
-
-const UPDATE_NOTIFIED_KEY = "atlas:update-notified-version";
 
 function envFor(targetVisible: boolean, projectActive = true): NotificationEnv {
   const windowFocused = isWindowFocused();
@@ -40,36 +32,6 @@ function envFor(targetVisible: boolean, projectActive = true): NotificationEnv {
 }
 
 const prefs = () => prefsFromSettings(useSettingsStore.getState().settings);
-
-function readNotifiedVersion(): string | null {
-  try {
-    return localStorage.getItem(UPDATE_NOTIFIED_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeNotifiedVersion(version: string): void {
-  try {
-    localStorage.setItem(UPDATE_NOTIFIED_KEY, version);
-  } catch {
-    /* per-device convenience; losing it only risks one repeat */
-  }
-}
-
-/** A downloaded update is staged and ready to restart. Once per version. */
-export function notifyUpdateReady(version: string): void {
-  try {
-    if (!shouldNotifyUpdate(readNotifiedVersion(), version)) return;
-    writeNotifiedVersion(version);
-    // The prompt opens on its own for a live "ready"; the toast is the way
-    // back to it once dismissed, so it is never treated as already seen.
-    const decision = decideUpdateReady(version, envFor(false), prefs());
-    if (decision) deliverNotification(decision);
-  } catch (err) {
-    console.warn("update notification failed:", err);
-  }
-}
 
 let modelSeq = 0;
 

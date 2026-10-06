@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
 import { basename } from "@/lib/paths";
-import { toast } from "sonner";
+
 import { logEvent } from "@/features/log/lib/log";
 import { flushAll } from "../lib/flush-registry";
 import { captureSnapshot, restoreSnapshot, evictSnapshot } from "../lib/project-snapshot";
@@ -15,7 +15,6 @@ import {
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { isProjectRunning } from "../lib/agent-activity";
 import {
   busySessions,
@@ -24,33 +23,6 @@ import {
 } from "../lib/stop-agents-confirm";
 import { markFileIndexClosedFor } from "@/features/file-picker/lib/file-picker-api";
 import { instructionSync } from "../lib/instruction-sync-api";
-
-/** The org id used to tag newly-created projects/groups so they belong to
- *  the org the user is currently in. Read lazily to avoid an import-time
- *  dependency cycle with the org store. Falls back to the first org when no
- *  active org is set (org store mid-hydration) — an untagged row would render
- *  in EVERY org's sidebar under the strict per-org filters, so creation must
- *  never mint `orgId: undefined`. Returns undefined only when the org store
- *  holds zero orgs (pre-bootstrap race; Rust always seeds "Personal"), and
- *  callers refuse to create in that case. */
-const requireActiveOrgId = (): string | undefined => {
-  const org = useOrgStore.getState();
-  return org.activeOrganisationId ?? org.organisations[0]?.id;
-};
-
-/** The refusal above used to be a log line and nothing else — and that log
- *  entry is only persisted once a project exists, so a fresh install where
- *  the Rust seed had not run showed "Open Folder" doing nothing at all. Say
- *  so on screen: the state is not recoverable from inside the app, since the
- *  org switcher hides itself with no active org. */
-const NO_ORG_MESSAGE =
-  "Atlas couldn't find an organisation to own this. Restart Atlas and try again.";
-
-const refuseWithoutOrg = (summary: string, payload?: Record<string, unknown>): null => {
-  logEvent({ source: "project", kind: "project-add-refused", summary, payload });
-  toast.error(NO_ORG_MESSAGE);
-  return null;
-};
 
 /** Default hot-set cap — how many projects stay mounted/resident at once.
  *  Set above a typical open-project count (users commonly keep ~7) so cycling
@@ -149,10 +121,8 @@ interface ProjectState {
      *  hot set is discarded (RAM freed, Rust watchers stopped) before the new
      *  org's projects load. Does NOT flush — the caller flushes the active
      *  project first (its layout mirror is the only unsaved state). */
-    teardownForOrgSwitch: () => void;
     /** Purge every project + group belonging to `orgId` from the registry
      *  (tearing down any still mounted). Used by org deletion. */
-    removeProjectsForOrg: (orgId: string) => void;
     /** Ensure `id` is in the hot set, evicting the LRU evictable project if
      *  that pushes the set over `maxMounted`. */
     ensureMounted: (id: string) => void;
@@ -287,32 +257,16 @@ export const useProjectStore = createSelectors(
         // while invisible in the new org's switcher — the "added a project in
         // a fresh org and it never appeared" bug. Opening the same folder
         // from a second org now creates that org's own project row.
-        const org = requireActiveOrgId();
-        if (!org) {
-          return refuseWithoutOrg("no organisation available to own a new project", { path });
-        }
-        const existing = get().projects.find((w) => w.path === path && w.orgId === org);
+        const existing = get().projects.find((w) => w.path === path);
         if (existing) {
           await get().actions.switchTo(existing.id);
           return existing.id;
-        }
-        // Legacy untagged row for this path (predates the Rust org backfill):
-        // adopt it into the active org in place instead of duplicating it.
-        const legacy = get().projects.find((w) => w.path === path && w.orgId == null);
-        if (legacy) {
-          set((s) => ({
-            projects: s.projects.map((w) => (w.id === legacy.id ? { ...w, orgId: org } : w)),
-          }));
-          scheduleAppStateSave();
-          await get().actions.switchTo(legacy.id);
-          return legacy.id;
         }
         const ws: Project = {
           id: uuid(),
           name: nameOf(path),
           path,
           groupId: null,
-          orgId: org,
         };
         set((s) => ({ projects: [...s.projects, ws] }));
         scheduleAppStateSave();
@@ -322,26 +276,13 @@ export const useProjectStore = createSelectors(
 
       addProjectEntry: (path: string) => {
         // Same (path, org) identity + legacy-adopt rules as addProject above.
-        const org = requireActiveOrgId();
-        if (!org) {
-          return refuseWithoutOrg("no organisation available to own a new project entry", { path });
-        }
-        const existing = get().projects.find((w) => w.path === path && w.orgId === org);
+        const existing = get().projects.find((w) => w.path === path);
         if (existing) return existing.id;
-        const legacy = get().projects.find((w) => w.path === path && w.orgId == null);
-        if (legacy) {
-          set((s) => ({
-            projects: s.projects.map((w) => (w.id === legacy.id ? { ...w, orgId: org } : w)),
-          }));
-          scheduleAppStateSave();
-          return legacy.id;
-        }
         const ws: Project = {
           id: uuid(),
           name: nameOf(path),
           path,
           groupId: null,
-          orgId: org,
         };
         set((s) => ({ projects: [...s.projects, ws] }));
         scheduleAppStateSave();
@@ -586,31 +527,6 @@ export const useProjectStore = createSelectors(
         scheduleAppStateSave();
       },
 
-      teardownForOrgSwitch: () => {
-        const { mountedProjectIds } = get();
-        for (const id of mountedProjectIds) teardownHot(id);
-        set({
-          mountedProjectIds: [],
-          activeProjectId: null,
-          optimisticActiveId: null,
-        });
-      },
-
-      removeProjectsForOrg: (orgId: string) => {
-        const { projects, mountedProjectIds } = get();
-        const removedIds = new Set(projects.filter((w) => w.orgId === orgId).map((w) => w.id));
-        // Tear down any that are still mounted (defensive — a deleted org is
-        // normally switched away from first, so its set is already cold).
-        for (const id of mountedProjectIds) {
-          if (removedIds.has(id)) teardownHot(id);
-        }
-        set((s) => ({
-          projects: s.projects.filter((w) => w.orgId !== orgId),
-          groups: s.groups.filter((g) => g.orgId !== orgId),
-          mountedProjectIds: s.mountedProjectIds.filter((x) => !removedIds.has(x)),
-        }));
-      },
-
       setColor: (id, color) => {
         set((s) => ({
           projects: s.projects.map((w) => (w.id === id ? { ...w, color: color ?? undefined } : w)),
@@ -646,13 +562,10 @@ export const useProjectStore = createSelectors(
         scheduleAppStateSave();
       },
       addGroup: (name) => {
-        const org = requireActiveOrgId();
-        if (!org) return refuseWithoutOrg("no organisation available to own a new group");
         const group: ProjectGroup = {
           id: uuid(),
           name,
           order: get().groups.length,
-          orgId: org,
         };
         // Open the new group straight into inline-rename so the user can name it.
         set((s) => ({

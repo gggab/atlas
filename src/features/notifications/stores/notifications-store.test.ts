@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from "vitest";
-import { hasUnread, isErrorKind, useNotificationsStore, visibleItems } from "./notifications-store";
+import { hasUnread, isErrorKind, useNotificationsStore } from "./notifications-store";
 
 beforeEach(() => {
   localStorage.clear();
@@ -20,33 +20,30 @@ const add = (
     orgId,
   });
 
-describe("org-scoped notifications", () => {
-  it("shows only the active org's items plus untagged ones", () => {
+describe("local notifications", () => {
+  it("keeps legacy organization tags visible as local history", () => {
     add("org-a");
     add("org-b");
     add(undefined);
     const items = useNotificationsStore.getState().items;
-    expect(visibleItems(items, "org-a")).toHaveLength(2);
-    expect(visibleItems(items, "org-b")).toHaveLength(2);
-    expect(visibleItems(items, null)).toHaveLength(3);
+    expect(items).toHaveLength(3);
   });
 
-  it("unread and error flags are scoped too", () => {
+  it("unread and error flags cover the local list", () => {
     add("org-a", "terminal-failed");
     add("org-b");
     const items = useNotificationsStore.getState().items;
-    expect(hasUnread(items, "org-a", isErrorKind)).toBe(true);
-    expect(hasUnread(items, "org-b", isErrorKind)).toBe(false);
-    expect(hasUnread(items, "org-b")).toBe(true);
+    expect(hasUnread(items, isErrorKind)).toBe(true);
+    expect(hasUnread(items)).toBe(true);
   });
 
-  it("opening the panel for one org leaves the other org's unread state alone", () => {
+  it("opening the local panel marks its history read", () => {
     add("org-a");
     add("org-b");
-    useNotificationsStore.getState().actions.open("org-a");
+    useNotificationsStore.getState().actions.open();
     const items = useNotificationsStore.getState().items;
     expect(items.find((i) => i.orgId === "org-a")?.read).toBe(true);
-    expect(items.find((i) => i.orgId === "org-b")?.read).toBe(false);
+    expect(items.find((i) => i.orgId === "org-b")?.read).toBe(true);
   });
 });
 
@@ -56,7 +53,7 @@ describe("persistence", () => {
 
   it("persists items but not the panel's open state", () => {
     add("org-a");
-    useNotificationsStore.getState().actions.open("org-a");
+    useNotificationsStore.getState().actions.open();
     expect(stored().items).toHaveLength(1);
     expect(stored().panelOpen).toBeUndefined();
   });
@@ -80,7 +77,7 @@ describe("persistence", () => {
     expect(restored).toHaveLength(200);
     expect(restored[0].id).toBe("n0");
     expect(useNotificationsStore.getState().panelOpen).toBe(false);
-    expect(visibleItems(restored, "org-b")).toHaveLength(0);
+    expect(restored.every((item) => !item.read)).toBe(true);
   });
 
   it("restores agentType, tolerating old items without it and malformed values", async () => {
@@ -133,11 +130,11 @@ describe("persistence", () => {
     await useNotificationsStore.persist.rehydrate();
     const byId = Object.fromEntries(useNotificationsStore.getState().items.map((i) => [i.id, i]));
     expect(byId.ok.target).toEqual({ type: "agent-sign-in", agentType: "cursor" });
-    expect(byId.atlas.target).toEqual({ type: "atlas-sign-in" });
+    expect(byId.atlas.target).toBeUndefined();
     expect(byId.bad.target).toBeUndefined();
-    expect(byId.chat.target).toEqual({ type: "chat-conversation", convId: "c1" });
+    expect(byId.chat.target).toBeUndefined();
     expect(byId.badchat.target).toBeUndefined();
-    expect(byId.upd.target).toEqual({ type: "app-update" });
+    expect(byId.upd.target).toBeUndefined();
     expect(byId.models.target).toEqual({ type: "settings", section: "models" });
     expect(byId.badsettings.target).toBeUndefined();
     expect(byId.agents.target).toEqual({ type: "settings", section: "agents" });

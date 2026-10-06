@@ -10,11 +10,12 @@
  * hand. This is the missing edge: the catalog shrinking is the signal.
  */
 
-import { NATIVE_AGENT_ID, pluginIdForAgent } from "@/types/agent";
+import { pluginIdForAgent } from "@/types/agent";
 import type { AgentCatalogEntry } from "@/types/agent-catalog";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
 import { useChatStore } from "../stores/chat-store";
+import { defaultAgentForNewSession } from "./default-agent";
 import { switchAgentForTab } from "./switch-agent";
 
 /** External agents installed in `before` that `after` no longer lists as
@@ -41,7 +42,7 @@ export function reconcileRemovedAgent(pluginId: string, label: string): void {
     if (pluginIdForAgent(session.agentType) !== pluginId) continue;
     const untouched =
       !session.acpSessionId && session.messages.length === 0 && !session.pendingSend;
-    if (untouched) switchAgentForTab(tabId, NATIVE_AGENT_ID);
+    if (untouched) switchAgentForTab(tabId, defaultAgentForNewSession());
   }
   actions.noteAgentRemoved(pluginId, `${label} was removed`);
 }

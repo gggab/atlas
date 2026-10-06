@@ -48,7 +48,6 @@ use atlas_agent_wire::{
     MessageRole, SessionDelta, SessionDeltaEnvelope, ToolCall, ToolCallStatus, ToolContentBlock,
 };
 use atlas_bus::OutboundMiddleware;
-use atlas_checkpoint::model::DrainGate;
 use atlas_checkpoint::tools::{extract_paths, resolve_path, ResolvedPath, ToolName};
 use atlas_checkpoint::{
     Capture, FileWrite, Mode, ProjectMode, Role, SessionKey, Source, Store, TokenTotals,
@@ -341,7 +340,6 @@ pub struct CaptureState {
     /// Streamed message accumulation per session, flushed at turn end.
     pending_turns: Mutex<HashMap<String, PendingTurn>>,
     /// How the drain gets an access token. Shared with the worker.
-    token: TokenProvider,
     /// How the worker tells the UI something was written. Late-bound like
     /// `token`, for the same reason: the app handle does not exist yet when
     /// this state is registered.
@@ -362,7 +360,6 @@ pub struct CaptureState {
 
 /// A late-bound source of access tokens, shared between the command surface and
 /// the capture worker.
-type TokenProvider = Arc<Mutex<Option<Box<dyn Fn() -> Option<String> + Send>>>>;
 
 /// A late-bound window-event emitter, shared with the capture worker.
 type Notifier = Arc<Mutex<Option<AppHandle>>>;
@@ -386,40 +383,12 @@ const NOTIFY_DEBOUNCE: Duration = Duration::from_millis(250);
 
 /// Work for the **sync worker** — the thread that talks to the cloud and
 /// reads transcripts off disk, so the recording worker never does.
-///
-/// # Why a second thread
-///
-/// Everything used to run on the one capture worker, for every Project: a
-/// cloud drain looped until the whole outbox was sent — minutes, after
-/// promoting a Project with a local backlog — holding that Project's store
-/// lock across every upload, while every other job waited in the channel.
-/// Recording stopped for **all** Projects (new prompts, turns and tool calls
-/// sat in memory, lost if the app quit), and every other Project's sync
-/// waited behind the one backlog. Now the recording worker only writes
-/// locally; this worker drains and imports through a sibling connection
-/// ([`Store::sibling`]) so it never holds the recorder's store lock, gives
-/// each Project a bounded pass ([`SYNC_PASS_BUDGET`]) in turn, and keeps one
-/// entry per Project however many times a drain is asked for.
+/// Local transcript imports run separately from capture using a sibling connection.
 enum SyncRequest {
-    /// Send this Project's outbox. `forced` bypasses the offline backoff: a
-    /// human just did something (promote, connect, retry).
-    Drain { project_root: PathBuf, forced: bool },
     /// Import any on-disk transcripts for this Project that are not yet
     /// recorded — the historical backfill and the terminal-gap scan.
     Import { project_root: PathBuf },
 }
-
-/// How long one drain pass may keep starting batches before it yields to the
-/// next Project that is due. A batch in flight always finishes.
-const SYNC_PASS_BUDGET: Duration = Duration::from_secs(3);
-
-/// Per-root drain backoff, owned by the sync worker.
-struct DrainBackoff {
-    next_attempt: Instant,
-    delay: Duration,
-}
-
-type BackoffMap = Arc<Mutex<HashMap<PathBuf, DrainBackoff>>>;
 
 /// One writing [`Store`] per Project root, for the whole process.
 ///
@@ -448,16 +417,8 @@ struct StoreHandle {
 }
 
 impl CaptureState {
-    /// `token` mints a fresh access token for the drain. A closure rather than a
-    /// value because tokens are short-lived and a post-promotion backlog runs
-    /// far longer than one lifetime.
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
-        // Late-bound: the auth core is managed inside `setup`, after this state
-        // is registered, so the provider is installed rather than passed in.
-        // Until it is, the closure yields no credential — which parks the drain
-        // instead of failing it, and is exactly Local-mode behaviour.
-        let token: TokenProvider = Arc::new(Mutex::new(None));
         let notify: Notifier = Arc::new(Mutex::new(None));
         let notify_for_worker = notify.clone();
         let stores: StoreRegistry = Arc::new(Mutex::new(HashMap::new()));
@@ -477,25 +438,11 @@ impl CaptureState {
         // [`SyncRequest`]).
         let (sync_tx, sync_rx) = mpsc::channel();
         let sync_alive = Arc::new(AtomicBool::new(true));
-        let (sync_token, sync_notify, sync_stores, sync_alive_for_worker) = (
-            token.clone(),
-            notify.clone(),
-            stores.clone(),
-            sync_alive.clone(),
-        );
+        let (sync_notify, sync_stores, sync_alive_for_worker) =
+            (notify.clone(), stores.clone(), sync_alive.clone());
         std::thread::Builder::new()
             .name("atlas-capture-sync".into())
-            .spawn(move || {
-                let ingest = Box::new(atlas_checkpoint::sync::ingest_base);
-                sync_worker(
-                    sync_rx,
-                    sync_token,
-                    sync_notify,
-                    sync_stores,
-                    sync_alive_for_worker,
-                    ingest,
-                )
-            })
+            .spawn(move || import_worker(sync_rx, sync_notify, sync_stores, sync_alive_for_worker))
             .expect("capture sync thread");
         Self {
             sessions: Mutex::new(HashMap::new()),
@@ -505,7 +452,6 @@ impl CaptureState {
             settled_commits: Mutex::new(HashMap::new()),
             session_calls: Mutex::new(HashMap::new()),
             pending_turns: Mutex::new(HashMap::new()),
-            token,
             notify,
             stores,
             worker_alive,
@@ -539,13 +485,6 @@ impl CaptureState {
     /// Is the capture worker thread still running?
     fn is_worker_alive(&self) -> bool {
         self.worker_alive.load(Ordering::Relaxed) && self.sync_alive.load(Ordering::Relaxed)
-    }
-
-    /// Install the credential source the drain uses.
-    ///
-    /// Called once from `setup`, after the auth core exists.
-    pub fn install_token_provider(&self, provider: Box<dyn Fn() -> Option<String> + Send>) {
-        *lock_ok(&self.token) = Some(provider);
     }
 
     /// Install the handle the worker emits [`CAPTURE_CHANGED`] through.
@@ -657,18 +596,6 @@ impl CaptureState {
         self.submit(Job::Prompt {
             binding,
             prompt: prompt.to_string(),
-        });
-    }
-
-    /// Send everything pending for a Project.
-    ///
-    /// Handed to the worker rather than run inline, because a post-promotion
-    /// backlog is hundreds of megabytes and must never block the click that
-    /// started it.
-    pub fn note_drain(&self, project_root: &std::path::Path) {
-        self.submit_sync(SyncRequest::Drain {
-            project_root: project_root.to_path_buf(),
-            forced: true,
         });
     }
 
@@ -1199,10 +1126,7 @@ pub async fn capture_binding(
 /// Local mode makes no network call and needs no account, which is the whole
 /// point: Atlas has to be useful before anyone signs up for anything.
 ///
-/// Cloud is deliberately rejected here. A Cloud Project must be settled on
-/// the server first (Slug, Organisation, project id) or it is half-bound:
-/// rows queue as `pending` forever with nowhere to go. `capture_register_cloud`
-/// is the only Cloud-create path.
+/// Retired cloud mode is rejected; existing bindings migrate on store open.
 #[tauri::command]
 pub async fn capture_enable(
     project_path: String,
@@ -1213,7 +1137,7 @@ pub async fn capture_enable(
         let mode =
             ProjectMode::parse(&mode).ok_or_else(|| format!("unknown project mode: {mode}"))?;
         if mode == ProjectMode::Cloud {
-            return Err("Cloud requires registration — use capture_register_cloud".to_string());
+            return Err("Capture is local-only".to_string());
         }
         let root = std::path::Path::new(&project_path);
         let state = app.state::<CaptureState>();
@@ -1223,22 +1147,13 @@ pub async fn capture_enable(
         let handle = state.writer(root)?;
         let store = lock_ok(&handle);
 
-        // Re-enabling must not demote: a registered Cloud Project whose user
-        // clicks Enable again keeps its mode (and its org, slug and remote id —
-        // `upsert_binding` never touches those columns). Local→Cloud only goes
-        // through register/promote; Cloud→Local would need an explicit
-        // demotion flow that does not exist yet.
-        let effective_mode = match store.binding().map_err(|e| e.to_string())? {
-            Some(existing) if existing.mode == ProjectMode::Cloud => ProjectMode::Cloud,
-            _ => mode,
-        };
+        let effective_mode = mode;
 
         atlas_checkpoint::bind(&store, &project_path, root, effective_mode)
             .map_err(|e| e.to_string())?;
 
         // Local imports without ceremony — nothing leaves the machine — so the
-        // approval that gates the background scan is granted here. A Cloud
-        // Project is a bulk disclosure and waits for `capture_import_confirm`.
+        // approval that gates the background scan is granted here.
         if effective_mode == ProjectMode::Local {
             store.set_import_approved(true).map_err(|e| e.to_string())?;
         }
@@ -1350,11 +1265,9 @@ fn refresh_inner(
 }
 
 /// Stop capturing. Nothing already recorded is deleted, and rows already
-/// queued keep draining — pausing is about *new* records.
+/// remain on disk — pausing is about *new* records.
 #[tauri::command]
 pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(), String> {
-    let hook_app = app.clone();
-    let hook_path = project_path.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let handle = app
             .state::<CaptureState>()
@@ -1364,8 +1277,6 @@ pub async fn capture_disable(project_path: String, app: AppHandle) -> Result<(),
     })
     .await
     .map_err(|e| e.to_string())??;
-    // A disabled Project must leave the socket set, not keep a subscription.
-    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
     Ok(())
 }
 
@@ -1414,32 +1325,7 @@ pub async fn capture_activate(project_path: String, app: AppHandle) -> Result<()
         // fine — that process is doing the capturing.
         let _ = state.writer(root);
         state.note_import(root);
-        state.note_drain(root);
         Ok(())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Give every failed row another chance and drain immediately.
-///
-/// The recovery action behind the health signal's "N records could not be
-/// sent" — the `failed → pending` transition is a deliberate human action,
-/// never automatic.
-#[tauri::command]
-pub async fn capture_retry_failed(project_path: String, app: AppHandle) -> Result<i64, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = std::path::Path::new(&project_path);
-        let state = app.state::<CaptureState>();
-        let handle = state.writer(root)?;
-        let retried = {
-            let store = lock_ok(&handle);
-            store
-                .retry_failed_rows(&project_path)
-                .map_err(|e| e.to_string())?
-        };
-        state.note_drain(root);
-        Ok(retried)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1495,8 +1381,6 @@ pub async fn capture_health(
                         next_step: "Update Atlas to keep capturing here.".into(),
                     }],
                     flagged_sessions: 0,
-                    failed_rows: 0,
-                    pending_rows: 0,
                 });
             }
             Err(e) => return Err(e.to_string()),
@@ -1593,8 +1477,6 @@ fn off_health(summary: &str) -> atlas_checkpoint::CaptureHealth {
         summary: summary.into(),
         issues: Vec::new(),
         flagged_sessions: 0,
-        failed_rows: 0,
-        pending_rows: 0,
     }
 }
 
@@ -1687,9 +1569,6 @@ pub async fn capture_session_summary(
 pub enum SessionOrigin {
     /// This machine only. No comments, because there is nothing to anchor to.
     Local,
-    /// A teammate's Session, or your own from another machine.
-    Remote,
-    Both,
 }
 
 /// One row on the Timeline board, tagged with the project it came from.
@@ -1703,66 +1582,7 @@ pub struct BoardSession {
     /// from a Project this machine has no checkout of.
     pub project_path: String,
     pub project_name: String,
-    /// Is this Session on the server? True for every remote row, and for a
-    /// local row whose Project is bound to Cloud.
-    ///
-    /// Deliberately **Project-level, not row-level**: "has every one of this
-    /// Session's rows drained" would need an outbox scan per Session on a read
-    /// that runs on every capture event, to answer a question the developer is
-    /// not asking. The queue depth is already reported by `capture_health`.
-    pub synced: bool,
     pub origin: SessionOrigin,
-    /// The server Project id, for the reads and the socket. `None` on a
-    /// Project that was never connected.
-    pub remote_project_id: Option<String>,
-    /// Stamped server-side from the verified token. `None` on a local row —
-    /// a Session on this disk is this account's by construction.
-    pub author_id: Option<String>,
-}
-
-/// Fold a remote Session into the local read model.
-///
-/// The wire does not carry four things the local model has, and they are filled
-/// with the honest empty value rather than invented: the Session's **starting**
-/// branch (only Checkpoint branches survive the push), `needs_attention` and
-/// its reason (a local-capture concern that means nothing about someone else's
-/// machine), and the input/output token split (the server keeps only the sum
-/// and the two cache figures).
-///
-/// `active_seconds` is also not the desktop's figure for the same Session — the
-/// server derives it from gap-capped message intervals, the desktop from turn
-/// spans. They legitimately disagree; the server says so on every row.
-pub(crate) fn remote_summary(
-    remote: atlas_artifacts::RemoteSession,
-) -> atlas_checkpoint::SessionSummary {
-    atlas_checkpoint::SessionSummary {
-        id: remote.id,
-        title: remote.title,
-        agent: remote.agent,
-        model: remote.model,
-        source: remote.source,
-        started_at: remote.started_at,
-        updated_at: remote.updated_at,
-        last_activity_at: remote.last_activity_at,
-        active_seconds: remote.active_seconds,
-        wall_seconds: remote.wall_seconds,
-        message_count: remote.message_count,
-        tool_call_count: remote.tool_call_count,
-        checkpoint_count: remote.checkpoint_count,
-        branches: remote.branches,
-        insertions: remote.insertions,
-        deletions: remote.deletions,
-        files_touched: remote.files_touched,
-        total_tokens: remote.total_tokens,
-        input_tokens: remote.input_tokens,
-        output_tokens: remote.output_tokens,
-        cache_creation_tokens: remote.cache_creation_tokens,
-        cache_read_tokens: remote.cache_read_tokens,
-        context_used: remote.context_used,
-        context_size: remote.context_size,
-        needs_attention: false,
-        attention_reason: None,
-    }
 }
 
 /// Every Session across the Organisation's projects, newest first.
@@ -1784,153 +1604,80 @@ pub(crate) fn remote_summary(
 const BOARD_LIMIT: usize = 500;
 
 #[tauri::command]
-pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<BoardPage, String> {
-    // Read the cloud cache first, on this thread: it is a lock and a clone, and
-    // taking it before the blocking hop keeps the `AppHandle` out of there.
-    //
-    // **Never a network call.** This read runs on every capture event and every
-    // git change while the Timeline is open; awaiting the ingest service here
-    // would stall a list whose whole appeal is that it is instant, and would
-    // leave it empty offline where the local Sessions are perfectly readable.
-    // The cache is filled on a ticker and by the socket instead.
-    let cloud = cloud_snapshot(&app);
-    let cloud_pending = cloud.pending;
-    let cloud_failed = cloud.failed;
-    let (remote, remote_names) = (cloud.sessions, cloud.names);
-    // For local rows that do not know their Project's server id (never synced,
-    // or bound by an older build): the only thing they can be matched on.
-    let remote_ids: HashSet<String> = remote.keys().map(|(_, id)| id.clone()).collect();
-
+pub async fn artifacts_board(projects: Vec<String>) -> Result<BoardPage, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        // One project means the board is filtered, and the caller wants that
-        // project's history rather than a slice of the newest across all of
-        // them — so the cap does not apply.
-        let single = projects.len() == 1;
-        let limit = if single { usize::MAX } else { BOARD_LIMIT };
-        let mut out: Vec<BoardSession> = Vec::new();
-        // Which remote Projects this machine has a checkout of, so a teammate's
-        // Session lands under the name the developer already knows it by.
-        let mut local_projects: HashMap<String, (String, String)> = HashMap::new();
-
+        let limit = if projects.len() == 1 {
+            usize::MAX
+        } else {
+            BOARD_LIMIT
+        };
+        let mut out = Vec::new();
         for project_path in projects {
-            // One unreadable store must not blank the whole board — the other
-            // projects' history is still good.
             let Ok(Some(store)) = open_reader(&project_path) else {
                 continue;
             };
             let workspace_id = project_id_for(Path::new(&project_path));
-            let Ok(summaries) = atlas_checkpoint::session_summaries(&store, &workspace_id) else {
-                continue;
-            };
-            let folder_name = Path::new(&project_path)
+            let summaries = atlas_checkpoint::session_summaries(&store, &workspace_id)
+                .map_err(|e| e.to_string())?;
+            let project_name = Path::new(&project_path)
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| project_path.clone());
-
-            // Synced-ness is a property of the Project, read once per Project
-            // rather than per Session.
-            let binding = store.binding().ok().flatten();
-            let remote_project_id = binding.as_ref().and_then(|b| b.remote_workspace_id.clone());
-
-            // A connected Project is named by the Organisation, not by whatever
-            // this machine happened to call the folder. Two people who cloned
-            // into differently-named directories must still see one Project on
-            // a shared timeline.
-            let project_name = remote_project_id
-                .as_ref()
-                .and_then(|id| remote_names.get(id).cloned())
-                .unwrap_or(folder_name);
-            let synced = binding
-                .as_ref()
-                .is_some_and(|b| b.mode == atlas_checkpoint::ProjectMode::Cloud);
-            if let Some(ref id) = remote_project_id {
-                local_projects.insert(id.clone(), (project_path.clone(), project_name.clone()));
-            }
-
             out.extend(summaries.into_iter().map(|session| BoardSession {
-                // A local row this Project has pushed is on both sides. We do
-                // not know per-row whether it drained, and do not need to: the
-                // point of `Both` is that it can be opened from disk.
-                origin: if match &remote_project_id {
-                    Some(project) => remote.contains_key(&(project.clone(), session.id.clone())),
-                    None => remote_ids.contains(&session.id),
-                } {
-                    SessionOrigin::Both
-                } else {
-                    SessionOrigin::Local
-                },
                 session,
                 project_path: project_path.clone(),
                 project_name: project_name.clone(),
-                synced,
-                remote_project_id: remote_project_id.clone(),
-                author_id: None,
+                origin: SessionOrigin::Local,
             }));
         }
-
-        // Everything the Organisation has that this machine does not. Keyed by
-        // (Project, Session): the Session id is the one the local store minted
-        // and pushed verbatim, but one Session can live in two Projects — a
-        // Project whose sync was moved leaves its copy in the old one. A local
-        // row only stands in for the remote copy in its own Project; the other
-        // copy is a separate row. A local row with no Project id falls back to
-        // matching on the Session id alone, as before.
-        let mut seen: HashSet<(String, String)> = HashSet::new();
-        let mut seen_unbound: HashSet<String> = HashSet::new();
-        for row in &out {
-            match &row.remote_project_id {
-                Some(project) => {
-                    seen.insert((project.clone(), row.session.id.clone()));
-                }
-                None => {
-                    seen_unbound.insert(row.session.id.clone());
-                }
-            }
-        }
-        for (key, row) in remote {
-            if seen.contains(&key) || seen_unbound.contains(&key.1) {
-                continue;
-            }
-            let (project_path, project_name) = local_projects
-                .get(&row.workspace_id)
-                .cloned()
-                // No checkout here: leave the path empty so the opener reads it
-                // over the network, and name it as the Organisation does.
-                .unwrap_or_else(|| {
-                    let label = remote_names
-                        .get(&row.workspace_id)
-                        .cloned()
-                        .unwrap_or_else(|| row.workspace_slug.clone());
-                    (String::new(), label)
-                });
-            out.push(BoardSession {
-                project_path,
-                project_name,
-                synced: true,
-                origin: SessionOrigin::Remote,
-                remote_project_id: Some(row.workspace_id.clone()),
-                author_id: row.author_id.clone(),
-                session: remote_summary(row),
-            });
-        }
-
-        // One ordering across every project, so the board reads as a timeline
-        // rather than as concatenated per-project lists. Sorting before the cap
-        // is what makes the cap mean "newest" rather than "whichever projects
-        // happened to be read first".
-        // On last activity, matching `session_summaries`' own ordering — the cap
-        // has to mean "most recently worked on", and a Session started in June
-        // and resumed today is today's work.
         out.sort_by(|a, b| b.session.last_activity_at.cmp(&a.session.last_activity_at));
         out.truncate(limit);
-        Ok(BoardPage {
-            sessions: out,
-            cloud_pending,
-            cloud_failed,
-        })
+        Ok(BoardPage { sessions: out })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn import_worker(
+    rx: mpsc::Receiver<SyncRequest>,
+    notify: Notifier,
+    stores: StoreRegistry,
+    alive: Arc<AtomicBool>,
+) {
+    struct AliveGuard(Arc<AtomicBool>);
+    impl Drop for AliveGuard {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Relaxed);
+        }
+    }
+    let _guard = AliveGuard(alive);
+    loop {
+        let mut roots = HashSet::new();
+        match rx.recv_timeout(IMPORT_SCAN_INTERVAL) {
+            Ok(SyncRequest::Import { project_root }) => {
+                roots.insert(project_root);
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                roots.extend(
+                    lock_ok(&stores)
+                        .iter()
+                        .filter(|(_, h)| h.is_writer)
+                        .map(|(r, _)| r.clone()),
+                );
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+        for SyncRequest::Import { project_root } in rx.try_iter() {
+            roots.insert(project_root);
+        }
+        for root in roots {
+            if with_sibling(&stores, &root, |store| import_for(store, &root)).is_some() {
+                if let Some(app) = lock_ok(&notify).as_ref() {
+                    let _ = app.emit(CAPTURE_CHANGED, ());
+                }
+            }
+        }
+    }
 }
 
 /// The board, plus whether it is finished arriving.
@@ -1945,64 +1692,6 @@ pub async fn artifacts_board(projects: Vec<String>, app: AppHandle) -> Result<Bo
 #[serde(rename_all = "camelCase")]
 pub struct BoardPage {
     pub sessions: Vec<BoardSession>,
-    pub cloud_pending: bool,
-    /// The remote half could not be read at all. The rows below are this
-    /// machine's, plus whatever an earlier refresh had cached — a partial view
-    /// the viewer has to label rather than present as the whole board.
-    pub cloud_failed: bool,
-}
-
-/// The Organisation's remote Sessions as of the last refresh, keyed by
-/// `(Project id, Session id)`.
-///
-/// Empty when signed out, in a local-only Organisation, or before the first
-/// refresh lands — all three of which mean "show the local board", which is a
-/// complete answer rather than a degraded one.
-/// The remote board as of the last refresh.
-#[derive(Default)]
-struct CloudSnapshot {
-    sessions: HashMap<atlas_artifacts::SessionKey, atlas_artifacts::RemoteSession>,
-    /// Project id → the name the Organisation gave that Project.
-    names: HashMap<String, String>,
-    /// The first refresh for this Organisation has not finished yet, so an
-    /// empty board means "not looked" rather than "nothing here".
-    pending: bool,
-    /// Every refresh so far failed: the board is local-only and says so.
-    failed: bool,
-}
-
-fn cloud_snapshot(app: &AppHandle) -> CloudSnapshot {
-    let Some(state) = app.try_state::<crate::commands::artifacts_cloud::ArtifactsCloudState>()
-    else {
-        return CloudSnapshot::default();
-    };
-    // No synced Organisation: there is no remote half to wait for, so the local
-    // board is the whole answer and is never pending.
-    let Some(org_id) = state.org.lock().ok().and_then(|org| org.clone()) else {
-        return CloudSnapshot::default();
-    };
-    let pending = state.board.is_pending(&org_id);
-    let failed = state.board.has_failed(&org_id);
-    let board = state.board.snapshot(&org_id);
-    let names = board
-        .projects
-        .iter()
-        .filter_map(|(id, project)| {
-            // The name the Organisation chose, falling back to the handle it is
-            // addressed by. Never the raw id — that is not a label.
-            project
-                .name
-                .clone()
-                .or_else(|| project.slug.clone())
-                .map(|label| (id.clone(), label))
-        })
-        .collect();
-    CloudSnapshot {
-        sessions: board.sessions,
-        names,
-        pending,
-        failed,
-    }
 }
 
 /// One Checkpoint on the board, tagged with the project it came from.
@@ -2205,416 +1894,6 @@ pub async fn artifacts_payload(
     .map_err(|e| e.to_string())?
 }
 
-/// Is this Slug free within the Organisation?
-///
-/// Debounced by the caller so the answer arrives while the developer is still
-/// typing, rather than as a rejection after they commit to a name.
-#[tauri::command]
-pub async fn capture_slug_available(
-    project_path: String,
-    org_id: String,
-    slug: String,
-    app: AppHandle,
-) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let token = token_provider(&app);
-        let config = sync_config(&project_path, &org_id, &token);
-        Ok(match atlas_checkpoint::sync::check_slug(&config, &slug) {
-            atlas_checkpoint::SlugAvailability::Available => "available",
-            atlas_checkpoint::SlugAvailability::Taken => "taken",
-            // Distinct from "taken": telling a developer their name is gone when
-            // the network merely blinked is a lie they will act on.
-            atlas_checkpoint::SlugAvailability::Unknown => "unknown",
-        }
-        .to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// Register this Project with an Organisation and switch it to Cloud.
-///
-/// **Server first.** The Slug is unique within the Organisation, so it has to be
-/// settled server-side before any local state changes — otherwise a rejected
-/// Slug leaves a half-bound Project behind. A failure here leaves the
-/// Project capturing locally, which is a retryable state rather than a broken
-/// one.
-///
-/// The network round-trip runs *outside* the store mutex: registration can take
-/// the full 30-second timeout, and holding the writer lock through it would
-/// stall the capture worker and every other capture command.
-#[tauri::command]
-pub async fn capture_register_cloud(
-    project_path: String,
-    org_id: String,
-    slug: String,
-    name: Option<String>,
-    visibility: Option<String>,
-    git_url: Option<String>,
-    app: AppHandle,
-) -> Result<atlas_checkpoint::Binding, String> {
-    let hook_app = app.clone();
-    let hook_path = project_path.clone();
-    let binding = tauri::async_runtime::spawn_blocking(
-        move || -> Result<atlas_checkpoint::Binding, String> {
-            let state = app.state::<CaptureState>();
-            let root = std::path::Path::new(&project_path);
-
-            // Short lock: read the advisory identity signals, then release.
-            let (root_commit_sha, detected_git_url) = {
-                let handle = state.writer(root)?;
-                let store = lock_ok(&handle);
-                let binding = store
-                    .binding()
-                    .map_err(|e| e.to_string())?
-                    .ok_or("enable capture for this Project first")?;
-                (binding.root_commit_sha, binding.git_url)
-            };
-
-            // The developer may have typed a Repository URL, or cleared the one we
-            // detected. An explicit empty string means "no remote", which is not
-            // the same as "we did not look".
-            let git_url = match git_url {
-                Some(typed) => {
-                    let typed = typed.trim().to_string();
-                    (!typed.is_empty()).then_some(typed)
-                }
-                None => detected_git_url,
-            };
-
-            let token = token_provider(&app);
-            let config = sync_config(&project_path, &org_id, &token);
-
-            // Advisory only — the server must accept a registration with neither.
-            // The returned id is the Project's wire identity from here on.
-            let remote_workspace_id = atlas_checkpoint::register_workspace(
-                &config,
-                atlas_checkpoint::Registration {
-                    slug: &slug,
-                    name: name.as_deref(),
-                    root_commit_sha: root_commit_sha.as_deref(),
-                    git_url: git_url.as_deref(),
-                    visibility: visibility
-                        .as_deref()
-                        .map(atlas_checkpoint::Visibility::parse)
-                        .unwrap_or_default(),
-                },
-            )
-            .map_err(|e| e.to_string())?;
-
-            let handle = state.writer(root)?;
-            let store = lock_ok(&handle);
-            store
-                .set_cloud_binding(&org_id, &slug, Some(&remote_workspace_id))
-                .map_err(|e| e.to_string())?;
-            store
-                .binding()
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "binding vanished".into())
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())??;
-    // The binding now names a server Project; open its socket without waiting
-    // for something unrelated to re-run the renderer's retarget.
-    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
-    Ok(binding)
-}
-
-/// The Organisation's Projects, with the one this repository most likely
-/// belongs to already picked out.
-///
-/// Returns no pre-selection when several match — every repository created from
-/// the same GitHub template shares a root commit, so a match is not proof, and a
-/// confident wrong answer pollutes a *shared* timeline with foreign Sessions.
-#[tauri::command]
-pub async fn capture_connect_options(
-    project_path: String,
-    org_id: String,
-    app: AppHandle,
-) -> Result<ConnectOptions, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let token = token_provider(&app);
-        let config = sync_config(&project_path, &org_id, &token);
-        let projects = atlas_checkpoint::list_workspaces(&config).map_err(|e| e.to_string())?;
-
-        let detection = atlas_checkpoint::detect(std::path::Path::new(&project_path));
-        let chosen = atlas_checkpoint::preselect(
-            &projects,
-            detection.root_commit_sha.as_deref(),
-            detection.git_url.as_deref(),
-        );
-
-        Ok(match chosen {
-            atlas_checkpoint::Preselection::One { project, .. } => ConnectOptions {
-                workspaces: projects,
-                preselected: Some(project.id),
-                // A shallow clone's fingerprint is a graft boundary rather than
-                // the true root, so even a match is worth flagging.
-                warning: detection.is_shallow.then(|| {
-                    "This is a shallow clone, so its fingerprint is not authoritative.".into()
-                }),
-            },
-            atlas_checkpoint::Preselection::Ambiguous { candidates } => ConnectOptions {
-                workspaces: projects,
-                preselected: None,
-                warning: Some(format!(
-                    "{} Projects share this repository\u{2019}s root commit — repositories \
-                     created from the same template do. Pick the right one.",
-                    candidates.len()
-                )),
-            },
-            atlas_checkpoint::Preselection::None => ConnectOptions {
-                workspaces: projects,
-                preselected: None,
-                warning: Some(
-                    "This directory does not match any Project. Connecting anyway is fine — a \
-                     shallow clone, a squashed history or a fresh repository all look like this."
-                        .into(),
-                ),
-            },
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// What Connect offers the developer.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectOptions {
-    pub workspaces: Vec<atlas_checkpoint::RemoteWorkspace>,
-    /// `None` when nothing matched, or when several did.
-    pub preselected: Option<String>,
-    /// Shown, never blocking.
-    pub warning: Option<String>,
-}
-
-/// Connect this repository to an existing Project.
-///
-/// From here on it behaves exactly like a Project created as Cloud — same
-/// capture, same drain, no separate code path. Works for a never-bound
-/// Project (the caller enables Local first) and for a Local Project being
-/// promoted onto an existing Cloud Project — in the latter case its captured
-/// history is queued for the drain in the same transaction as the binding. `workspace_id` is the picked
-/// `RemoteWorkspace.id`.
-///
-/// The server does the binding, not us: `POST /workspaces/connect` re-checks the
-/// pick against the root commit and the origin URL, and refuses to guess when
-/// several Projects match. Binding locally on the strength of a picker list
-/// fetched moments ago would silently accept a pick the server would not — and
-/// connecting the wrong directory pollutes a *shared* timeline.
-#[tauri::command]
-pub async fn capture_connect(
-    project_path: String,
-    org_id: String,
-    slug: String,
-    workspace_id: String,
-    app: AppHandle,
-) -> Result<ConnectResult, String> {
-    let hook_app = app.clone();
-    let hook_path = project_path.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<ConnectResult, String> {
-        let root = std::path::Path::new(&project_path);
-        let state = app.state::<CaptureState>();
-
-        let detection = atlas_checkpoint::detect(root);
-        let token = token_provider(&app);
-        let config = sync_config(&project_path, &org_id, &token);
-
-        let outcome = atlas_checkpoint::connect_workspace(
-            &config,
-            atlas_checkpoint::ConnectRequest {
-                workspace_id: Some(&workspace_id),
-                slug: Some(&slug),
-                root_commit_sha: detection.root_commit_sha.as_deref(),
-                git_url: detection.git_url.as_deref(),
-                create: false,
-            },
-        )
-        .map_err(|e| e.to_string())?;
-
-        let (remote_id, remote_slug) = match outcome {
-            atlas_checkpoint::ConnectOutcome::Connected {
-                workspace_id,
-                slug: s,
-                ..
-            } => (workspace_id, s.unwrap_or(slug)),
-            // Nothing bound. Hand the candidates back so the picker can ask
-            // again rather than reporting a failure the developer cannot act on.
-            atlas_checkpoint::ConnectOutcome::Ambiguous { candidates } => {
-                return Ok(ConnectResult {
-                    binding: None,
-                    candidates,
-                    matched: false,
-                    moved: 0,
-                })
-            }
-            atlas_checkpoint::ConnectOutcome::NoMatch => {
-                return Ok(ConnectResult {
-                    binding: None,
-                    candidates: Vec::new(),
-                    matched: false,
-                    moved: 0,
-                })
-            }
-        };
-
-        let handle = state.writer(root)?;
-        let (binding, moved) = {
-            let store = lock_ok(&handle);
-            // `promote_to_cloud`, not `set_cloud_binding`: a Project that was
-            // captured Locally before being connected carries history, and the
-            // binding flip and the `local` → `pending` row flip must commit
-            // together (see `capture_promote`). A freshly enabled Project has
-            // no rows, so this moves zero and is exactly `set_cloud_binding`.
-            let moved = store
-                .promote_to_cloud(&project_path, &org_id, &remote_slug, Some(&remote_id))
-                .map_err(|e| e.to_string())?;
-            approve_import_if_nothing_to_disclose(&store, root);
-            let binding = store
-                .binding()
-                .map_err(|e| e.to_string())?
-                .ok_or("enable capture for this Project first")?;
-            (binding, moved)
-        };
-        state.note_drain(root);
-        Ok(ConnectResult {
-            binding: Some(binding),
-            candidates: Vec::new(),
-            matched: true,
-            moved,
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    if result.matched {
-        crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
-    }
-    Ok(result)
-}
-
-/// Point a Cloud Project at a different Cloud Project in the same Organisation.
-///
-/// The server has no move between Projects — each is its own object — so the
-/// old one keeps what it was sent, and this re-queues the whole history for
-/// the new one. The server call is the same explicit-pick connect as
-/// [`capture_connect`], and it happens first, outside the store lock, so a
-/// refusal or a dead network leaves the Project exactly where it was.
-///
-/// Comments do not follow: they live in the old Project's object, anchored to
-/// rows that only exist there. The disclosure step says so before Confirm.
-#[tauri::command]
-pub async fn capture_switch_project(
-    project_path: String,
-    org_id: String,
-    slug: String,
-    workspace_id: String,
-    app: AppHandle,
-) -> Result<ConnectResult, String> {
-    let hook_app = app.clone();
-    let hook_path = project_path.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || -> Result<ConnectResult, String> {
-        let root = std::path::Path::new(&project_path);
-        let state = app.state::<CaptureState>();
-
-        let current = {
-            let handle = state.writer(root)?;
-            let store = lock_ok(&handle);
-            store
-                .binding()
-                .map_err(|e| e.to_string())?
-                .ok_or("enable capture for this Project first")?
-        };
-        if current.mode != ProjectMode::Cloud {
-            return Err("this Project is not on Cloud yet — promote it first".into());
-        }
-        if current.remote_workspace_id.as_deref() == Some(workspace_id.as_str()) {
-            return Err("this Project already syncs there".into());
-        }
-
-        let detection = atlas_checkpoint::detect(root);
-        let token = token_provider(&app);
-        let config = sync_config(&project_path, &org_id, &token);
-        let outcome = atlas_checkpoint::connect_workspace(
-            &config,
-            atlas_checkpoint::ConnectRequest {
-                workspace_id: Some(&workspace_id),
-                slug: Some(&slug),
-                root_commit_sha: detection.root_commit_sha.as_deref(),
-                git_url: detection.git_url.as_deref(),
-                create: false,
-            },
-        )
-        .map_err(|e| e.to_string())?;
-
-        let (remote_id, remote_slug) = match outcome {
-            atlas_checkpoint::ConnectOutcome::Connected {
-                workspace_id,
-                slug: s,
-                ..
-            } => (workspace_id, s.unwrap_or(slug)),
-            atlas_checkpoint::ConnectOutcome::Ambiguous { candidates } => {
-                return Ok(ConnectResult {
-                    binding: None,
-                    candidates,
-                    matched: false,
-                    moved: 0,
-                })
-            }
-            atlas_checkpoint::ConnectOutcome::NoMatch => {
-                return Ok(ConnectResult {
-                    binding: None,
-                    candidates: Vec::new(),
-                    matched: false,
-                    moved: 0,
-                })
-            }
-        };
-
-        let handle = state.writer(root)?;
-        let (binding, moved) = {
-            let store = lock_ok(&handle);
-            let moved = store
-                .switch_cloud_project(&project_path, &org_id, &remote_slug, &remote_id)
-                .map_err(|e| e.to_string())?;
-            let binding = store
-                .binding()
-                .map_err(|e| e.to_string())?
-                .ok_or("enable capture for this Project first")?;
-            (binding, moved)
-        };
-        state.note_drain(root);
-        Ok(ConnectResult {
-            binding: Some(binding),
-            candidates: Vec::new(),
-            matched: true,
-            moved,
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    if result.matched {
-        crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
-    }
-    Ok(result)
-}
-
-/// The answer to a connect attempt.
-///
-/// `matched: false` with candidates is the server declining to guess, which is
-/// a question for the developer rather than an error.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectResult {
-    pub binding: Option<atlas_checkpoint::Binding>,
-    pub candidates: Vec<atlas_checkpoint::RemoteWorkspace>,
-    pub matched: bool,
-    /// Locally captured Sessions now queued for the drain — non-zero only when
-    /// a Local Project was connected to an existing Cloud Project.
-    pub moved: i64,
-}
-
 /// Is `git` on this machine at all?
 ///
 /// Capture links Sessions to commits, so a machine without git gets a banner
@@ -2632,176 +1911,6 @@ pub async fn capture_git_available() -> bool {
     })
     .await
     .unwrap_or(false)
-}
-
-/// What promoting this Project to Cloud would disclose.
-///
-/// Real numbers before the decision — how many Sessions, over what dates, how
-/// many secrets were redacted on the way in. This is one of only two
-/// bulk-disclosure moments in the feature, and the developer genuinely cannot
-/// otherwise know what they are about to publish.
-#[tauri::command]
-pub async fn capture_promotion_preview(project_path: String) -> Result<PromotionPreview, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let store = open_reader(&project_path)?.ok_or("enable capture for this Project first")?;
-        let sessions = store
-            .sessions_for_project(&project_path)
-            .map_err(|e| e.to_string())?;
-
-        let secrets_redacted: u64 = sessions
-            .iter()
-            .filter_map(|s| s.redaction_counts.as_object())
-            .flat_map(|counts| counts.values())
-            .filter_map(serde_json::Value::as_u64)
-            .sum();
-
-        Ok(PromotionPreview {
-            session_count: sessions.len(),
-            earliest: sessions
-                .iter()
-                .map(|s| s.started_at)
-                .min()
-                .map(|t| t.to_rfc3339()),
-            latest: sessions
-                .iter()
-                .map(|s| s.started_at)
-                .max()
-                .map(|t| t.to_rfc3339()),
-            secrets_redacted,
-        })
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// What a promotion is about to publish.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromotionPreview {
-    pub session_count: usize,
-    pub earliest: Option<String>,
-    pub latest: Option<String>,
-    pub secrets_redacted: u64,
-}
-
-/// Promote a Local Project to Cloud, bringing its history.
-///
-/// The entire mechanism is flipping `local` rows to `pending`. There is
-/// deliberately **no separate backfill path**: the accumulated history joins the
-/// same queue as everything else, so there is one drain to keep correct rather
-/// than two, and closing Atlas mid-drain resumes for free.
-///
-/// Ordering: register on the server first (outside the store lock — a 30-second
-/// round-trip must not stall capture), then flip the binding *and* every local
-/// row in one store transaction (`promote_to_cloud`), so a crash can never
-/// leave a Cloud Project whose history is stranded as `local`. The drain
-/// additionally self-heals stray `local` rows on a Cloud Project, so the
-/// invariant is convergent rather than order-dependent.
-#[tauri::command]
-pub async fn capture_promote(
-    project_path: String,
-    org_id: String,
-    slug: String,
-    name: Option<String>,
-    visibility: Option<String>,
-    app: AppHandle,
-) -> Result<i64, String> {
-    let hook_app = app.clone();
-    let hook_path = project_path.clone();
-    let moved = tauri::async_runtime::spawn_blocking(move || -> Result<i64, String> {
-        let state = app.state::<CaptureState>();
-        let root = std::path::Path::new(&project_path);
-
-        let (root_commit_sha, git_url) = {
-            let handle = state.writer(root)?;
-            let store = lock_ok(&handle);
-            let binding = store
-                .binding()
-                .map_err(|e| e.to_string())?
-                .ok_or("enable capture for this Project first")?;
-            (binding.root_commit_sha, binding.git_url)
-        };
-
-        // Registration first, and outside the lock — cancelling or failing
-        // leaves the Project exactly as it was: still Local, still captured,
-        // nothing sent.
-        let token = token_provider(&app);
-        let config = sync_config(&project_path, &org_id, &token);
-        let remote_workspace_id = atlas_checkpoint::register_workspace(
-            &config,
-            atlas_checkpoint::Registration {
-                slug: &slug,
-                name: name.as_deref(),
-                root_commit_sha: root_commit_sha.as_deref(),
-                git_url: git_url.as_deref(),
-                visibility: visibility
-                    .as_deref()
-                    .map(atlas_checkpoint::Visibility::parse)
-                    .unwrap_or_default(),
-            },
-        )
-        .map_err(|e| e.to_string())?;
-
-        let moved = {
-            let handle = state.writer(root)?;
-            let store = lock_ok(&handle);
-            let moved = store
-                .promote_to_cloud(&project_path, &org_id, &slug, Some(&remote_workspace_id))
-                .map_err(|e| e.to_string())?;
-            approve_import_if_nothing_to_disclose(&store, root);
-            moved
-        };
-
-        state.note_drain(root);
-        Ok(moved)
-    })
-    .await
-    .map_err(|e| e.to_string())??;
-    crate::commands::artifacts_cloud::resync_targets(&hook_app, Some(&hook_path));
-    Ok(moved)
-}
-
-/// A closure the drain can call to mint or refresh an access token.
-///
-/// A closure rather than a value because tokens are short-lived and a
-/// post-promotion backlog runs far longer than one lifetime — the drain has to
-/// be able to get a fresh one *during* a long pass.
-fn token_provider(app: &AppHandle) -> impl Fn() -> Option<String> {
-    let core = app.state::<crate::commands::auth::AuthState>().core();
-    move || {
-        // Blocking on the async mint is fine here: every caller runs on a
-        // `spawn_blocking` thread or the capture worker, never a runtime core
-        // thread and never the UI thread.
-        match tauri::async_runtime::block_on(core.mint_access_token()) {
-            Ok(token) => Some(token),
-            // `None` parks the caller as "not signed in"; without this line a
-            // mint failure is indistinguishable from an unreachable registry.
-            Err(e) => {
-                tracing::warn!(target: "atlas::capture", "access token mint failed: {e:?}");
-                None
-            }
-        }
-    }
-}
-
-fn sync_config<'a>(
-    project_path: &str,
-    org_id: &str,
-    token: &'a dyn Fn() -> Option<String>,
-) -> atlas_checkpoint::SyncConfig<'a> {
-    atlas_checkpoint::SyncConfig {
-        base_url: atlas_checkpoint::sync::ingest_base(),
-        org_id: org_id.to_string(),
-        workspace_id: project_path.to_string(),
-        // Only `drain()` stamps artifacts with the wire identity, and the drain
-        // builds its own config (in `drain_for`) from the binding's registered
-        // id. The callers of this helper — slug check, registration, project
-        // listing — never produce artifacts, so the placeholder is never sent.
-        wire_workspace_id: project_path.to_string(),
-        token,
-        timeout: std::time::Duration::from_secs(30),
-        deadline: None,
-    }
 }
 
 /// A read-only view of a Project's store, or `None` if it has none.
@@ -2832,7 +1941,7 @@ fn open_reader_raw(project_path: &str) -> Result<Option<Store>, atlas_checkpoint
 /// input/output token split where ACP agents only surface a context gauge, and
 /// the importer needs to tell an in-app Session from one it read off disk.
 fn source_for(plugin_id: &str) -> Source {
-    if plugin_id == atlas_native_agent::ATLAS_AGENT_ID {
+    if plugin_id == "atlas-agent" {
         Source::Native
     } else {
         Source::Acp
@@ -3266,8 +2375,6 @@ fn process_job(job: Job, session_ids: &mut HashMap<String, String>, stores: &Sto
 const IMPORT_SCAN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// The drain retry floor and ceiling: 30 seconds doubling to 15 minutes.
-const DRAIN_BACKOFF_FLOOR: Duration = Duration::from_secs(30);
-const DRAIN_BACKOFF_CEILING: Duration = Duration::from_secs(15 * 60);
 
 /// Import a Project's transcripts, best-effort.
 ///
@@ -3306,306 +2413,6 @@ fn import_for(store: &mut Store, root: &std::path::Path) {
     }
 }
 
-/// Send everything pending for a Project, best-effort.
-///
-/// Offline is the ordinary case here, not an error: rows simply stay pending —
-/// with exponential backoff on the retry so a dead network is not hammered
-/// every 30 seconds. `forced` bypasses the backoff for explicit human actions.
-///
-/// `deadline` bounds the pass ([`SYNC_PASS_BUDGET`]); `true` when it yielded
-/// with rows still pending, so the caller queues the Project for another turn.
-fn drain_for(
-    store: &mut Store,
-    root: &std::path::Path,
-    base_url: &str,
-    token: &TokenProvider,
-    backoff: &BackoffMap,
-    forced: bool,
-    deadline: Option<Instant>,
-) -> bool {
-    let Ok(Some(binding)) = store.binding() else {
-        return false;
-    };
-    if binding.mode != ProjectMode::Cloud {
-        // Local mode is the same database with draining switched off.
-        return false;
-    }
-    let Some(org_id) = binding.org_id.clone() else {
-        return false;
-    };
-
-    // Terminal until re-registration: the server said this identity may not
-    // push, and retrying a revoked membership every 30 seconds forever is
-    // noise. `set_cloud_binding` clears the gate on a fresh registration.
-    if binding.drain_state == DrainGate::NotAuthorized {
-        return false;
-    }
-
-    // The wire identity is the server-assigned project id (slug as a
-    // fallback for bindings registered before the id was persisted) — never
-    // the local filesystem path, which no teammate shares and which would leak
-    // the developer's directory layout to the whole Organisation. A Cloud
-    // binding without either predates registration (or was half-bound by an
-    // older build) and must not drain at all.
-    if binding.remote_workspace_id.is_none() && binding.slug.is_none() {
-        warn_once_unregistered(root);
-        return false;
-    }
-
-    if !forced {
-        if let Some(entry) = lock_ok(backoff).get(root) {
-            if Instant::now() < entry.next_attempt {
-                return false;
-            }
-        }
-    }
-
-    let project_key = root.to_string_lossy().to_string();
-
-    let provider = token.clone();
-    let mint_token = move || {
-        provider
-            .lock()
-            .ok()
-            .and_then(|guard| guard.as_ref().map(|mint| mint()))
-            .flatten()
-    };
-
-    // The wire identity: the server-assigned project id, or the slug for
-    // bindings registered before the id was persisted. The gate above already
-    // guaranteed one of them exists.
-    let wire_workspace_id = binding
-        .remote_workspace_id
-        .clone()
-        .or_else(|| binding.slug.clone())
-        .expect("gated on a wire identity existing");
-
-    let config = atlas_checkpoint::SyncConfig {
-        base_url: base_url.to_string(),
-        org_id,
-        // Local row keying: `pending_artifacts` selects by the path rows were
-        // written under. The wire identity is what lands on every artifact.
-        workspace_id: project_key,
-        wire_workspace_id,
-        token: &mint_token,
-        timeout: std::time::Duration::from_secs(30),
-        deadline,
-    };
-
-    let mut yielded = false;
-    match atlas_checkpoint::drain(store, &config) {
-        Ok(outcome) if outcome.status == atlas_checkpoint::DrainStatus::NotAuthorized => {
-            // A terminal state, not a retry loop: persisted so every later tick
-            // skips the drain, and surfaced through the capture-health signal.
-            // Local capture is unaffected.
-            if let Err(e) = store.set_drain_state(DrainGate::NotAuthorized) {
-                tracing::warn!(target: "atlas::capture", "recording drain gate failed: {e}");
-            }
-            lock_ok(backoff).remove(root);
-            tracing::warn!(
-                target: "atlas::capture",
-                "no longer authorized for this project; drain stopped"
-            );
-        }
-        Ok(outcome)
-            if matches!(
-                outcome.status,
-                atlas_checkpoint::DrainStatus::Offline | atlas_checkpoint::DrainStatus::RateLimited
-            ) =>
-        {
-            // A server-sent `Retry-After` outranks the guessed exponential
-            // delay — the server knows when it wants to hear from us again.
-            bump_backoff(backoff, root, outcome.retry_after);
-        }
-        Ok(outcome) => {
-            lock_ok(backoff).remove(root);
-            yielded = outcome.status == atlas_checkpoint::DrainStatus::Yielded;
-            if outcome.sent > 0 || outcome.failed > 0 {
-                tracing::info!(
-                    target: "atlas::capture",
-                    sent = outcome.sent,
-                    failed = outcome.failed,
-                    pending = outcome.still_pending,
-                    "drained the outbox"
-                );
-            }
-        }
-        Err(e) => {
-            bump_backoff(backoff, root, None);
-            tracing::warn!(target: "atlas::capture", "drain failed: {e}");
-        }
-    }
-    yielded
-}
-
-/// The sync worker: cloud drains and transcript imports for every Project, off
-/// the recording path ([`SyncRequest`] says why).
-///
-/// Round-robin and deduplicated: `due` holds each Project at most once, however
-/// many drains were asked for; a pass that yields ([`SYNC_PASS_BUDGET`]) goes to
-/// the back, so a large backlog in one Project shares the uplink with every
-/// other Project instead of holding it until it is empty. Every thirty seconds
-/// each open Project is queued for an import scan and a (backoff-gated) drain,
-/// which is how a Project reconnects without the developer doing anything.
-///
-/// Each drain and import runs on a **sibling** connection ([`with_sibling`]):
-/// the recorder's store lock is taken only for the instant it takes to open
-/// one, so a turn is never recorded late because a Project is syncing.
-///
-/// `ingest` names the ingest server, read once per pass (the deployed one in
-/// the app; a stub in tests).
-fn sync_worker(
-    rx: mpsc::Receiver<SyncRequest>,
-    token: TokenProvider,
-    notify: Notifier,
-    stores: StoreRegistry,
-    alive: Arc<AtomicBool>,
-    ingest: Box<dyn Fn() -> String + Send>,
-) {
-    struct AliveGuard(Arc<AtomicBool>);
-    impl Drop for AliveGuard {
-        fn drop(&mut self) {
-            self.0.store(false, Ordering::Relaxed);
-        }
-    }
-    let _guard = AliveGuard(alive);
-
-    let backoff: BackoffMap = Arc::new(Mutex::new(HashMap::new()));
-    let mut queue = SyncQueue::default();
-    let mut last_scan = Instant::now();
-    let mut dirty = false;
-    let mut last_emit = Instant::now() - NOTIFY_DEBOUNCE;
-
-    loop {
-        // Block only when there is nothing to do; otherwise just take what
-        // arrived, so a new request joins the rotation at once.
-        let wait = if !queue.is_empty() {
-            Duration::ZERO
-        } else if dirty {
-            NOTIFY_DEBOUNCE
-        } else {
-            IMPORT_SCAN_INTERVAL.saturating_sub(last_scan.elapsed())
-        };
-        let first = if wait.is_zero() {
-            match rx.try_recv() {
-                Ok(request) => Some(request),
-                Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => return,
-            }
-        } else {
-            match rx.recv_timeout(wait) {
-                Ok(request) => Some(request),
-                Err(mpsc::RecvTimeoutError::Timeout) => None,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return,
-            }
-        };
-        for request in first
-            .into_iter()
-            .chain(std::iter::from_fn(|| rx.try_recv().ok()))
-        {
-            queue.push(request);
-        }
-
-        if last_scan.elapsed() >= IMPORT_SCAN_INTERVAL {
-            last_scan = Instant::now();
-            let open: Vec<PathBuf> = lock_ok(&stores)
-                .iter()
-                .filter(|(_, h)| h.is_writer)
-                .map(|(root, _)| root.clone())
-                .collect();
-            for root in open {
-                queue.push(SyncRequest::Import {
-                    project_root: root.clone(),
-                });
-                queue.push(SyncRequest::Drain {
-                    project_root: root,
-                    forced: false,
-                });
-            }
-        }
-
-        // One import and one drain pass, then back to the channel.
-        if let Some(root) = queue.next_import() {
-            if with_sibling(&stores, &root, |store| import_for(store, &root)).is_some() {
-                dirty = true;
-            }
-        }
-        if let Some((root, forced)) = queue.next_drain() {
-            let deadline = Some(Instant::now() + SYNC_PASS_BUDGET);
-            let base_url = ingest();
-            let yielded = with_sibling(&stores, &root, |store| {
-                drain_for(store, &root, &base_url, &token, &backoff, forced, deadline)
-            });
-            if yielded == Some(true) {
-                queue.requeue(root);
-            }
-            dirty = true;
-        }
-
-        if dirty && last_emit.elapsed() >= NOTIFY_DEBOUNCE {
-            dirty = false;
-            last_emit = Instant::now();
-            if let Some(app) = lock_ok(&notify).as_ref() {
-                let _ = app.emit(CAPTURE_CHANGED, ());
-            }
-        }
-    }
-}
-
-/// What the sync worker has to do: each Project at most once per kind, in
-/// arrival order, with "forced" remembered for a drain asked for more than
-/// once.
-#[derive(Default)]
-struct SyncQueue {
-    drains: std::collections::VecDeque<PathBuf>,
-    forced: std::collections::HashSet<PathBuf>,
-    imports: std::collections::VecDeque<PathBuf>,
-}
-
-impl SyncQueue {
-    fn is_empty(&self) -> bool {
-        self.drains.is_empty() && self.imports.is_empty()
-    }
-
-    fn push(&mut self, request: SyncRequest) {
-        match request {
-            SyncRequest::Drain {
-                project_root,
-                forced,
-            } => {
-                if forced {
-                    self.forced.insert(project_root.clone());
-                }
-                if !self.drains.contains(&project_root) {
-                    self.drains.push_back(project_root);
-                }
-            }
-            SyncRequest::Import { project_root } => {
-                if !self.imports.contains(&project_root) {
-                    self.imports.push_back(project_root);
-                }
-            }
-        }
-    }
-
-    fn next_drain(&mut self) -> Option<(PathBuf, bool)> {
-        let root = self.drains.pop_front()?;
-        let forced = self.forced.remove(&root);
-        Some((root, forced))
-    }
-
-    fn next_import(&mut self) -> Option<PathBuf> {
-        self.imports.pop_front()
-    }
-
-    /// A drain that yielded goes to the back of the line.
-    fn requeue(&mut self, root: PathBuf) {
-        if !self.drains.contains(&root) {
-            self.drains.push_back(root);
-        }
-    }
-}
-
 /// Runs `f` on a **sibling** of the Project's writing store — a connection of
 /// its own under the same writer lock ([`Store::sibling`]) — so long work
 /// never holds the store the recorder writes through. `None` when the Project
@@ -3639,78 +2446,6 @@ fn with_sibling<R>(
         Err(_) => {
             tracing::error!(target: "atlas::capture", project = %root.display(), "capture sync pass panicked; continuing");
             None
-        }
-    }
-}
-
-/// Double the retry delay for a root, clamped to the ceiling; a server-sent
-/// `Retry-After` hint raises (never lowers past itself) the wait.
-fn bump_backoff(backoff: &BackoffMap, root: &std::path::Path, retry_after: Option<Duration>) {
-    let mut map = lock_ok(backoff);
-    let doubled = map
-        .get(root)
-        .map(|entry| (entry.delay * 2).min(DRAIN_BACKOFF_CEILING))
-        .unwrap_or(DRAIN_BACKOFF_FLOOR);
-    let delay = retry_after.map_or(doubled, |hint| hint.max(doubled));
-    map.insert(
-        root.to_path_buf(),
-        DrainBackoff {
-            next_attempt: Instant::now() + delay,
-            delay,
-        },
-    );
-}
-
-/// Log the "Cloud binding with no wire identity" condition once per root, not
-/// every 30 seconds forever.
-fn warn_once_unregistered(root: &std::path::Path) {
-    use std::sync::OnceLock;
-    static WARNED: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
-    let warned = WARNED.get_or_init(|| Mutex::new(HashSet::new()));
-    if lock_ok(warned).insert(root.to_path_buf()) {
-        tracing::warn!(
-            target: "atlas::capture",
-            project = %root.display(),
-            "cloud project has no server identity (no remote id, no slug); drain skipped"
-        );
-    }
-}
-
-/// Where this Project's agent transcripts live.
-///
-/// Claude Code encodes the project directory into a folder name under
-/// `~/.claude/projects/`; the encoding lives in `atlas-agent-transcript`, so it
-/// is reused rather than reproduced.
-///
-/// This is the checkpoint importer, whose contract (research §C9 touchpoint
-/// #11) explicitly survives the history port: Atlas stopped *reading* CLI
-/// storage for its UI, and never touches these files.
-/// After Promote or Connect: approve the transcript import when it would
-/// disclose nothing.
-///
-/// Binding to Cloud clears the import gate, and the gate exists so a bulk
-/// publish of on-disk transcripts is always shown first. Create → Cloud shows
-/// that preview and confirming it — even an empty one, "new sessions sync from
-/// now on" — approves the gate. Promote and Connect never show it, so they left
-/// the gate closed with nothing behind it: a "History import is waiting for
-/// your review" banner leading to an empty dialog, and future transcripts that
-/// would not sync until someone clicked through it. With nothing to import
-/// there is nothing to disclose, so approve exactly as Create's empty confirm
-/// does. Anything to import keeps the gate and the banner — that review is the
-/// point. Best-effort: a failure leaves the gate closed, the safe side.
-fn approve_import_if_nothing_to_disclose(store: &Store, root: &std::path::Path) {
-    let nothing_to_import = match transcript_source_for(root) {
-        None => true,
-        Some(source) => {
-            let path = root.to_string_lossy();
-            atlas_checkpoint::import::preview_with_store(store, &path, &source, ProjectMode::Cloud)
-                .new_session_count
-                == 0
-        }
-    };
-    if nothing_to_import {
-        if let Err(e) = store.set_import_approved(true) {
-            tracing::warn!(target: "atlas::capture", "could not approve an empty import: {e}");
         }
     }
 }
@@ -4699,251 +3434,5 @@ mod diff_path_tests {
             std::path::Path::new("/repo")
         )
         .is_none());
-    }
-}
-
-#[cfg(test)]
-mod sync_worker_tests {
-    //! Syncing never blocks recording, and one Project's backlog never blocks
-    //! another's sync. The real [`sync_worker`] against a slow stub ingest.
-
-    use std::io::{BufRead, BufReader, Read, Write};
-    use std::net::TcpListener;
-
-    use atlas_checkpoint::{Capture, Role, SessionKey, Source, SyncState, TurnContent};
-
-    use super::*;
-
-    #[test]
-    fn a_drain_asked_for_twice_is_queued_once_and_remembers_it_was_forced() {
-        let (a, b) = (PathBuf::from("/a"), PathBuf::from("/b"));
-        let mut queue = SyncQueue::default();
-        queue.push(SyncRequest::Drain {
-            project_root: a.clone(),
-            forced: false,
-        });
-        queue.push(SyncRequest::Drain {
-            project_root: b.clone(),
-            forced: false,
-        });
-        queue.push(SyncRequest::Drain {
-            project_root: a.clone(),
-            forced: true,
-        });
-        queue.push(SyncRequest::Import {
-            project_root: a.clone(),
-        });
-        queue.push(SyncRequest::Import {
-            project_root: a.clone(),
-        });
-        assert_eq!(
-            queue.next_drain(),
-            Some((a.clone(), true)),
-            "once, and forced"
-        );
-        assert_eq!(queue.next_drain(), Some((b, false)));
-        assert_eq!(queue.next_drain(), None);
-        assert_eq!(queue.next_import(), Some(a));
-        assert_eq!(queue.next_import(), None);
-        assert!(queue.is_empty());
-    }
-
-    #[test]
-    fn a_yielded_drain_goes_to_the_back_of_the_line() {
-        let (a, b) = (PathBuf::from("/a"), PathBuf::from("/b"));
-        let mut queue = SyncQueue::default();
-        queue.push(SyncRequest::Drain {
-            project_root: a.clone(),
-            forced: true,
-        });
-        queue.push(SyncRequest::Drain {
-            project_root: b.clone(),
-            forced: true,
-        });
-        let (first, _) = queue.next_drain().unwrap();
-        queue.requeue(first);
-        assert_eq!(
-            queue.next_drain().map(|(r, _)| r),
-            Some(b),
-            "b's turn before a's second pass"
-        );
-        assert_eq!(queue.next_drain().map(|(r, _)| r), Some(a));
-    }
-
-    /// An ingest that accepts every batch after `delay`, counting batches per
-    /// wire project id.
-    fn slow_ingest(delay: Duration) -> (String, Arc<Mutex<HashMap<String, usize>>>) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let batches: Arc<Mutex<HashMap<String, usize>>> = Arc::default();
-        let seen = batches.clone();
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { break };
-                let seen = seen.clone();
-                std::thread::spawn(move || {
-                    let mut reader = BufReader::new(stream.try_clone().unwrap());
-                    let mut line = String::new();
-                    let _ = reader.read_line(&mut line);
-                    let mut length = 0usize;
-                    loop {
-                        let mut header = String::new();
-                        if reader.read_line(&mut header).unwrap_or(0) == 0
-                            || header.trim().is_empty()
-                        {
-                            break;
-                        }
-                        if let Some((k, v)) = header.split_once(':') {
-                            if k.trim().eq_ignore_ascii_case("content-length") {
-                                length = v.trim().parse().unwrap_or(0);
-                            }
-                        }
-                    }
-                    let mut body = vec![0u8; length];
-                    let _ = reader.read_exact(&mut body);
-                    let body = String::from_utf8_lossy(&body);
-                    for wire in ["rw-a", "rw-b"] {
-                        if body.contains(wire) {
-                            *seen.lock().unwrap().entry(wire.to_string()).or_default() += 1;
-                        }
-                    }
-                    std::thread::sleep(delay);
-                    let _ = stream
-                        .write_all(b"HTTP/1.1 202 Accepted\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
-                });
-            }
-        });
-        (url, batches)
-    }
-
-    /// A cloud-bound Project with `sessions` recorded Sessions pending.
-    fn cloud_project(dir: &Path, wire: &str, sessions: usize) -> StoreHandle {
-        let root = dir.to_string_lossy().to_string();
-        let mut store = Store::open(atlas_checkpoint::atlas_dir(dir)).unwrap();
-        atlas_checkpoint::bind(&store, &root, dir, ProjectMode::Local).unwrap();
-        store
-            .promote_to_cloud(&root, "org-1", wire, Some(wire))
-            .unwrap();
-        for i in 0..sessions {
-            record(&mut store, &root, &format!("{wire}-{i}"));
-        }
-        StoreHandle {
-            store: Arc::new(Mutex::new(store)),
-            is_writer: true,
-        }
-    }
-
-    fn record(store: &mut Store, root: &str, native: &str) {
-        let mut capture = Capture::new(store, ProjectMode::Cloud);
-        let key = SessionKey {
-            workspace_id: root.to_string(),
-            source: Source::Native,
-            native_session_id: native.into(),
-        };
-        let session = capture
-            .record_prompt(&key, "do the thing", 1, None, None, None)
-            .unwrap();
-        capture
-            .record_turn(
-                &session,
-                TurnContent {
-                    turn_seq: 1,
-                    native_message_id: Some(format!("{native}-m")),
-                    role: Role::Assistant,
-                    mode: atlas_checkpoint::Mode::Text,
-                    body: "done".into(),
-                    created_at: None,
-                },
-            )
-            .unwrap();
-    }
-
-    fn pending(handle: &StoreHandle, root: &Path) -> i64 {
-        lock_ok(&handle.store)
-            .row_count_in_state(&root.to_string_lossy(), SyncState::Pending)
-            .unwrap()
-    }
-
-    /// The case reported: Project A was promoted with a large local backlog.
-    /// While A syncs, (1) a turn in A records at once, (2) Project B's small
-    /// queue is sent without waiting for A's backlog, and (3) A still drains
-    /// completely, including what was recorded mid-sync.
-    #[test]
-    fn a_projects_backlog_blocks_neither_recording_nor_another_projects_sync() {
-        let (a_dir, b_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let a = cloud_project(a_dir.path(), "rw-a", 300);
-        let b = cloud_project(b_dir.path(), "rw-b", 1);
-        let (a_root, b_root) = (a_dir.path().to_path_buf(), b_dir.path().to_path_buf());
-        let stores: StoreRegistry = Arc::default();
-        lock_ok(&stores).insert(a_root.clone(), a.clone());
-        lock_ok(&stores).insert(b_root.clone(), b.clone());
-
-        let (url, batches) = slow_ingest(Duration::from_millis(900));
-        let token: TokenProvider = Arc::new(Mutex::new(Some(Box::new(|| Some("t".to_string())))));
-        let (tx, rx) = mpsc::channel();
-        let worker = std::thread::spawn(move || {
-            let ingest: Box<dyn Fn() -> String + Send> = Box::new(move || url.clone());
-            sync_worker(
-                rx,
-                token,
-                Arc::default(),
-                stores,
-                Arc::new(AtomicBool::new(true)),
-                ingest,
-            )
-        });
-        tx.send(SyncRequest::Drain {
-            project_root: a_root.clone(),
-            forced: true,
-        })
-        .unwrap();
-        tx.send(SyncRequest::Drain {
-            project_root: b_root.clone(),
-            forced: true,
-        })
-        .unwrap();
-
-        // (1) A is mid-upload: its recorder's store is free, a turn records now.
-        let started = Instant::now();
-        while batches.lock().unwrap().get("rw-a").copied().unwrap_or(0) == 0 {
-            assert!(
-                started.elapsed() < Duration::from_secs(20),
-                "A never started syncing"
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        let recorded = Instant::now();
-        record(
-            &mut lock_ok(&a.store),
-            &a_root.to_string_lossy(),
-            "live-during-sync",
-        );
-        assert!(
-            recorded.elapsed() < Duration::from_millis(500),
-            "recording in A waited {:?}",
-            recorded.elapsed()
-        );
-
-        // (2) B's queue is sent while A still has a backlog.
-        while pending(&b, &b_root) > 0 {
-            assert!(
-                started.elapsed() < Duration::from_secs(30),
-                "B was never synced"
-            );
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        assert!(pending(&a, &a_root) > 0, "B waited for A's whole backlog");
-
-        // (3) A still finishes, including what was recorded mid-sync.
-        while pending(&a, &a_root) > 0 {
-            assert!(
-                started.elapsed() < Duration::from_secs(90),
-                "A never finished: {} pending",
-                pending(&a, &a_root)
-            );
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        drop(tx);
-        worker.join().unwrap();
     }
 }

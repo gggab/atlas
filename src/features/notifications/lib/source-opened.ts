@@ -10,7 +10,7 @@
  * `resolve-rules.ts`.
  */
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import { useCommsStore } from "@/features/comms/stores/comms-store";
+
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { collectPanes, useTerminalStore } from "@/features/terminal/stores/terminal-store";
 import { isWindowFocused, onWindowFocusChange } from "@/lib/window-focus";
@@ -37,9 +37,7 @@ function visibleSources(): OpenedSource[] {
       if (terminalIds.length > 0) out.push({ type: "terminal", tabId, terminalIds });
     }
   }
-  const comms = useCommsStore.getState();
-  const conv = comms.tabs.find((t) => t.id === comms.activeTabId);
-  if (comms.panelOpen && conv?.convId) out.push({ type: "chat-conversation", convId: conv.convId });
+
   return out;
 }
 
@@ -57,7 +55,6 @@ export function initSourceOpenedClearing(): () => void {
   const unsubs = [
     useLayoutStore.subscribe(onChange),
     useTerminalStore.subscribe(onChange),
-    useCommsStore.subscribe(onChange),
     onWindowFocusChange((focused) => {
       if (focused) run(true);
     }),

@@ -32,15 +32,10 @@ import type { SessionSummary } from "@/features/artifacts/types";
 import type {
   Binding,
   CaptureHealth,
-  ConnectOptions,
-  ConnectResult,
   Detection,
   HealthIssue,
   HealthState,
   ImportPreview,
-  PromotionPreview,
-  RemoteWorkspace,
-  SlugAvailability,
 } from "@/features/capture/types";
 import type { TypedHandlers, Unread } from "../types";
 import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
@@ -57,8 +52,6 @@ interface ProjectCapture {
   preview: ImportPreview;
   /** Counts health reports; the popover's retry moves failed → pending. */
   flaggedSessions: number;
-  failedRows: number;
-  pendingRows: number;
   /** A watcher this Project expects but does not have — the `stopped` issue
    *  that `capture_retry_watcher` is allowed to heal. */
   watcherStopped: boolean;
@@ -117,8 +110,6 @@ const PROJECTS = new Map<string, ProjectCapture>([
         isBulkDisclosure: false,
       },
       flaggedSessions: 2,
-      failedRows: 3,
-      pendingRows: 12,
       watcherStopped: false,
       localRows: 386,
       secretsRedacted: 7,
@@ -130,10 +121,10 @@ const PROJECTS = new Map<string, ProjectCapture>([
       binding: binding({
         workspaceId: ALL_PROJECTS[1].id,
         root: ALL_PROJECTS[1].path,
-        mode: "cloud",
+        mode: "local",
         slug: "platform-migration",
-        orgId: "remote-org-acme",
-        remoteWorkspaceId: "rw_8c41f20b",
+        orgId: null,
+        remoteWorkspaceId: null,
         rootCommitSha: "3ad90f7c22b41e8d5a6790cf1b4e2d83a0c95716",
         gitUrl: "https://github.com/acme/platform-migration.git",
         // A shallow clone's fingerprint is a graft boundary, so Connect warns
@@ -144,7 +135,7 @@ const PROJECTS = new Map<string, ProjectCapture>([
         importApproved: false,
         // Terminal until re-registration — the `degraded` issue underneath the
         // watcher one, which is what makes the banner a two-line stack.
-        drainState: "not_authorized",
+        drainState: "ok",
       }),
       detection: {
         root: ALL_PROJECTS[1].path,
@@ -164,9 +155,7 @@ const PROJECTS = new Map<string, ProjectCapture>([
         isBulkDisclosure: true,
       },
       flaggedSessions: 0,
-      failedRows: 0,
       // A backlog large enough that the queue row is worth reading.
-      pendingRows: 128,
       watcherStopped: true,
       localRows: 0,
       secretsRedacted: 0,
@@ -196,8 +185,6 @@ const PROJECTS = new Map<string, ProjectCapture>([
         isBulkDisclosure: false,
       },
       flaggedSessions: 0,
-      failedRows: 0,
-      pendingRows: 0,
       watcherStopped: false,
       localRows: 0,
       secretsRedacted: 0,
@@ -227,8 +214,6 @@ function unknownProject(root: string): ProjectCapture {
       isBulkDisclosure: false,
     },
     flaggedSessions: 0,
-    failedRows: 0,
-    pendingRows: 0,
     watcherStopped: false,
     localRows: 0,
     secretsRedacted: 0,
@@ -255,8 +240,6 @@ const off = (summary: string): CaptureHealth => ({
   summary,
   issues: [],
   flaggedSessions: 0,
-  failedRows: 0,
-  pendingRows: 0,
 });
 
 /**
@@ -278,28 +261,13 @@ function healthOf(project: ProjectCapture): CaptureHealth {
       nextStep: "Click to retry. Commits made meanwhile are still picked up.",
     });
   }
-  if (bound.mode === "cloud" && bound.drainState === "not_authorized") {
-    issues.push({
-      state: "degraded",
-      reason:
-        "No longer authorized to sync with your Organisation — new work stays on this machine.",
-      nextStep:
-        "Reconnect or re-register this Project to resume syncing. Capture itself continues.",
-    });
-  }
+
   if (project.flaggedSessions > 0) {
     issues.push({
       state: "degraded",
       reason: `${project.flaggedSessions} Session${plural(project.flaggedSessions)} could not be fully recorded.`,
       nextStep:
         "Open the Session to see what was flagged. Content that could not be scrubbed was not stored.",
-    });
-  }
-  if (project.failedRows > 0) {
-    issues.push({
-      state: "degraded",
-      reason: `${project.failedRows} record${plural(project.failedRows)} could not be sent to your Organisation.`,
-      nextStep: "They are skipped so the rest keep syncing. Retry from the sync status.",
     });
   }
 
@@ -311,9 +279,7 @@ function healthOf(project: ProjectCapture): CaptureHealth {
 
   const summary =
     issues.length === 0
-      ? project.pendingRows > 0
-        ? `${project.pendingRows} pending`
-        : "Synced"
+      ? "Recording locally"
       : issues.length === 1
         ? issues[0].reason
         : `${state === "stopped" ? "Capture stopped" : "Capture degraded"} — ${issues.length} issues need attention`;
@@ -323,60 +289,8 @@ function healthOf(project: ProjectCapture): CaptureHealth {
     summary,
     issues,
     flaggedSessions: project.flaggedSessions,
-    failedRows: project.failedRows,
-    pendingRows: project.pendingRows,
   };
 }
-
-// ── Cloud ─────────────────────────────────────────────────────────────────
-
-/**
- * What the Organisation would list back. One entry shares this repository's
- * root commit (so Connect can preselect it), the rest do not — a list where
- * everything matches never exercises the picker.
- */
-const REMOTE_WORKSPACES: RemoteWorkspace[] = [
-  {
-    id: "rw_8c41f20b",
-    slug: "platform-migration",
-    rootCommitSha: "3ad90f7c22b41e8d5a6790cf1b4e2d83a0c95716",
-    gitUrl: "https://github.com/acme/platform-migration.git",
-    name: "Platform Migration",
-    visibility: "org",
-  },
-  {
-    id: "rw_1d55e903",
-    slug: "acme-app",
-    rootCommitSha: "9f2c1ab4d7e6058c3b1f24a97de0c5b8ef31a204",
-    gitUrl: "https://github.com/acme/acme-app.git",
-    name: "Acme App",
-    visibility: "org",
-  },
-  {
-    // No remote at all: binds fine, and the row has to render without the
-    // second line the others get.
-    id: "rw_44b0c7de",
-    slug: "internal-scratch",
-    rootCommitSha: null,
-    gitUrl: null,
-    // Registered before the server carried a display name, and members-only.
-    name: null,
-    visibility: "restricted",
-  },
-  {
-    id: "rw_9ae62f10",
-    slug: "acme-design-tokens-and-theme-primitives",
-    rootCommitSha: "aa7c30991fe2b48d05c7361a9e84bb2f7d0c5514",
-    gitUrl: "https://github.com/acme/design-tokens.git",
-    name: "Design Tokens",
-    visibility: "org",
-  },
-];
-
-/** Slugs the server already holds, so the field can say "taken" for real. */
-const TAKEN_SLUGS = new Set(["acme-app", "platform-migration", "docs", "atlas"]);
-
-// ── Sessions ──────────────────────────────────────────────────────────────
 
 /**
  * The persisted record behind the chat usage popup.
@@ -433,16 +347,9 @@ export interface CaptureResponses {
   capture_disable: Unread;
   capture_git_init: Unread;
   capture_git_available: boolean;
-  capture_retry_failed: Unread;
+
   capture_retry_watcher: CaptureHealth;
   capture_import_confirm: Unread;
-  capture_slug_available: SlugAvailability;
-  capture_connect_options: ConnectOptions;
-  capture_register_cloud: Unread;
-  capture_connect: ConnectResult;
-  capture_switch_project: ConnectResult;
-  capture_promotion_preview: PromotionPreview;
-  capture_promote: Unread;
 }
 
 export const captureHandlers: TypedHandlers<CaptureResponses> = {
@@ -467,7 +374,7 @@ export const captureHandlers: TypedHandlers<CaptureResponses> = {
   capture_enable: ({ projectPath, mode }): Binding => {
     // Rejected exactly as Rust rejects it: a Cloud Project must be settled
     // server-side first, or its rows queue forever with nowhere to go.
-    if (String(mode) === "cloud") {
+    if (String(mode) === "local") {
       throw new Error("Cloud requires registration — use capture_register_cloud");
     }
     const project = projectFor(projectPath);
@@ -508,17 +415,6 @@ export const captureHandlers: TypedHandlers<CaptureResponses> = {
     return project.binding;
   },
 
-  capture_retry_failed: ({ projectPath }): number => {
-    const project = projectFor(projectPath);
-    const retried = project.failedRows;
-    project.failedRows = 0;
-    // Retry is `failed → pending`, not `failed → sent`: the queue grows by
-    // exactly what the warning was counting.
-    project.pendingRows += retried;
-    captureChanged();
-    return retried;
-  },
-
   capture_retry_watcher: ({ projectPath }): CaptureHealth => {
     const project = projectFor(projectPath);
     // The restart succeeds here, so the banner loses its `stopped` line and
@@ -534,142 +430,17 @@ export const captureHandlers: TypedHandlers<CaptureResponses> = {
     const project = projectFor(projectPath);
     if (project.binding) project.binding = { ...project.binding, importApproved: true };
     // The approved transcripts join the same queue as everything else.
-    project.pendingRows += project.preview.newSessionCount;
     project.preview = { ...project.preview, newSessionCount: 0 };
     captureChanged();
     return null;
   },
 
   // ── Cloud ───────────────────────────────────────────────────────────────
-  capture_slug_available: ({ slug }): SlugAvailability => {
-    const wanted = String(slug).trim();
-    if (TAKEN_SLUGS.has(wanted)) return "taken";
-    // "Couldn't check" is a third state, not a nicer way of saying taken — any
-    // slug naming the outage reproduces it on demand.
-    if (wanted.includes("offline")) return "unknown";
-    return "available";
-  },
-
-  capture_connect_options: ({ orgId }): ConnectOptions => {
-    // An Organisation with nothing in it yet: the picker has its own empty
-    // state and no other fixture reaches it.
-    if (String(orgId).endsWith("-empty")) {
-      return { workspaces: [], preselected: null, warning: null };
-    }
-    return {
-      workspaces: REMOTE_WORKSPACES,
-      preselected: "rw_8c41f20b",
-      // Preselected *and* warned: a shallow clone's fingerprint is a graft
-      // boundary, so even a match is worth flagging.
-      warning: "This is a shallow clone, so its fingerprint is not authoritative.",
-    };
-  },
-
-  capture_register_cloud: ({ projectPath, orgId, slug }): Binding => {
-    const project = projectFor(projectPath);
-    // Registration needs a binding to read fingerprints from; the popover's
-    // Confirm runs enable-Local first for exactly this reason.
-    if (!project.binding) throw new Error("enable capture for this Project first");
-    project.binding = {
-      ...project.binding,
-      mode: "cloud",
-      slug: String(slug),
-      orgId: String(orgId),
-      remoteWorkspaceId: `rw_${String(slug).slice(0, 8)}`,
-      // Registration alone discloses nothing — `capture_import_confirm` is the
-      // only thing that sets this.
-      importApproved: false,
-      drainState: "ok",
-    };
-    captureChanged();
-    return project.binding;
-  },
 
   // The server, not the client, decides whether a pick binds. `internal-scratch`
   // stands in for the refusal-to-guess answer so the popover's ambiguous branch
   // is reachable without two repositories that share a root commit.
-  capture_connect: ({ projectPath, orgId, slug, workspaceId }): ConnectResult => {
-    const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Project first");
-    if (String(slug) === "internal-scratch") {
-      return {
-        binding: null,
-        candidates: REMOTE_WORKSPACES.slice(0, 2),
-        matched: false,
-        moved: 0,
-      };
-    }
-    project.binding = {
-      ...project.binding,
-      mode: "cloud",
-      slug: String(slug),
-      orgId: String(orgId),
-      remoteWorkspaceId: String(workspaceId),
-      importApproved: false,
-      drainState: "ok",
-    };
-    captureChanged();
-    return { binding: project.binding, candidates: [], matched: true, moved: 0 };
-  },
 
   // Cloud→Cloud. The server has no move, so the whole history is re-queued
   // for the new destination — the pending count jumps by everything sent.
-  capture_switch_project: ({ projectPath, orgId, slug, workspaceId }): ConnectResult => {
-    const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Project first");
-    if (project.binding.mode !== "cloud") {
-      throw new Error("this Project is not on Cloud yet — promote it first");
-    }
-    if (String(slug) === "internal-scratch") {
-      return {
-        binding: null,
-        candidates: REMOTE_WORKSPACES.slice(0, 2),
-        matched: false,
-        moved: 0,
-      };
-    }
-    // Everything already sent plus what failed against the old destination.
-    const moved = project.preview.newSessionCount + project.failedRows;
-    project.pendingRows += moved;
-    project.failedRows = 0;
-    project.binding = {
-      ...project.binding,
-      slug: String(slug),
-      orgId: String(orgId),
-      remoteWorkspaceId: String(workspaceId),
-      drainState: "ok",
-    };
-    captureChanged();
-    return { binding: project.binding, candidates: [], matched: true, moved };
-  },
-
-  capture_promotion_preview: ({ projectPath }): PromotionPreview => {
-    const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Project first");
-    return {
-      sessionCount: project.preview.sessionCount,
-      earliest: project.preview.earliest,
-      latest: project.preview.latest,
-      secretsRedacted: project.secretsRedacted,
-    };
-  },
-
-  capture_promote: ({ projectPath, orgId, slug }): number => {
-    const project = projectFor(projectPath);
-    if (!project.binding) throw new Error("enable capture for this Project first");
-    // Promotion *is* flipping local rows to pending — there is no separate
-    // backfill — so the pending queue jumps by the whole accumulated history.
-    const promoted = project.localRows;
-    project.localRows = 0;
-    project.pendingRows += promoted;
-    project.binding = {
-      ...project.binding,
-      mode: "cloud",
-      slug: String(slug),
-      orgId: String(orgId),
-      remoteWorkspaceId: `rw_${String(slug).slice(0, 8)}`,
-    };
-    captureChanged();
-    return promoted;
-  },
 };

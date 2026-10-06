@@ -19,7 +19,7 @@ import type { ImageAttachment } from "@/types/agents";
 // Shared so a row without images keeps a stable prop for the row's `memo`.
 const NO_ATTACHMENTS: readonly ImageAttachment[] = Object.freeze([]);
 import { isBashToolCall, bashCommandOf } from "./tool-calls";
-import { orgToolOf, orgToolRow } from "@/features/org-actions/lib/org-tool-rows";
+
 import { parseShellCommand } from "./parse-shell-command";
 import {
   getFilePathFromInput,
@@ -568,17 +568,7 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
   // the diff blocks did. It is what the diff viewer lands on.
   const path = argsPath ?? edit?.path ?? null;
 
-  const orgTool = orgToolOf(tc.toolName);
-  if (orgTool) {
-    // An organisation call (ADR-0014): the organisation icon, and the line
-    // that names what it was about — the member, conversation or recorded
-    // session — from the table the Logs row reads too. A failed call's text
-    // is its reason, so only a settled success's answer improves the name.
-    const row = orgToolRow(orgTool, args, tc.status === "completed" ? tc.result : null);
-    tool = "org";
-    verb = row.verb;
-    detail = row.detail;
-  } else if (isBashToolCall(tc)) {
+  if (isBashToolCall(tc)) {
     // Every one of these is the same tool. What separates `cat file` from
     // `cargo test` is the command itself, so that is what gets read — see
     // `parse-shell-command.ts` for why this is a port and not a wire field.

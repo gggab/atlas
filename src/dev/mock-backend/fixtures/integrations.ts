@@ -16,24 +16,10 @@
 // cloning a repo, dropping a PDF highlight — all of them change what the next
 // read returns, for the life of the page.
 
-import { emit } from "@tauri-apps/api/event";
-import type {
-  AccountOrg,
-  AuthSnapshot,
-  CreatedOrg,
-  OrgInvitation,
-  OrgMember,
-  Role,
-} from "@/features/auth/lib/auth-api";
-import type {
-  CaptureResult,
-  FeedbackPayload,
-  FeedbackReceipt,
-} from "@/features/feedback/lib/feedback-api";
 import type { ClonedRepo, GithubRepo, RepoMeta } from "@/features/github/types";
 import type { PdfAnnotation } from "@/features/pdf/stores/pdf-annotation-store";
-import type { TypedHandlers, Unit, Unread } from "../types";
-import { abs, MOCK_ORG_ID } from "../project";
+import type { TypedHandlers, Unread } from "../types";
+import { abs } from "../project";
 
 /**
  * Fail a command the way Rust fails it.
@@ -55,225 +41,6 @@ function fail(message: string): never {
 const NOW = Date.parse("2026-09-18T11:30:00Z");
 const DAY = 86_400_000;
 const iso = (offsetDays: number) => new Date(NOW + offsetDays * DAY).toISOString();
-
-// ── Auth: identity ──────────────────────────────────────────────────────────
-
-/**
- * A second organisation, so the switcher has something to switch *to* and the
- * non-admin path has somewhere to live: the account is a plain `member` here,
- * which is what makes `auth_list_invitations` reject below.
- *
- * It reaches the local switcher through `mergeServerOrgs`, which appends any
- * server org it cannot adopt — see the note on `ACME` for the adoption half.
- */
-const SECOND_ORG_ID = "org-northwind";
-
-/**
- * The account's view of the project's own org.
- *
- * `id` matches `project.ts`'s `organisations[0].remoteId` and the name
- * matches its `name`, **on purpose and in that order of importance**:
- * `members-modal` keys its entire roster off `org.remoteId`, so an id that
- * disagrees opens the modal onto an empty table that looks like a UI bug. The
- * name is what `org-store.mergeServerOrgs` reconciles onto the linked row —
- * and what its adoption path would match on, if that entry ever loses its
- * `remoteId` again.
- */
-const ACME: AccountOrg = { id: MOCK_ORG_ID, name: "Acme", role: "admin" };
-const NORTHWIND: AccountOrg = { id: SECOND_ORG_ID, name: "Northwind Labs", role: "member" };
-
-/** The signed-in account. The avatar points at a real seeded PNG in the fake
- *  tree, so `convertFileSrc` resolves it to an image instead of a broken one —
- *  the initials fallback is exercised by the members below, which have none. */
-const SIGNED_IN: AuthSnapshot = {
-  status: "signed-in",
-  user: {
-    id: "usr_dev",
-    name: "Dev Halvorsen",
-    email: "dev@acme.dev",
-    avatarPath: abs("public/logo.png"),
-  },
-  orgs: [ACME, NORTHWIND],
-  activeOrgId: MOCK_ORG_ID,
-  commsOrgId: MOCK_ORG_ID,
-};
-
-let snapshot: AuthSnapshot = structuredClone(SIGNED_IN);
-
-/** The pending `auth_sign_in` grant, so cancelling actually cancels it. */
-let grantTimer: number | null = null;
-
-/** Every auth transition Rust makes is broadcast to every window; App.tsx
- *  folds the org list into the switcher from this event and nothing else, so a
- *  mutation that forgets to emit changes Rust's mind and not the screen. */
-function broadcast(): null {
-  void emit("atlas:auth-changed", snapshot);
-  return null;
-}
-
-/** The orgs of whatever state we are currently in — `[]` for signed-out, which
- *  is also what stops the org commands below from mutating a dead snapshot. */
-const currentOrgs = (): AccountOrg[] =>
-  snapshot.status === "signed-in" ? (snapshot.orgs ?? []) : [];
-
-// ── Auth: members and invitations ───────────────────────────────────────────
-
-const member = (
-  id: string,
-  name: string,
-  email: string,
-  role: Role | null,
-  extra: Partial<OrgMember> = {},
-): OrgMember => ({
-  id,
-  userId: `usr-${id.slice(4)}`,
-  name,
-  email,
-  role,
-  createdAt: iso(-200),
-  avatarPath: null,
-  ...extra,
-});
-
-/**
- * Acme's roster, chosen for the rows that are easy to break rather than for
- * plausibility, and shared with team chat: every author name in `comms.ts`
- * resolves through this list (`members-store` reads `auth_list_members`), so
- * the `userId`s here are the comms message authors and a spelling change on
- * either side turns a message's byline into "Unknown".
- * the signed-in user themself (the row whose destructive
- * controls are suppressed), a name far past any column width, a member the
- * server never gave a display name, and one whose role this build does not
- * know — `null`, which must render as no label rather than as "Member".
- */
-const ACME_MEMBERS: OrgMember[] = [
-  member("mem-dev", "Dev Halvorsen", "dev@acme.dev", "admin", {
-    // Same id as the signed-in user, which is what `isSelf` compares.
-    userId: "usr_dev",
-    avatarPath: abs("public/logo.png"),
-    createdAt: iso(-412),
-  }),
-  member("mem-priya", "Priya Raghunathan", "priya@acme.dev", "product_owner", {
-    userId: "usr_priya",
-    createdAt: iso(-311),
-  }),
-  member(
-    "mem-max",
-    "Maximilian Alexander Featherstonehaugh-Wetherby III",
-    "maximilian.featherstonehaugh-wetherby@acme-industries-worldwide.example",
-    "developer",
-    // A roster row only: nobody by this id writes in the fixtures, so the
-    // truncation stress stays on the members screen and out of every byline.
-    { userId: "usr_max" },
-  ),
-  member("mem-mira", "Mirabel Fitzgerald-Okonkwo", "mirabel.fitzgerald@acme.dev", "developer", {
-    userId: "usr_mira",
-    createdAt: iso(-140),
-  }),
-  // The server has an account but no display name for it — a real state for an
-  // invite accepted from an email link and never completed.
-  member("mem-blank", "", "j.okonkwo@acme.dev", "developer", { createdAt: null }),
-  member("mem-sam", "Sam Oyelaran", "sam@acme.dev", "member", {
-    userId: "usr_sam",
-    createdAt: iso(-19),
-  }),
-  member("mem-tobi", "Tobi Adeyemi", "tobi@acme.dev", "member", {
-    userId: "usr_tobi",
-    createdAt: iso(-64),
-  }),
-  // A role added server-side after this build shipped: the org is real, the
-  // label is not knowable, and guessing at someone's permissions is worse.
-  member("mem-unknown", "Wren Castellanos", "wren@acme.dev", null, { createdAt: iso(-3) }),
-];
-
-/** Northwind's roster is short on purpose: it is the org the account is only a
- *  `member` of, so the table renders with every admin control gone. */
-const NORTHWIND_MEMBERS: OrgMember[] = [
-  member("mem-nw-lead", "Ingrid Solberg", "ingrid@northwind.example", "admin", {
-    createdAt: iso(-520),
-  }),
-  member("mem-nw-dev", "Dev Halvorsen", "dev@acme.dev", "member", {
-    userId: "usr_dev",
-    avatarPath: abs("public/logo.png"),
-  }),
-];
-
-/**
- * Rosters by SERVER org id.
- *
- * Anything else gets a fresh copy of Acme's rather than an empty table: the id
- * the modal asks for is the local org's `remoteId`, and a scenario that seeds
- * its own orgs would otherwise open the members screen onto nothing and look
- * like a UI bug.
- */
-const membersByOrg = new Map<string, OrgMember[]>([
-  [MOCK_ORG_ID, ACME_MEMBERS.map((m) => ({ ...m }))],
-  [SECOND_ORG_ID, NORTHWIND_MEMBERS.map((m) => ({ ...m }))],
-]);
-
-function roster(orgId: string): OrgMember[] {
-  let list = membersByOrg.get(orgId);
-  if (!list) {
-    list = ACME_MEMBERS.map((m) => ({ ...m }));
-    membersByOrg.set(orgId, list);
-  }
-  return list;
-}
-
-/**
- * `status` is an opaque server string the modal prints verbatim, so the three
- * spellings that actually reach it are seeded: one live invite, one whose
- * expiry has passed, and one that was revoked. `acceptUrl` is `null` on all of
- * them — listing invitations does not re-issue a link, and only the response to
- * `auth_invite_member` carries one.
- */
-const ACME_INVITES: OrgInvitation[] = [
-  {
-    id: "inv-live",
-    email: "nora.vasquez@acme.dev",
-    role: "developer",
-    status: "pending",
-    expiresAt: iso(5),
-    acceptUrl: null,
-  },
-  {
-    id: "inv-expired",
-    email: "someone.who.never.clicked.the.link@a-very-long-corporate-domain.example",
-    role: "member",
-    status: "expired",
-    expiresAt: iso(-23),
-    acceptUrl: null,
-  },
-  {
-    id: "inv-revoked",
-    // No role survived the revocation server-side; the row renders unlabelled.
-    email: "contractor@partner.example",
-    role: null,
-    status: "canceled",
-    expiresAt: null,
-    acceptUrl: null,
-  },
-];
-
-const invitesByOrg = new Map<string, OrgInvitation[]>([
-  [MOCK_ORG_ID, ACME_INVITES.map((i) => ({ ...i }))],
-]);
-
-function invites(orgId: string): OrgInvitation[] {
-  let list = invitesByOrg.get(orgId);
-  if (!list) {
-    list = [];
-    invitesByOrg.set(orgId, list);
-  }
-  return list;
-}
-
-/** Handles the server already owns. `acme` is the project's own org, so the
- *  create dialog's "taken" state is one keystroke away; anything not listed
- *  comes back free. */
-const TAKEN_SLUGS = new Set(["acme", "northwind-labs", "atlas", "support"]);
-
-let invitesMinted = 0;
 
 // ── GitHub ──────────────────────────────────────────────────────────────────
 
@@ -486,30 +253,6 @@ const REMOTE_BRANCHES: Record<string, string[]> = {
   "vercel-swr": ["main", "v1", "canary"],
 };
 
-// ── Feedback and the native screenshot ──────────────────────────────────────
-
-/**
- * A real 240×150 PNG of a fake editor window.
- *
- * It has to decode: both callers build an `Image` from
- * `data:${mimeType};base64,${dataBase64}` and draw it to a canvas to downscale
- * it, so a placeholder string would reject and surface as "Screenshot failed".
- */
-const SHOT_PNG_BASE64 =
-  "iVBORw0KGgoAAAANSUhEUgAAAPAAAACWCAIAAABvmpKCAAACD0lEQVR42u3dsQ2CUBSGUUYgFkhlSGwtLRyAYYwjOIoFhQsw" +
-  "gDs4g1vQMgAxJITk8S4n+RZ4L6e6zV8054sUpsIXCGgJaAloCWgBLQEtAS0BLQEtoCWgJaAloCWgBbQEtLQB0NdbK4UJaMUC" +
-  "XdWnLCoPR2k2oAU00AIaaAENtIAW0EALaKAF9Nqgn+8hSegADbSABlpAAw000EAD7cohoIEW0EALaAENtIAGWkADLaCndd/H" +
-  "HiIVaKCBBhpooIEGGmiggQZaAlpAAy2ggRbQQAtoCWgBnQXoX3/X6gENNNBAAw000EADDbSAduUQ0EALaKAFtAS0gAZaQAMt" +
-  "oJeB/rwG5R7QQAMNtIAGWkADLaBdOQS0BLSABlpAAy2ggRbQUhjQqba+7YcDDTTQQAMtoIEGGmiggXblENBAC2igBbSABlpA" +
-  "Ay2ggRbQ03ay9W0/HGgBDTTQQAMNNNBAAw20BLSABlpAAy2ggRbQEtAC2ta3stsPB1pAAy2ggQYaaKCBduWQKwfQAhpoAQ20" +
-  "gAZaQAtooAW0re9Uu9YCGmiggQYaaKCBBhpouXJIQAtooAU00AIaaAEtAS2gbX3bDwcaaKCBBhpooAU00EAD7cohoIEW0EAL" +
-  "aAENtIAGWkADLaD/PcBkt/1woAU00AIaaKCBBhpoVw4JaAENtIAGWkADLaAFNNAC2tb3FnatBTTQwRsBft4SQdp74qkAAAAA" +
-  "SUVORK5CYII=";
-
-/** Rust's hard cap on the attached image, in base64 characters. Past it the
- *  report still sends and the pixels are dropped — the receipt says so. */
-const MAX_SCREENSHOT_B64 = 500_000;
-
 // ── PDF annotations ─────────────────────────────────────────────────────────
 
 /** The two-page PDF seeded into the fake tree. Annotations are keyed by the
@@ -571,21 +314,6 @@ const pdfAnnotations = new Map<string, PdfAnnotation[]>([
  * `invoke<T>`, or `Unread` where it awaits only success or failure.
  */
 export interface IntegrationsResponses {
-  auth_snapshot: AuthSnapshot;
-  auth_refresh: AuthSnapshot;
-  auth_sign_in: AuthSnapshot;
-  auth_cancel_sign_in: AuthSnapshot;
-  auth_sign_out: boolean;
-  auth_set_active_org: Unread;
-  auth_create_org: CreatedOrg;
-  auth_delete_org: Unit;
-  auth_check_org_slug: boolean;
-  auth_list_members: OrgMember[];
-  auth_list_invitations: OrgInvitation[];
-  auth_invite_member: OrgInvitation;
-  auth_cancel_invitation: Unit;
-  auth_update_member_role: Unit;
-  auth_remove_member: Unit;
   search_github: GithubRepo[];
   clone_github_repo: string;
   list_cloned_repos: ClonedRepo[];
@@ -595,191 +323,12 @@ export interface IntegrationsResponses {
   switch_cloned_repo_branch: Unread;
   update_cloned_repo: string;
   fetch_cloned_repo_meta: ClonedRepo["meta"];
-  feedback_submit: FeedbackReceipt;
-  capture_screenshot: CaptureResult | null;
+
   pdf_annotations_load: PdfAnnotation[];
   pdf_annotations_save: Unread;
 }
 
 export const integrationsHandlers: TypedHandlers<IntegrationsResponses> = {
-  // ── Atlas account ─────────────────────────────────────────────────────────
-  auth_snapshot: (): AuthSnapshot => snapshot,
-  auth_refresh: (): AuthSnapshot => {
-    broadcast();
-    return snapshot;
-  },
-  /**
-   * The real command resolves as soon as the grant *starts*, with the browser
-   * already opened and polling running behind it — so this returns `connecting`
-   * and flips to signed-in a beat later, which is the only way to see the
-   * connect dialog's code, its countdown, and its own dismissal.
-   */
-  auth_sign_in: (): AuthSnapshot => {
-    snapshot = {
-      status: "connecting",
-      userCode: "WDJB-MJHT",
-      verificationUri: "https://atlas.dev/device",
-      expiresAt: new Date(Date.now() + 600_000).toISOString(),
-    };
-    broadcast();
-    grantTimer = window.setTimeout(() => {
-      grantTimer = null;
-      if (snapshot.status !== "connecting") return;
-      snapshot = structuredClone(SIGNED_IN);
-      broadcast();
-    }, 2_500);
-    return snapshot;
-  },
-  auth_cancel_sign_in: (): AuthSnapshot => {
-    if (grantTimer !== null) {
-      clearTimeout(grantTimer);
-      grantTimer = null;
-    }
-    snapshot = { status: "signed-out" };
-    broadcast();
-    return snapshot;
-  },
-  /**
-   * Resolves `false` — "signed out here, but the server could not confirm the
-   * session is gone". The caveat toast is the branch nobody sees otherwise;
-   * return `true` for the quiet path.
-   */
-  auth_sign_out: (): boolean => {
-    snapshot = { status: "signed-out" };
-    broadcast();
-    return false;
-  },
-  /**
-   * `orgId` is the SERVER id, or `null` for a local-only org. Null clears the
-   * desktop's explicit choice: `activeOrgId` falls back to the first org the
-   * way Rust resolves it, while `commsOrgId` honours the "none" and stays null.
-   */
-  auth_set_active_org: ({ orgId }): null => {
-    if (snapshot.status !== "signed-in") return null;
-    const id = orgId === null || orgId === undefined ? null : String(orgId);
-    snapshot = {
-      ...snapshot,
-      activeOrgId: id ?? snapshot.orgs?.[0]?.id ?? null,
-      commsOrgId: id,
-    };
-    return broadcast();
-  },
-  auth_create_org: ({ name, slug }): CreatedOrg => {
-    const handle = String(slug);
-    if (TAKEN_SLUGS.has(handle)) fail(`The handle “${handle}” is already taken.`);
-    const created: CreatedOrg = { id: `org-${handle}`, name: String(name) };
-    TAKEN_SLUGS.add(handle);
-    if (snapshot.status === "signed-in") {
-      // A freshly created org makes you its admin, which is what unlocks the
-      // invite flow on the org you just made.
-      snapshot = {
-        ...snapshot,
-        orgs: [...currentOrgs(), { id: created.id, name: created.name, role: "admin" }],
-      };
-      broadcast();
-    }
-    return created;
-  },
-  auth_delete_org: ({ remoteId }): null => {
-    const id = String(remoteId);
-    membersByOrg.delete(id);
-    invitesByOrg.delete(id);
-    if (snapshot.status === "signed-in") {
-      snapshot = { ...snapshot, orgs: currentOrgs().filter((o) => o.id !== id) };
-      broadcast();
-    }
-    return null;
-  },
-  /** Advisory, and deliberately not just a boolean: a handle too short to be
-   *  legal rejects, which is the create dialog's third state (`error`). */
-  auth_check_org_slug: ({ slug }): boolean => {
-    const handle = String(slug ?? "");
-    if (handle.length < 3) fail("Handles must be at least 3 characters.");
-    return !TAKEN_SLUGS.has(handle);
-  },
-
-  auth_list_members: ({ orgId }): OrgMember[] => roster(String(orgId)).map((m) => ({ ...m })),
-  /**
-   * Admin-scoped server-side. Northwind is the org the account is only a
-   * `member` of, so this rejects there — which is exactly the case the modal
-   * settles separately from `listMembers` so the members tab still works.
-   */
-  auth_list_invitations: ({ orgId }): OrgInvitation[] => {
-    const id = String(orgId);
-    if (id === SECOND_ORG_ID) {
-      fail("Only an admin can see this organisation's invites.");
-    }
-    return invites(id).map((i) => ({ ...i }));
-  },
-  /**
-   * The resolved `acceptUrl` is the whole point: email delivery is deferred,
-   * so that link is the only way the invitee ever hears about it, and the
-   * modal copies it straight out of this response.
-   */
-  auth_invite_member: ({ orgId, email, role }): OrgInvitation => {
-    const id = String(orgId);
-    const address = String(email);
-    if (roster(id).some((m) => m.email === address)) {
-      fail("Couldn't invite them — you may not be an admin, or they're already in.");
-    }
-    invitesMinted += 1;
-    const token = `t${invitesMinted.toString().padStart(4, "0")}-r9kq2m`;
-    const invitation: OrgInvitation = {
-      id: `inv-new-${invitesMinted}`,
-      email: address,
-      role: (role ?? null) as Role | null,
-      status: "pending",
-      expiresAt: iso(7),
-      acceptUrl: `https://atlas.dev/invite/${token}`,
-    };
-    invitesByOrg.set(id, [invitation, ...invites(id)]);
-    return invitation;
-  },
-  auth_cancel_invitation: ({ invitationId }): null => {
-    const id = String(invitationId);
-    for (const [org, list] of invitesByOrg) {
-      invitesByOrg.set(
-        org,
-        list.filter((i) => i.id !== id),
-      );
-    }
-    return null;
-  },
-  /** Rejects for the one member the org cannot lose — the last admin — because
-   *  the optimistic row revert is otherwise unreachable from the UI. */
-  auth_update_member_role: ({ orgId, memberId, role }): null => {
-    const id = String(orgId);
-    const list = roster(id);
-    const target = list.find((m) => m.id === String(memberId));
-    if (!target) fail("Only an admin can change a member's role.");
-    const admins = list.filter((m) => m.role === "admin");
-    if (target.role === "admin" && admins.length === 1 && role !== "admin") {
-      fail("An organisation needs at least one admin.");
-    }
-    target.role = (role ?? null) as Role | null;
-    return null;
-  },
-  /**
-   * The one member op that broadcasts: removing yourself changes your own org
-   * set, so the account menu has to stop listing an org you just left.
-   */
-  auth_remove_member: ({ orgId, memberIdOrEmail }): null => {
-    const id = String(orgId);
-    const key = String(memberIdOrEmail);
-    const list = roster(id);
-    const target = list.find((m) => m.id === key || m.email === key);
-    if (!target) fail("Only an admin can remove a member.");
-    membersByOrg.set(
-      id,
-      list.filter((m) => m !== target),
-    );
-    if (target.userId === "usr_dev" && snapshot.status === "signed-in") {
-      snapshot = { ...snapshot, orgs: currentOrgs().filter((o) => o.id !== id) };
-      broadcast();
-    }
-    return null;
-  },
-
   // ── GitHub ────────────────────────────────────────────────────────────────
   /**
    * Filtered rather than fixed, so the empty state ("zzz") and a narrowing
@@ -891,15 +440,7 @@ export const integrationsHandlers: TypedHandlers<IntegrationsResponses> = {
    * report is anonymous whether or not the box was ticked, and the panel says
    * "sent anonymously" off this field rather than off its own checkbox.
    */
-  feedback_submit: ({ input }): FeedbackReceipt => {
-    const payload = input as FeedbackPayload;
-    const shot = payload.screenshotBase64 ?? "";
-    return {
-      sent: true,
-      anonymous: Boolean(payload.anonymous) || snapshot.status !== "signed-in",
-      screenshotDropped: shot.length > MAX_SCREENSHOT_B64,
-    };
-  },
+
   /**
    * Native `screencapture`. Returns a real decodable PNG so the preview, the
    * canvas downscale and the chat composer's inline attachment all work.
@@ -908,16 +449,6 @@ export const integrationsHandlers: TypedHandlers<IntegrationsResponses> = {
    * during region selection and is deliberately not an error — return `null`
    * here to see the panel treat a cancelled capture as a no-op.
    */
-  capture_screenshot: ({ projectPath }): CaptureResult => ({
-    // The feedback panel passes `projectPath: null` on purpose (a feedback
-    // screenshot has no business landing in someone's repository); the chat
-    // composer passes the project and gets `.atlas/screenshots`.
-    path: projectPath
-      ? abs(`.atlas/screenshots/atlas_shot_${NOW}.png`)
-      : `/var/folders/mock/T/atlas_shot_${NOW}.png`,
-    mimeType: "image/png",
-    dataBase64: SHOT_PNG_BASE64,
-  }),
 
   // ── PDF annotations ───────────────────────────────────────────────────────
   pdf_annotations_load: ({ pdfPath }): PdfAnnotation[] =>

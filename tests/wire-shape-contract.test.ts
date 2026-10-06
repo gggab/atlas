@@ -118,24 +118,6 @@ function tsUnionLiterals(source: string, name: string): string[] {
   return [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
 }
 
-describe("comms_send ↔ SendReceipt (#1)", () => {
-  const rust = read("src-tauri", "src", "commands", "comms.rs");
-  const ts = read("src", "features", "comms", "lib", "comms-api.ts");
-
-  it("SendReceipt is camelCase on the wire", () => {
-    const { attrs, body } = rustItem(rust, "struct", "SendReceipt");
-    expect(attrs).toMatch(/rename_all\s*=\s*"camelCase"/);
-    expect(rustStructFields(body)).toEqual(["client_msg_id"]);
-  });
-
-  it("the frontend reads the camelCase key, not the Rust field name", () => {
-    // The regression: this used to say `{ client_msg_id: string }`, a key
-    // `#[serde(rename_all = "camelCase")]` never puts on the wire.
-    expect(ts).toMatch(/invoke<\{\s*clientMsgId:\s*string\s*\}>\("comms_send"/);
-    expect(ts).not.toMatch(/invoke<\{\s*client_msg_id:\s*string\s*\}>\("comms_send"/);
-  });
-});
-
 describe("session_chat_thread_get ↔ checkpointScope (#2)", () => {
   const rust = read("src-tauri", "src", "commands", "session_chat_sessions.rs");
   const ts = read("src", "features", "artifacts", "lib", "session-chat-api.ts");

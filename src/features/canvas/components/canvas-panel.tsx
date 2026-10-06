@@ -133,7 +133,7 @@ function CanvasSurface({
       return next;
     });
   const activeEntry = tree.find((e) => e.id === activePageId);
-  const pageName = activeEntry?.name ?? "Spaces";
+  const pageName = activeEntry?.name ?? "Canvas";
   const pageIcon = activeEntry?.icon ?? null;
 
   // Load when the project changes.

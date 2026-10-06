@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("@/features/projects/lib/org-scope", () => ({
-  activeOrgProjectsSnapshot: () => mocks.projects,
+vi.mock("@/features/projects/lib/project-scope", () => ({
+  localProjectsSnapshot: () => mocks.projects,
 }));
 vi.mock("@/features/organisations/stores/org-store", () => ({
   useOrgStore: {
@@ -129,16 +129,5 @@ describe("facets", () => {
     toggleFacet("agents", "codex");
     clearFacets();
     expect(useUsageStore.getState().facets).toEqual(NO_FACETS);
-  });
-
-  it("an org switch drops data and facets", async () => {
-    await useUsageStore.getState().actions.refresh();
-    useUsageStore.getState().actions.toggleFacet("agents", "codex");
-    expect(mocks.orgListeners.length).toBeGreaterThan(0);
-    for (const fn of mocks.orgListeners) fn({ activeOrganisationId: "org-b" });
-    const s = useUsageStore.getState();
-    expect(s.data).toBeNull();
-    expect(s.fetchedAt).toBeNull();
-    expect(s.facets).toEqual(NO_FACETS);
   });
 });

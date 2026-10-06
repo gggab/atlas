@@ -30,58 +30,6 @@ fn text(body: &str) -> Vec<acp::ContentBlock> {
     ))]
 }
 
-// ------------------------------------------------------- ATL-226: connect once
-
-/// The guarantee three doc sites make, under the concurrency they describe.
-///
-/// The suite's original version of this called `request_connection` twice in a
-/// row on one thread, so the first insert had already landed before the second
-/// call began — it exercised the map lookup, not the join. Measured under real
-/// concurrency the unfixed code hands out two entries 11–30% of the time, so a
-/// round count in the hundreds turns that into a certainty rather than a flake.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn concurrent_requests_for_one_agent_start_exactly_one_connection() {
-    const ROUNDS: usize = 200;
-    const CALLERS: usize = 4;
-
-    for round in 0..ROUNDS {
-        let catalog = TestCatalog::new(&[]);
-        let server = TestServer::new("atlas-agent");
-        let manager = manager(catalog, server.clone());
-        // The native agent, because `connect_to` resolves the server itself and
-        // a custom one resolves to a `CustomAgentServer` that spawns a real
-        // process. The window under test is the same either way: it is in the
-        // entries map, not in which server backs the key.
-        let key = Agent::Native;
-
-        let callers: Vec<_> = (0..CALLERS)
-            .map(|_| {
-                let manager = manager.clone();
-                let key = key.clone();
-                tokio::spawn(async move { manager.connect_to(key) })
-            })
-            .collect();
-
-        let mut entries = Vec::new();
-        for caller in callers {
-            entries.push(caller.await.expect("the caller task ran"));
-        }
-
-        assert_eq!(
-            server.attempts(),
-            1,
-            "round {round}: {CALLERS} concurrent callers started {} connections",
-            server.attempts()
-        );
-        for entry in &entries[1..] {
-            assert!(
-                Arc::ptr_eq(&entries[0], entry),
-                "round {round}: the callers were handed different entries"
-            );
-        }
-    }
-}
-
 /// The same race one layer down, where `request_connection` is called directly
 /// with a server already resolved.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -433,11 +381,11 @@ async fn a_gated_connect_that_is_left_alone_still_connects() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_superseded_turns_late_reply_does_not_close_the_turn_that_superseded_it() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("atlas-agent");
+    let server = TestServer::new("test-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
         .expect("a session opens");
     let session_id = thread.lock().unwrap().session_id().clone();
@@ -493,11 +441,11 @@ async fn a_superseded_turns_late_reply_does_not_close_the_turn_that_superseded_i
 #[tokio::test(flavor = "multi_thread")]
 async fn a_superseded_turns_failure_does_not_mark_the_live_turn_as_errored() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("atlas-agent");
+    let server = TestServer::new("test-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
         .expect("a session opens");
     let session_id = thread.lock().unwrap().session_id().clone();
@@ -551,11 +499,11 @@ async fn a_superseded_turns_failure_does_not_mark_the_live_turn_as_errored() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_cancelled_turn_still_closes_itself() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("atlas-agent");
+    let server = TestServer::new("test-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
         .expect("a session opens");
     let session_id = thread.lock().unwrap().session_id().clone();
@@ -643,11 +591,11 @@ async fn closing_an_ambiguous_session_id_is_an_error_not_a_silent_success() {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unsuperseded_turn_closes_itself() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("atlas-agent");
+    let server = TestServer::new("test-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
         .expect("a session opens");
     let session_id = thread.lock().unwrap().session_id().clone();
@@ -895,7 +843,7 @@ async fn closing_a_session_forgets_it_without_touching_the_connection() {
 #[tokio::test(flavor = "multi_thread")]
 async fn cancelling_an_unknown_session_is_a_no_op() {
     let catalog = TestCatalog::new(&[]);
-    let server = TestServer::new("atlas-agent");
+    let server = TestServer::new("test-agent");
     let manager = manager(catalog, server);
 
     // No panic, no error: the id simply names nothing.

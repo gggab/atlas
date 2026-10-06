@@ -23,7 +23,6 @@ import {
   agentTypeFromPluginId,
   pluginIdForAgent,
   CLAUDE_PERMISSION_MODES,
-  NATIVE_AGENT_ID,
 } from "@/types/agent";
 import {
   agentMeta,
@@ -105,7 +104,7 @@ import { AgentUpdateBar } from "./agent-update-bar";
 import { SessionSidebar } from "./session-sidebar";
 import { ChatHeader } from "./chat-header";
 import { openNewAgentChat } from "../lib/open-agent-session";
-import { forkSessionToNewTab } from "../lib/fork-session";
+
 import { projectPathForTab } from "../lib/tab-project";
 import { useQueryClient } from "@tanstack/react-query";
 import { prefetchTextDiff } from "@/features/git/lib/git-diff-api";
@@ -116,8 +115,6 @@ import { collectTurnEdits } from "../lib/turn-edits";
  *  this much so the first row clears the bar. Must match `ChatHeader`'s bar. */
 const HEADER_INSET = 46;
 import { PermissionModal } from "./permission-modal";
-import { ChatCommentsController } from "./chat-comments-controller";
-import { useCommentCount } from "../stores/chat-comments-store";
 import { SessionElicitation } from "./session-elicitation";
 
 // Both panels are modal-style and never visible on first paint. Lazy so
@@ -126,9 +123,6 @@ const BashHistoryPanel = lazy(() =>
   import("./bash-history-panel").then((m) => ({ default: m.BashHistoryPanel })),
 );
 const PlansPanel = lazy(() => import("./plans-panel").then((m) => ({ default: m.PlansPanel })));
-const ChatCommentsPanel = lazy(() =>
-  import("./chat-comments-panel").then((m) => ({ default: m.ChatCommentsPanel })),
-);
 const ChatSearchPalette = lazy(() =>
   import("./chat-search-palette").then((m) => ({
     default: m.ChatSearchPalette,
@@ -260,24 +254,19 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
 
   // P3.4: only offer "branch from here" when the bound agent advertised
   // `sessionCapabilities.fork`. Gated on data, never on an agent name.
-  const canFork = useChatStore((s) => {
-    const sess = s.sessions[tabId];
-    if (!sess?.acpAgentId || !sess.acpSessionId || !sess.agentType) return false;
-    return agentCatalogEntry(sess.agentType)?.supportsFork === true;
-  });
 
   /** Fork the bound session and open the branch in a new tab, so the thread
    *  that got here stays intact — which is the entire point of forking. */
   // Shared with the composer's `/fork` command — one fork flow, two doors.
   // 0.3.1's source-project fix for the branch cwd lives inside the helper.
-  const onForkSessionStable = useCallback(() => forkSessionToNewTab(tabId), [tabId]);
+
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "assistant">("all");
   const [bashPanelOpen, setBashPanelOpen] = useState(false);
   const [plansPanelOpen, setPlansPanelOpen] = useState(false);
-  const [commentsPanelOpen, setCommentsPanelOpen] = useState(false);
+
   // A number or null; changes only when a comment lands or the session's
   // cloud identity resolves.
-  const commentCount = useCommentCount(tabId);
+
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
 
@@ -407,7 +396,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // it once `acpSessionId` is set. Skipped when a session is already bound
   // (sidebar resume, or a tab re-mount).
   useEffect(() => {
-    if (!session) return;
+    if (!session?.agentType) return;
     if (session.acpSessionId) return;
     let cancelled = false;
     let pending = false;
@@ -712,10 +701,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
               });
               // The dialog is up; if the user is away it is also a banner.
               notifyAgentSignInRequired(tabId, at);
-            } else if (action === "silent") {
-              // The composer is already showing why (`AiGrantBar`, and "No
-              // models" in the picker). A toast would be a third copy of a
-              // setup problem, re-raised on every rebind.
             } else if (action === "signed-in-but-refused" && at) {
               // Signed in already and STILL refused. Say so, and surface the
               // agent's own words — it is the only thing that can explain what
@@ -1005,19 +990,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const onToggleBashStable = useCallback(() => {
     setBashPanelOpen((v) => !v);
     setPlansPanelOpen(false);
-    setCommentsPanelOpen(false);
   }, []);
   const onTogglePlansStable = useCallback(() => {
     setPlansPanelOpen((v) => !v);
     setBashPanelOpen(false);
-    setCommentsPanelOpen(false);
   }, []);
-  const onToggleCommentsStable = useCallback(() => {
-    setCommentsPanelOpen((v) => !v);
-    setBashPanelOpen(false);
-    setPlansPanelOpen(false);
-  }, []);
-  const onCloseCommentsStable = useCallback(() => setCommentsPanelOpen(false), []);
+
   const onNewSessionStable = useCallback(() => openNewAgentChat(), []);
   useEffect(() => {
     const cur = session?.status ?? "idle";
@@ -1453,16 +1431,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 onToggleBash={onToggleBashStable}
                 plansPanelOpen={plansPanelOpen}
                 onTogglePlans={onTogglePlansStable}
-                commentCount={commentCount}
-                commentsPanelOpen={commentsPanelOpen}
-                onToggleComments={onToggleCommentsStable}
+
                 // Zero-arg wrapper, NOT a bare reference: React would call
                 // openNewAgentChat(SyntheticMouseEvent) and the event object
                 // sailed through `agent?` into the store as agentType —
                 // poisoning the bind ("JSON.stringify cannot serialize cyclic
                 // structures" from agents_spawn) and killing the composer.
                 onNewSession={onNewSessionStable}
-                onForkSession={canFork ? onForkSessionStable : undefined}
               />
             </div>
           </div>
@@ -1522,12 +1497,6 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
 
       {/* Cloud comments: the resolver runs for the pane's lifetime (it is what
           decides whether the header button exists); the panel only on demand. */}
-      <ChatCommentsController tabId={tabId} />
-      {commentsPanelOpen && (
-        <Suspense fallback={null}>
-          <ChatCommentsPanel tabId={tabId} onClose={onCloseCommentsStable} />
-        </Suspense>
-      )}
 
       {/* Diff / tool-output detail. Gated on a narrow boolean selector so the
           chunk isn't fetched until the reader first opens it, and so this
@@ -1594,9 +1563,7 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
   // first-party branding (`external: false`) while still being uninstallable.
   const pluginId = pluginIdForAgent(agentType);
   const removed =
-    pluginId !== pluginIdForAgent(NATIVE_AGENT_ID) &&
-    useAgentRegistryStore.getState().catalog.length > 0 &&
-    !agentCatalogEntry(pluginId)?.installed;
+    useAgentRegistryStore.getState().catalog.length > 0 && !agentCatalogEntry(pluginId)?.installed;
   if (removed) return null;
   return (
     <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm">

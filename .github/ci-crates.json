@@ -41,10 +41,6 @@
     "cross": true
   },
   {
-    "crate": "atlas-artifacts",
-    "clippy": true
-  },
-  {
     "crate": "atlas-bus",
     "cross": true
   },
@@ -54,10 +50,6 @@
   },
   {
     "crate": "atlas-codeindex"
-  },
-  {
-    "crate": "atlas-comms",
-    "clippy": true
   },
   {
     "crate": "atlas-embed"
@@ -87,11 +79,6 @@
   {
     "crate": "atlas-memory",
     "clippy": true
-  },
-  {
-    "crate": "atlas-native-agent",
-    "clippy": true,
-    "sandbox": true
   },
   {
     "crate": "atlas-redact",

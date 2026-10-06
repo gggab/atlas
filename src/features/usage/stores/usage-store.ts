@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
-import { activeOrgProjectsSnapshot } from "@/features/projects/lib/org-scope";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { localProjectsSnapshot } from "@/features/projects/lib/project-scope";
 import {
   NO_FACETS,
   type DateRange,
@@ -71,9 +70,8 @@ export const useUsageStore = createSelectors(
     search: "",
     actions: {
       refresh: async (opts) => {
-        // Only the ACTIVE org's projects — Usage must never aggregate across
-        // organisations.
-        const projectPaths = activeOrgProjectsSnapshot().map((p) => p.path);
+        // Aggregate the local project registry.
+        const projectPaths = localProjectsSnapshot().map((p) => p.path);
         const sig = projectSignature(projectPaths);
         const { fetchedAt, projectSig, loading } = get();
         const fresh = fetchedAt !== null && Date.now() - fetchedAt < STALE_MS && sig === projectSig;
@@ -102,29 +100,3 @@ export const useUsageStore = createSelectors(
     },
   })),
 );
-
-/** Facet values and data are org-specific: drop both when the org changes so
- *  the next open of the tab fetches the incoming org's projects and nothing of
- *  the outgoing org's selection survives. */
-function resetForOrg() {
-  useUsageStore.setState({
-    data: null,
-    error: null,
-    fetchedAt: null,
-    projectSig: "",
-    facets: NO_FACETS,
-    search: "",
-  });
-}
-
-// Guarded: unit tests mock the org store with whatever shape they need, and a
-// missing `subscribe` must not take this module down with it.
-if (typeof useOrgStore?.subscribe === "function") {
-  let lastOrg = useOrgStore.getState?.()?.activeOrganisationId ?? null;
-  useOrgStore.subscribe((s) => {
-    const next = (s as { activeOrganisationId?: string | null }).activeOrganisationId ?? null;
-    if (next === lastOrg) return;
-    lastOrg = next;
-    resetForOrg();
-  });
-}

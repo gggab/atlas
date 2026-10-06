@@ -62,14 +62,7 @@ impl Default for Deadlines {
 /// a fresh install has, and no installed map can remove it (research §D12-3).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Agent {
-    Native,
     Custom { id: AgentId },
-}
-
-impl Agent {
-    pub fn is_native(&self) -> bool {
-        matches!(self, Self::Native)
-    }
 }
 
 #[derive(Clone)]
@@ -206,7 +199,6 @@ type Entry = Arc<Mutex<AgentConnectionEntry>>;
 
 pub struct AgentManager {
     catalog: Arc<dyn AgentCatalog>,
-    native: Arc<dyn AgentServer>,
     options: ConnectOptions,
     entries: Mutex<HashMap<Agent, Entry>>,
     /// Keyed by the agent as well as the id, because the id is the agent's to
@@ -221,15 +213,10 @@ pub struct AgentManager {
 impl AgentManager {
     /// Must be built inside a tokio runtime: it starts the task that watches the
     /// installed map, which is Zed's `cx.subscribe(&agent_server_store, …)`.
-    pub fn new(
-        catalog: Arc<dyn AgentCatalog>,
-        native: Arc<dyn AgentServer>,
-        options: ConnectOptions,
-    ) -> Arc<Self> {
+    pub fn new(catalog: Arc<dyn AgentCatalog>, options: ConnectOptions) -> Arc<Self> {
         let (events, _) = tokio::sync::broadcast::channel(EVENT_BUFFER);
         let this = Arc::new(Self {
             catalog,
-            native,
             options,
             entries: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -540,7 +527,6 @@ impl AgentManager {
     /// (research §D12-3, LOCKED).
     pub fn server_for(&self, key: &Agent) -> Result<Arc<dyn AgentServer>, LoadError> {
         match key {
-            Agent::Native => Ok(self.native.clone()),
             Agent::Custom { id } => {
                 if self.catalog.agent_server(id).is_none() {
                     return Err(LoadError::Unsupported {
@@ -566,7 +552,6 @@ impl AgentManager {
         server: Arc<dyn AgentServer>,
     ) -> (ConnectFuture, ConnectHandle) {
         let delegate = match key {
-            Agent::Native => Some(AgentServerDelegate::native()),
             Agent::Custom { id } => self.catalog.agent_server(id).map(AgentServerDelegate::new),
         };
         let options = self.options.clone();
@@ -696,10 +681,7 @@ impl AgentManager {
     /// drops the connection (`AgentHost::apply_agent_update`). One bump per
     /// entry: the restart replaces the entry, and its successor watches anew.
     fn watch_new_version(self: &Arc<Self>, key: Agent, entry: &Entry) {
-        let Agent::Custom { id } = &key else {
-            // Nothing versions the in-process agent but the app itself.
-            return;
-        };
+        let Agent::Custom { id } = &key;
         let Some(mut versions) = self.catalog.watch_new_version(id) else {
             return;
         };
@@ -735,9 +717,7 @@ impl AgentManager {
         &self,
         key: &Agent,
     ) -> Option<tokio::sync::watch::Receiver<Option<String>>> {
-        let Agent::Custom { id } = key else {
-            return None;
-        };
+        let Agent::Custom { id } = key;
         self.catalog.watch_loading_status(id)
     }
 
@@ -794,7 +774,6 @@ impl AgentManager {
             let mut removed = Vec::new();
             entries.retain(|key, entry| {
                 let installed = match key {
-                    Agent::Native => true,
                     Agent::Custom { id } => installed.contains(id),
                 };
                 if !installed {
@@ -1210,7 +1189,6 @@ fn log_session_start(connection: &Arc<dyn AgentConnection>, session_id: &acp::Se
 /// How an agent names itself in an error a user reads.
 fn agent_label(key: &Agent) -> String {
     match key {
-        Agent::Native => "the built-in agent".to_string(),
         Agent::Custom { id } => id.to_string(),
     }
 }

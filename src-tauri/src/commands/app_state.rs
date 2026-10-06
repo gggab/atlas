@@ -7,7 +7,7 @@ use crate::state::{
     AppSettings, AppState, AppStateHandle, AppStatePatch, AtlasConfigHandle, ConfigStatus,
 };
 
-/// Bootstrap response: `AppState` (projects/recents/orgs) plus the
+/// Bootstrap response: `AppState` (local projects/recents) plus the
 /// `config.toml`-sourced settings snapshot, combined into one payload so the
 /// frontend pays a single IPC round trip at boot. The two remain separately
 /// stored/versioned on the Rust side — this struct exists only at the wire
@@ -25,7 +25,7 @@ pub struct BootstrapPayload {
     /// screen are Atlas's defaults rather than the user's — computed since
     /// #64 but, until now, reachable only through `get_atlas_config_info`,
     /// which nothing called. A malformed config silently reverted every
-    /// preference (`shareTelemetry` back to ON included) with no banner.
+    /// preference  with no banner.
     pub config_status: ConfigStatus,
 }
 
@@ -39,15 +39,6 @@ pub fn bootstrap_app_state(
 ) -> BootstrapPayload {
     let config_guard = config.lock();
     let state = state.lock().clone();
-    // `AppState::migrate` seeds a "Personal" org on every load path, and the
-    // frontend refuses to create a project without one. If this ever fires
-    // again, a load path has stopped migrating — see `AppState::from_raw`.
-    if state.organisations.is_empty() {
-        tracing::warn!(
-            target: "atlas::app_state",
-            "bootstrapping with zero organisations; the frontend cannot add a project"
-        );
-    }
     BootstrapPayload {
         state,
         settings: config_guard.effective().clone(),

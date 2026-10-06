@@ -1,13 +1,5 @@
-// Mock download-trend series for the marketplace cards.
-//
-// This is the SEED for the real pipeline: every install already captures an
-// `acp_agent_installed` PostHog event (commands/registry.rs), so once enough
-// real data accrues a backend query can replace `seededSeries` wholesale —
-// the chart component only sees `{ points, total, up }`. Until then the series
-// is deterministic per agent id (stable across renders and restarts), weekly
-// over the past 6 months, in the 800–1400 downloads band with a slight upward
-// drift so most agents read as "trending", and the local install bumps the
-// trailing point — the seed incrementing exactly the way the real counter will.
+// Existing deterministic demonstration series for marketplace cards.
+// No telemetry is uploaded or queried by this build.
 
 export interface DownloadTrend {
   /** Weekly download counts, oldest → newest (~26 points ≈ 6 months). */

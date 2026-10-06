@@ -51,16 +51,10 @@ export const TIER_SETTINGS: Readonly<
     native: "notifyWarningNative",
     sound: "notifyWarningSound",
   },
-  team: {
-    title: "Team",
-    description: "Messages from people in your organisation.",
-    native: "notifyTeamNative",
-    sound: "notifyTeamSound",
-  },
 };
 
 /** Group order in Settings. */
-export const TIER_ORDER: readonly NotificationTier[] = ["needs-you", "outcome", "warning", "team"];
+export const TIER_ORDER: readonly NotificationTier[] = ["needs-you", "outcome", "warning"];
 
 /** The catalog's kinds in one tier, in catalog order. */
 export function kindsInTier(

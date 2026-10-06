@@ -2,12 +2,11 @@
 //
 // Two affordances, kept to the monochrome/hairline house style (see Atlas
 // Design Principles): a Shared toggle pill (white when on) and a settings
-// popover holding the handoff-summarizer mode selector (Raw / Provider /
-// Local-disabled) plus the reused ProviderModelSelector when mode === provider.
+// popover holding the handoff-summarizer mode selector (Raw / Provider) plus the reused ProviderModelSelector when mode === provider.
 
 import { useEffect, useMemo } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { Share2, SlidersHorizontal, FileText, Server, Cpu, Check } from "lucide-react";
+import { Share2, SlidersHorizontal, FileText, Server, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { ProviderModelSelector } from "./provider-pickers";
@@ -86,13 +85,13 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
             <Popover.Popup className="w-[300px] rounded-md border border-border bg-card p-3 shadow-md">
               <div className="eyebrow mb-2">Recent-session handoff</div>
               <p className="mb-2.5 text-xs leading-snug text-muted-foreground">
-                How the previous session's tail is summarized before it is injected into the next
+                How the previous session's tail is summarized before MCP serves it to the next
                 agent.
               </p>
 
               <div className="inline-flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5">
                 <ModeSeg
-                  active={pref.mode === "raw"}
+                  active={pref.mode !== "provider"}
                   label="Raw"
                   icon={FileText}
                   enabled
@@ -104,13 +103,6 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
                   icon={Server}
                   enabled={providerReady}
                   onClick={() => setMode("provider")}
-                />
-                <ModeSeg
-                  active={pref.mode === "local"}
-                  label="Local"
-                  icon={Cpu}
-                  enabled={false}
-                  onClick={() => {}}
                 />
               </div>
 
@@ -132,9 +124,9 @@ export function MemorySharingControls({ projectPath }: { projectPath: string | n
                 </div>
               )}
 
-              {pref.mode === "raw" && (
+              {pref.mode !== "provider" && (
                 <p className="mt-2.5 text-xs text-muted-foreground">
-                  Injecting the last turns verbatim — no model call, no latency.
+                  Serves the last turns verbatim through MCP — no model call.
                 </p>
               )}
             </Popover.Popup>
@@ -154,7 +146,7 @@ function ModeSeg({
 }: {
   active: boolean;
   label: string;
-  icon: typeof Cpu;
+  icon: typeof FileText;
   enabled: boolean;
   onClick: () => void;
 }) {

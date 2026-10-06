@@ -16,7 +16,7 @@
 import { toast } from "sonner";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+
 import { projectIdForTab } from "@/features/chat/lib/tab-project";
 import { findTerminal, useTerminalStore } from "../stores/terminal-store";
 
@@ -32,13 +32,6 @@ export async function jumpToTerminal(t: TerminalTarget): Promise<boolean> {
   const owner = t.projectId ?? projectIdForTab(t.tabId);
 
   if (owner) {
-    const ownerWs = ws.projects.find((w) => w.id === owner);
-    const activeOrg = useOrgStore.getState().activeOrganisationId;
-    if (ownerWs?.orgId && activeOrg && ownerWs.orgId !== activeOrg) {
-      const org = useOrgStore.getState().organisations.find((o) => o.id === ownerWs.orgId);
-      toast(`Switch to ${org?.name ?? "that organisation"} to open this terminal`);
-      return false;
-    }
     if (owner !== ws.activeProjectId) {
       await ws.actions.switchTo(owner);
     }

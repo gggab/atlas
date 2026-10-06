@@ -1,229 +1,46 @@
-<div align="center">
+# Atlas local Agent workbench
 
-<img src="src/assets/atlas-icon.svg" alt="Atlas" width="88" height="88" />
+Atlas is a Tauri 2 / React 19 desktop workbench for external ACP CLI agents. Open local projects and run several agent sessions in the same window. Atlas requires no Atlas account and provides no model gateway or built-in execution engine. Each CLI owns its vendor subscription, login and model availability.
 
-### Atlas
+## Retained features
 
-**Source control for coding agents.**
+- Agent installation, PATH detection, process launch, vendor authentication and ACP capability / model negotiation.
+- Streaming chat, approvals, cancellation, independent parallel sessions, local transcripts and capability-dependent resume / load.
+- Project files, terminal PTYs, Git, local session capture and checkpoint history.
+- Shared local memory: SQLite storage, events, retrieval, import, policy controls, management UI and a session-authorized loopback MCP service.
 
-<br />
+No agent is runnable on a fresh profile until installed. Detected CLIs are installation offers. A missing agent selection stays empty. Historical Atlas Agent records remain readable, but cannot launch the removed native engine.
 
-<a href="https://trendshift.io/repositories/56020?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-56020" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/56020" alt="pacifio%2Fatlas | Trendshift" width="250" height="55"/></a>
-<a href="https://trendshift.io/repositories/56020?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-56020" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/56020/daily?language=Rust" alt="pacifio%2Fatlas | Trendshift" width="250" height="55"/></a>
+## Memory and data
 
-<br />
+The thread catalog (`threads.db`), per-project recording (`.atlas/sessions.db` and blobs) and shared memory (`.atlas/memory/memory.sqlite`) have separate owners. Worktrees resolve shared memory to their main project. Agents offered HTTP MCP use session tokens to access that same memory service; those tokens are local access controls, not Atlas account tokens. An agent must advertise HTTP MCP support and memory sharing must be enabled.
 
-<a href="https://github.com/pacifio/atlas/stargazers"><img src="https://img.shields.io/github/stars/pacifio/atlas?style=social" alt="GitHub stars"></a>
-<a href="https://github.com/pacifio/atlas/forks"><img src="https://img.shields.io/github/forks/pacifio/atlas?style=social" alt="GitHub forks"></a>
-<a href="https://github.com/pacifio/atlas/graphs/contributors"><img src="https://img.shields.io/github/contributors/pacifio/atlas?label=contributors&color=blue" alt="Contributors"></a>
+Gateway-dependent automatic memory extraction is removed. Agents can still write memory explicitly through MCP. Existing optional BYOK research, session analysis and memory chat remain; they are not needed for CLI chat or ordinary memory storage and retrieval. Local embedding model downloads remain explicit network operations.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/pacifio/atlas/ci.yml?branch=main&label=CI)](https://github.com/pacifio/atlas/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/pacifio/atlas?include_prereleases&label=release)](https://github.com/pacifio/atlas/releases)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-black)](#download)
-[![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/GmnFggaPfP)
+## Development
 
-<sub>[Download](#download) · [Docs](https://docs.tryatlas.cc/) · [Website](https://www.tryatlas.cc/) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/pacifio/atlas/issues)</sub>
+Use the versions pinned in `mise.toml`, `package.json` and `rust-toolchain.toml` (Bun 1.4.0 and Rust 1.99.0). Install platform prerequisites for Tauri: MSVC C++ build tools / WebView2 on Windows, Xcode on macOS, or GTK / WebKit development packages on Linux.
 
-<br />
-
-<img src="landing/hero.webp" alt="Atlas: the Agents tab with the project sidebar and module rail" width="900" />
-
-</div>
-
-Atlas is source control for coding agents. Every agent run produces checkpoints: commits are linked back to the session that made it alongside the prompts, tool calls, and reasoning. You see which agent did exactly what and why.
-
-Run Claude Code, Codex, Atlas's own agent, or anything from the ACP registry side by side against the same codebase, with shared memory so switching agents mid-task doesn't mean starting over.
-
-- **Every commit, explained.** A checkpoint links a commit back to the session that produced it: prompts, tool calls, and file changes kept together, queryable months later.
-- **Run any agent, side by side.** Claude Code, Codex, Atlas's own agent, and the wider ACP registry, all in the same window, against the same codebase. Switching agents mid-task doesn't mean starting over.
-- **One memory, every agent.** A decision Claude Code made shows up in Codex's next prompt. Plans, file changes, failures, and architecture notes are shared automatically, matched on-device against what you're asking about.
-- **Your notes are agent context.** Markdown in `.atlas/knowledge/`, plus the `CLAUDE.md` and `AGENTS.md` you already wrote, feed every agent in the project.
-- **`@` anything into a prompt.** Files, folders, symbols, branches, commits, notes, papers, and past sessions resolve locally before the prompt is sent.
-- **Local by default.** Code, notes, and sessions stay on your machine. Sign in and create an organisation when you want to sync across a team.
-
-## Download
-
-Grab the latest build from [tryatlas.cc](https://www.tryatlas.cc/) or the [releases page](https://github.com/pacifio/atlas/releases) — a `.dmg` for macOS (Apple Silicon or Intel), an `.msi` for Windows.
-
-> [!NOTE]
-> macOS 13+ and Windows 10+ (x64) are the supported platforms. Linux builds from the same Tauri codebase but is untested — see [Build from source](#build-from-source).
-
-<!-- #todo homebrew tap so this becomes `brew install atlas` -->
-
-## Why Atlas
-
-Agents now write a large share of the code and keep none of the reasoning behind it. The prompt that produced a change, the tool calls it made, the approach it tried first and abandoned — all of it lives in a scrollback buffer until the buffer scrolls.
-
-What survives is a commit message, written by a model, summarising a diff. Months later that is the only record of why the code looks the way it does.
-
-Three problems follow, and every editor designed before agents has all three:
-
-- **Agents start from zero every session.** The context you established yesterday is gone, and rebuilding it is your job, every time.
-- **Switching agents loses the thread.** Claude Code cannot read Codex's history, and Codex cannot read Claude Code's. Changing agent mid-task means starting the explanation over.
-- **Context lives in ten places.** The knowledge base, `CLAUDE.md`, `AGENTS.md`, and each agent's own memory files. Nothing reads all of them at once.
-
-Two commitments shape how Atlas answers them:
-
-- **Nothing is locked in.** Notes are markdown, canvases are JSON, sessions are JSONL, and the editor is a file on disk. Close Atlas and pick up in vim. The one exception is the checkpoint record (which agent session produced which commit), which is SQLite in the project's gitignored `.atlas/`, because it is queried, not read.
-- **Built for agents from the ground up.** The agent runtime, shared memory, and session history are the foundation the rest of the app is built on.
-
-## Checkpoints
-
-A checkpoint is what a commit doesn't tell you on its own: which session produced it, what the agent was asked, the tool calls it made, and the reasoning behind the change, kept together instead of lost the moment the terminal scrolls.
-
-Atlas records every agent session locally in `.atlas/sessions.db`, with secrets scrubbed before anything touches disk. When you commit (from any tool, even with Atlas closed), the commit is linked back to the session that produced it as a checkpoint, and links survive rebases and amends.
-
-You don't have to read the raw transcript to get the context back: select a checkpoint and chat with it directly, and it answers from what actually happened in that session. Local mode works fully offline with no account.
-
-## How it works
-
-Atlas runs your agents as they are, and enriches what they see.
-
-Claude Code and Codex run as external subprocesses over [ACP](https://github.com/zed-industries/agent-client-protocol), the most-used, most-tested path. Atlas Agent, the native agent, runs in-process on its own engine, a hard fork of an Apache-2.0 upstream (see `CONTEXT.md`, ADR-0003 and ADR-0011).
-
-Beyond those, Atlas can spawn any agent in the ACP registry (Cursor, OpenCode, Kilo Code, and more), pulling in each one's official binary automatically. All of them go through the same send path, so everything below applies whichever one you pick.
-
-> [!NOTE]
-> QA on the long tail of registry agents is ongoing.
-
-Before your message reaches the agent, Atlas assembles context around it:
-
-| Injected | Where it comes from | When |
-|---|---|---|
-| **`@` mentions** | Resolved locally in Rust before the prompt is sent. Notes, skills, papers, and past sessions are inlined; files and folders resolve to a path | Every turn |
-| **Shared agent memory** | Active plan, decisions, file changes, failures, and architecture notes, written by any agent | Every turn |
-| **Semantic matches** | Your message is embedded on-device and matched against the project's memory index | Every turn |
-| **Session handoff** | A curated fact pack plus the tail of your last session in this project, including one from a different agent | First message |
-| **What you already wrote** | Knowledge notes, `CLAUDE.md`, `AGENTS.md`, Claude Code's memory files, and Codex's history, folded into one index | Continuously |
-
-- **One path, no per-agent special-casing.** Run your existing Claude Code or Codex subscription through Atlas and the session gets more context, with no change to how you work.
-- **Claude Code's memory is visible to Codex, and the reverse.** Neither agent can read the other's history on its own.
-- **Folders resolve to a pointer, not a paste.** `@`-ing a 5000-line file sends a path the agent reads on demand, so one mention doesn't occupy the context window for the rest of the session.
-- **Embedding runs on your machine.** Retrieval never leaves the device.
-
-## Features
-
-### Agents
-
-| Capability | Description | Link |
-|---|---|---|
-| Multi-agent sessions | Claude Code, Codex, and Atlas's native agent, selectable per session and running in parallel across tabs. Sessions are independent of tabs, so switching never drops a run in flight | [Chat & Sessions](https://docs.tryatlas.cc/docs/product/chat) |
-| Shared agent memory | On-device semantic index (local embeddings, HNSW search) that every agent reads from and writes to | [Memory](https://docs.tryatlas.cc/docs/context/memory) |
-| @ mentions | Local resolution of files, folders, symbols, branches, commits, notes, skills, papers, and past sessions | [Chat & Sessions](https://docs.tryatlas.cc/docs/product/chat) |
-| Skills | SKILL.md files scoped globally or per project, enabled per agent by symlinking into that agent's own skills directory | [Skills](https://docs.tryatlas.cc/docs/context/skills) |
-| Packs | Install a GitHub repo of skills, subagents, commands, hooks, rules, and scripts, discovered through the skills.sh index | [Skills](https://docs.tryatlas.cc/docs/context/skills) |
-| Model chat | Talk to a model directly in its own tab, with no agent loop around it | [Chat & Sessions](https://docs.tryatlas.cc/docs/product/chat) |
-| Organisations | Sign in, create an organisation, and sync across devices and teammates | [Organisations](https://docs.tryatlas.cc/docs/organisation/organisations) |
-
-### Agent history
-
-| Capability | Description |
-|---|---|
-| **Session capture** | Every session recorded to `.atlas/sessions.db`: prompts, messages, tool calls, the files each one touched, and the patches it applied |
-| **Checkpoints** | Each session linked to the commits it produced. Commits are observed rather than intercepted, so one made from a terminal, from another editor, or while Atlas was closed still finds its session |
-| **Survives history rewrites** | Links re-point through amend and rebase by patch-id reconciliation. When a squash makes the link genuinely ambiguous, it orphans instead of guessing |
-| **Transcript import** | Backfills your existing Claude Code history, so the record starts before you installed Atlas |
-| **Secrets scrubbed on write** | Redaction runs before anything is persisted, so the local store is never itself a disclosure risk |
-| **Capture health** | One signal per project, OK, Degraded, or Stopped, each with a reason and the next step |
-| **Mission control** | Dashboard for agent activity: usage over time, consumption breakdown, timelines, and a filterable log table |
-
-Works with no account and no network.
-
-### The project
-
-| Capability | Description | Link |
-|---|---|---|
-| **Editor** | CodeMirror editing surface, with per-project editor state restored across restarts | [Editor](https://docs.tryatlas.cc/docs/product/editor) |
-| **Git** | Real commit graph with lane assignment, stage/unstage/commit, branch operations, and file-level diffs | [Git & Diff](https://docs.tryatlas.cc/docs/source-control/git) |
-| **Terminal** | Block terminal where each command carries its own output, exit code, and duration, plus a full interactive surface for `vim`, `htop`, and friends | [Terminal](https://docs.tryatlas.cc/docs/product/terminal) |
-| **Knowledge base** | Plain markdown notes in `.atlas/knowledge/`, versioned next to the code, with backlinks, a link graph, and export to HTML or a standalone server binary | [Knowledge base](https://docs.tryatlas.cc/docs/context/knowledge-base) |
-| **Research** | Search arXiv and Semantic Scholar, pull papers in, read them in-app, and `@`-mention them into a prompt | [Research](https://docs.tryatlas.cc/docs/context/research) |
-| **Browser** | Native WebKit webview in a tab, with real logins, cookies, and a reader mode | [Explorer](https://docs.tryatlas.cc/docs/product/explorer) |
-| **Spaces** | Spatial board for notes and their connections, persisted as JSON in the project | [Chat & Sessions](https://docs.tryatlas.cc/docs/product/chat) |
-| **Split view** | Up to three resizable columns, each with its own tabs | [Editor](https://docs.tryatlas.cc/docs/product/editor) |
-| **Activity log** | Every significant event in the project, filterable, with rows you can pin across restarts | [Timeline](https://docs.tryatlas.cc/docs/source-control/timeline) |
-
----
-
-## Build from source
-
-To use the Claude Code agent, install the `claude` CLI and put it on your `PATH`. Atlas's native agent needs no external CLI.
-
-Requires **[Bun](https://bun.sh/)** and **Rust** (stable, via [rustup](https://rustup.rs/)), plus **Xcode Command Line Tools** on macOS or the **MSVC build tools** (Visual Studio Build Tools with the C++ workload) on Windows.
-
-<details>
-<summary>Linux system dependencies (GTK 3, WebKit2GTK 4.1, GLib headers)</summary>
-
-* **Debian / Ubuntu / Linux Mint**:
-  ```bash
-  sudo apt install -y libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
-  ```
-* **Fedora / RHEL**:
-  ```bash
-  sudo dnf install glib2-devel gtk3-devel webkit2gtk4.1-devel
-  ```
-* **Arch Linux / Manjaro**:
-  ```bash
-  sudo pacman -S glib2 gtk3 webkit2gtk-4.1
-  ```
-* **openSUSE**:
-  ```bash
-  sudo zypper install glib2-devel gtk3-devel webkit2gtk3-devel
-  ```
-
-</details>
-
-```bash
-git clone https://github.com/pacifio/atlas
-cd atlas
-bun install
-bun run dev:app
+```sh
+bun install --frozen-lockfile
+bun run dev           # frontend; use an existing ?scenario= mock for browser UI work
+bun run dev:app       # actual desktop backend and external CLIs
+bun run typecheck
+bun run test
+bun run build
+cargo check --locked -p atlas --lib
+cargo test --locked -p atlas-agent-manager -p atlas-checkpoint -p atlas-memory
+cargo test --locked -p atlas --lib
 ```
 
-The first Rust compile takes a few minutes; after that it is seconds. Use `bun run dev` for frontend-only iteration, though anything calling `invoke()` needs `dev:app`.
+Real vendor authentication and end-to-end paid CLI turns require the user's vendor account. ACP support for model selection and session restoration varies by CLI and is negotiated rather than assumed.
 
-Production builds:
+## Removed scope
 
-```bash
-bun run build:app       # macOS .app bundle
-bun run build:app:dmg   # macOS .app + .dmg installer
-bun run build:app:win   # Windows .msi installer
-```
+Atlas accounts / identity / organization permissions, cloud organization and member management, team chat and cloud Spaces, cloud recording synchronization, official model gateway, native Atlas Agent and its vendored engine, telemetry / analysis uploads / feedback uploads, and the PostHog-configured official updater are removed. Projects and recording bindings migrate to local ownership without deleting session rows, checkpoints or shared memory. Existing legacy schema columns are retained for data compatibility and have no remote uploader.
 
-## Contributing
+## Other features retained for review
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). One thing catches people out:
+Research papers, embedded browser, local canvas / notebook, knowledge graph, design/media extensions and optional BYOK analysis are still present. Removing these later can reduce bundle size and network surface but would remove their local documents, preview / mention integrations or analysis entry points. See `docs/reference/local-workbench.md` for scope and verification notes. This change introduces no quota fallback, model panel review or additional memory injection.
 
-- **Feature work targets the current version branch**, not `main`. `main` only receives a finished version branch, and that merge is the release.
-
-[ARCHITECTURE.md](ARCHITECTURE.md) covers how Atlas is built. [SECURITY.md](.github/SECURITY.md) covers reporting vulnerabilities.
-
----
-
-## Local by default
-
-- **Your code, notes, and sessions stay on your machine.** Nothing is uploaded to run an agent.
-- **Secrets are scrubbed before anything is written to disk.** Not before upload, before persistence.
-- **Session capture is local-only by default.** The [Checkpoints](#checkpoints) record is written to `.atlas/sessions.db` and stays there. No account required, and nothing sent anywhere until you explicitly opt in to sync.
-- **Accounts are opt-in.** Sign in to create an organisation and sync across devices and teammates.
-- **Anonymous usage analytics are on by default.** Coarse metadata, never code or prompts. [What's collected, and how to turn it off](TELEMETRY.md).
-
-## Contributors
-<a href="https://github.com/pacifio/atlas/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=pacifio/atlas" />
-</a>
-
-## License
-
-Apache License 2.0. See [LICENSE](LICENSE).
-
----
-
-<div align="center">
-<sub>
-
-[Website](https://www.tryatlas.cc/) · [Docs](https://docs.tryatlas.cc/) · [Discord](https://discord.gg/GmnFggaPfP) · [Telemetry](TELEMETRY.md) · [Apache 2.0](LICENSE)
-
-</sub>
-</div>
+See [ARCHITECTURE.md](ARCHITECTURE.md), [CONTEXT.md](CONTEXT.md) and [CONTRIBUTING.md](CONTRIBUTING.md). Existing historical ADRs describe previous versions; the local workbench scope supersedes their account, cloud and native-engine decisions.

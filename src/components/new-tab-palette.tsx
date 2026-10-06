@@ -45,7 +45,7 @@ const MODULES: ModuleEntry[] = [
     icon: AtlasIcon as ElementType<LucideProps>,
     actionId: "tabs.newChat",
   },
-  { id: "canvas", type: "canvas", label: "Spaces", icon: Map },
+  { id: "canvas", type: "canvas", label: "Canvas", icon: Map },
   {
     id: "terminal",
     type: "terminal",

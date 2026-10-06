@@ -42,11 +42,10 @@ use atlas_agent_store::{
 };
 use atlas_agent_wire::{
     AgentId, DeltaSink, ErrorClass, Message, MessageMode, MessageRole, SessionDelta,
-    SessionDeltaEnvelope, SessionStatus, ToolCallStatus,
+    SessionDeltaEnvelope, ToolCallStatus,
 };
 use atlas_bus::{OutboundMiddleware, OutboundPipeline};
 
-use super::agent_analytics::AnalyticsState;
 use super::agent_host::{
     AgentHost, AgentInfo, AuthMethodWire, HostError, PermissionDecision, SessionInit, SessionKey,
     SessionSnapshot,
@@ -80,7 +79,6 @@ impl TauriDeltaSink {
         let pipeline = OutboundPipeline::new()
             // Broadcast first so the UI updates before any heavier work.
             .with(Arc::new(BroadcastMiddleware { app: app.clone() }))
-            .with(Arc::new(AnalyticsMiddleware { app: app.clone() }))
             .with(Arc::new(KeepAwakeMiddleware { app: app.clone() }))
             // Session capture lives here rather than on the event bus because
             // the bus drops events for a lagging subscriber, and a dropped event
@@ -137,197 +135,6 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for KeepAwakeMiddleware {
     }
 }
 
-/// Opt-in per-turn product analytics, for **both** agent families.
-///
-/// The sink is the one place that sees every delta from every agent, so a turn's
-/// whole shape — tools run, files touched, tokens spent, how it ended — is
-/// accumulated here and flushed as a single `agent_turn_completed`. See
-/// [`crate::commands::agent_analytics`] for the accumulator and for what this
-/// deliberately refuses to measure.
-///
-/// Unlike [`MemoryIngestMiddleware`] this needs no blocking pool: it is
-/// in-memory arithmetic over already-cloned data, and the one flush is
-/// `capture`, a non-blocking `try_send` that no-ops entirely when the user has
-/// not opted in.
-struct AnalyticsMiddleware {
-    app: AppHandle,
-}
-
-impl AnalyticsMiddleware {
-    /// The plugin this agent was spawned from (`claude-code-ts` / `codex` /
-    /// `atlas-agent`). A single `DashMap` lookup, safe on the delta hot path.
-    ///
-    /// This replaces the old `agent_kind`, which was `agent_id.0` — a random
-    /// UUID minted per registration that identified nothing outside the process
-    /// and did not survive a restart. It made every agent-segmented query in
-    /// PostHog meaningless.
-    fn plugin_id(&self, envelope: &SessionDeltaEnvelope) -> String {
-        self.app
-            .state::<Arc<AgentHost>>()
-            .plugin_id_for_agent(envelope.agent_id)
-            .unwrap_or_else(|| "unknown".to_string())
-    }
-
-    /// Coarse bucket for funnels that don't care which ACP agent it was.
-    fn family(plugin_id: &str) -> &'static str {
-        if plugin_id == atlas_native_agent::ATLAS_AGENT_ID {
-            "native"
-        } else {
-            "acp"
-        }
-    }
-
-    /// Flush the finished turn as one event. `outcome` discriminates rather than
-    /// splitting into separate events, so a completion-rate funnel is one query.
-    fn flush(&self, envelope: &SessionDeltaEnvelope, turn_seq: u64, extra: serde_json::Value) {
-        let st = self.app.state::<Arc<AnalyticsState>>();
-        let Some(mut props) = st.finish_turn(&envelope.session_id, turn_seq) else {
-            return;
-        };
-        let plugin_id = self.plugin_id(envelope);
-        if let (Some(map), Some(more)) = (props.as_object_mut(), extra.as_object()) {
-            map.insert(
-                "agent_family".into(),
-                serde_json::json!(Self::family(&plugin_id)),
-            );
-            map.insert("plugin_id".into(), serde_json::json!(plugin_id));
-            map.insert(
-                "session_ref".into(),
-                serde_json::json!(st.session_ref(&envelope.session_id)),
-            );
-            for (k, v) in more {
-                map.insert(k.clone(), v.clone());
-            }
-        }
-        self.app
-            .state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture("agent_turn_completed", props);
-    }
-}
-
-impl OutboundMiddleware<SessionDeltaEnvelope> for AnalyticsMiddleware {
-    fn on_event(&self, envelope: &SessionDeltaEnvelope) {
-        let st = self.app.state::<Arc<AnalyticsState>>();
-        let sid = envelope.session_id.as_str();
-
-        match &envelope.delta {
-            SessionDelta::Status { status, turn_seq } if *status == SessionStatus::Running => {
-                let is_new = !st.has_turn(sid, *turn_seq);
-                st.begin_turn(sid, *turn_seq);
-                if is_new {
-                    let plugin_id = self.plugin_id(envelope);
-                    self.app
-                        .state::<Arc<crate::telemetry::TelemetryClient>>()
-                        .capture(
-                            "agent_turn_started",
-                            serde_json::json!({
-                                "agent_family": Self::family(&plugin_id),
-                                "plugin_id": plugin_id,
-                                "session_ref": st.session_ref(sid),
-                                "turn_seq": turn_seq,
-                            }),
-                        );
-                }
-            }
-            SessionDelta::ToolCallUpserted { tool_call, .. } => {
-                let salt = st.salt();
-                st.with_turn(sid, |a| a.note_tool_call(salt, tool_call));
-            }
-            SessionDelta::UsageUpdated { usage } => st.with_turn(sid, |a| a.note_usage(usage)),
-            SessionDelta::ContextUsage {
-                used,
-                size,
-                cost,
-                currency,
-            } => st.with_turn(sid, |a| {
-                a.note_context(*used, *size, *cost, currency.as_deref())
-            }),
-            SessionDelta::PermissionRequest { .. } => st.with_turn(
-                sid,
-                super::agent_analytics::TurnAcc::note_permission_request,
-            ),
-            SessionDelta::PermissionResolved { .. } => st.with_turn(
-                sid,
-                super::agent_analytics::TurnAcc::note_permission_resolved,
-            ),
-            SessionDelta::RetryStatus { .. } => {
-                st.with_turn(sid, super::agent_analytics::TurnAcc::note_retry)
-            }
-            SessionDelta::Compaction { active } if *active => {
-                st.with_turn(sid, super::agent_analytics::TurnAcc::note_compaction)
-            }
-            SessionDelta::CompressionSaved { saved_tokens } => {
-                st.with_turn(sid, |a| a.note_compression_saved(*saved_tokens))
-            }
-            SessionDelta::ModelChanged { model_id } => {
-                st.with_turn(sid, |a| a.note_model(model_id))
-            }
-            SessionDelta::ModeChanged { .. } => {
-                st.with_turn(sid, super::agent_analytics::TurnAcc::note_mode_change)
-            }
-            SessionDelta::MessageAppended { message } => {
-                if message.role == MessageRole::Assistant {
-                    st.with_turn(sid, super::agent_analytics::TurnAcc::note_assistant_message);
-                }
-            }
-            SessionDelta::PlanUpdated { .. } => {
-                st.with_turn(sid, super::agent_analytics::TurnAcc::note_plan_update)
-            }
-
-            SessionDelta::TurnFinished {
-                stop_reason,
-                turn_seq,
-            } => self.flush(
-                envelope,
-                *turn_seq,
-                serde_json::json!({ "outcome": "finished", "stop_reason": stop_reason }),
-            ),
-            SessionDelta::TurnFailed {
-                error,
-                turn_seq,
-                error_kind,
-            } => self.flush(
-                envelope,
-                *turn_seq,
-                serde_json::json!({
-                    "outcome": "failed",
-                    "error_kind": error_kind,
-                    "error_summary": crate::telemetry::redact_message(error, 160),
-                }),
-            ),
-            SessionDelta::AgentDisconnected { reason } => {
-                // The process died mid-turn. Flush what we have rather than
-                // leaking the accumulator — a disconnect rate is exactly the
-                // kind of thing this event exists to surface.
-                self.flush(
-                    envelope,
-                    0,
-                    serde_json::json!({
-                        "outcome": "disconnected",
-                        "error_summary": crate::telemetry::redact_message(reason, 160),
-                    }),
-                );
-                st.forget_session(sid);
-            }
-            _ => {}
-        }
-    }
-}
-
-/// Records assistant output into Atlas's own transcript store, and persists at
-/// each turn boundary.
-///
-/// For **every** agent. It used to skip the agents that keep a readable store
-/// of their own — Claude, the native agent — because Atlas read those stores
-/// for the sidebar and a second copy meant two rows for one conversation. Atlas
-/// no longer reads anyone's store (ADR-0001), so that reason is gone and the
-/// exception was the last agent-identity branch feeding Atlas's own record:
-/// past-session `@`-mentions read these transcripts, and gating them by agent
-/// id is exactly what "no ACP agent gets special treatment" forbids (#17).
-///
-/// Writes are debounced to `TurnFinished`/`TurnFailed` rather than per delta:
-/// streaming emits hundreds of `MessageAppended`s per turn and a file write on
-/// each would put disk I/O in the hot path for no benefit.
 struct TranscriptMiddleware {
     app: AppHandle,
 }
@@ -440,8 +247,6 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         let cwd = meta.as_ref().map(|m| m.cwd.clone());
 
         let is_turn_finished = matches!(envelope.delta, SessionDelta::TurnFinished { .. });
-        let agent_id = envelope.agent_id;
-        let session_id = envelope.session_id.clone();
 
         // Site A — Shared Cross-Agent Memory (v2) capture (write-side parity for
         // all three agents). `classify` is pure/in-memory, but `append_event`
@@ -475,43 +280,10 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
-            // Site B — the extractor's turn-finished pass, for every agent
-            // (`super::memory_extract`). The conversation is read now, off the
-            // emit thread — by the time the queue reaches the job the session
-            // may be gone, and its end pass needs these turns — then queued:
-            // the extractor applies the gates (about twenty turns and three
-            // tool calls since the last pass) and asks the gateway or the
-            // user's BYOK provider.
-            if let Some(meta) = meta {
-                let app = self.app.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    let key = SessionKey {
-                        agent_id,
-                        session_id: session_id.clone(),
-                    };
-                    let Ok(snapshot) = app.state::<Arc<AgentHost>>().snapshot(&key) else {
-                        return;
-                    };
-                    let job = super::memory_indexer::Job::ExtractSession {
-                        cwd: meta.cwd,
-                        writer: super::shared_memory::Writer {
-                            agent: meta.agent,
-                            session_id,
-                        },
-                        turns: super::memory_extract::transcript_turns(&snapshot.messages),
-                    };
-                    if let Err(e) = app.state::<Arc<MemoryRegistry>>().enqueue(job) {
-                        tracing::debug!(target: "atlas::shared_memory", "turn extraction not queued: {e}");
-                    }
-                });
-            }
-
             // Background reindex nudge: the FS watcher only watches `*.md`/docs.json,
             // not session transcripts, so a finished turn needs an explicit nudge to
             // make chat-derived corpus searchable. Fire-and-forget — `enqueue_index`
             // `try_send`s and drops on a full queue, so `emit` never blocks here.
-            // (The extractor additionally enqueues its own reindex after it
-            // records entries.)
             if let Some(cwd) = cwd {
                 let registry = self.app.state::<Arc<MemoryRegistry>>();
                 registry.enqueue_index(&cwd);
@@ -597,7 +369,11 @@ impl SharingGatedLifecycle {
                 for write in rx {
                     let memory = app.state::<SharedMemoryStore>();
                     match write {
-                        LifecycleWrite::Started { session_id, agent, cwd } => {
+                        LifecycleWrite::Started {
+                            session_id,
+                            agent,
+                            cwd,
+                        } => {
                             if app.state::<MemorySharingState>().is_enabled(&cwd) {
                                 memory.session_started(&session_id, &agent, &cwd);
                             }
@@ -605,20 +381,7 @@ impl SharingGatedLifecycle {
                         LifecycleWrite::Ended { session_id } => {
                             // The end-of-session extraction, queued behind the
                             // session's last turn-finished pass.
-                            if let Some(ended) = memory.session_ended(&session_id) {
-                                if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
-                                    let job = super::memory_indexer::Job::SessionEnded {
-                                        cwd: ended.cwd,
-                                        writer: super::shared_memory::Writer {
-                                            agent: ended.agent,
-                                            session_id,
-                                        },
-                                    };
-                                    if let Err(e) = registry.enqueue(job) {
-                                        tracing::warn!(target: "atlas::shared_memory", "end-of-session extraction not queued: {e}");
-                                    }
-                                }
-                            }
+                            memory.session_ended(&session_id);
                         }
                     }
                 }
@@ -679,7 +442,6 @@ pub fn install_manager(app: &AppHandle) {
         .path()
         .app_config_dir()
         .unwrap_or_else(|_| std::env::temp_dir());
-    app.manage(Arc::new(AnalyticsState::new()));
     app.manage(Arc::new(super::agent_transcript::TranscriptState::new(
         config_dir.clone(),
     )));
@@ -727,12 +489,6 @@ pub fn install_manager(app: &AppHandle) {
         super::shared_memory::install_embedder(Arc::new(
             super::memory_indexer::ModelEmbedder::new(app.clone()),
         ));
-        // The extractor: durable entries distilled from sessions, through the
-        // gateway or the user's BYOK provider.
-        app.manage(Arc::new(super::memory_extract::Extractor::new(
-            memory.inner().clone(),
-            Arc::new(super::memory_extract::AppExtractionModel::new(app.clone())),
-        )));
         let server = Arc::new(super::memory_server::MemoryServerHost::new());
         app.manage(server.clone());
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(
@@ -742,80 +498,10 @@ pub fn install_manager(app: &AppHandle) {
         let gate_app = app.clone();
         let gate: super::memory_server::SharingGate =
             Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
-        // The UI tool server (ADR-0012): each call is one UI action, emitted
-        // to the window and answered through `ui_action_respond`. The
-        // organisation tool server's window tools cross on the same bridge,
-        // under their own event name.
-        let emit_app = app.clone();
-        let ui_bridge = Arc::new(super::ui_server::UiBridge::new(Arc::new(
-            move |request: &super::ui_server::UiRequest| {
-                emit_app
-                    .emit(super::ui_server::action_event(request), request)
-                    .map_err(|e| e.to_string())
-            },
+        host.set_session_mcp(Arc::new(super::memory_server::MemorySessionOffers::new(
+            server.clone(),
+            gate.clone(),
         )));
-        app.manage(ui_bridge.clone());
-        // The user's "Let Atlas Agent navigate the app" setting, read on every
-        // offer and every call so switching it off stops the agent at once.
-        let nav_app = app.clone();
-        let navigation: super::ui_server::NavigationGate = Arc::new(move || {
-            nav_app
-                .try_state::<crate::state::AtlasConfigHandle>()
-                .is_some_and(|config| config.lock().effective().agent_ui_navigation)
-        });
-        let ui_router = super::ui_server::router(super::ui_server::UiTools::new(
-            ui_bridge.clone(),
-            navigation.clone(),
-        ));
-        // The organisation tool server (ADR-0014): calls act in the
-        // organisation the session's Project is bound to, through the clients
-        // the app already holds. Its setting, "Let Atlas Agent act in your
-        // organisation", is read on every offer and every call, like the
-        // navigation one.
-        let org_app = app.clone();
-        let org_access: super::org_server::OrgAccessGate = Arc::new(move || {
-            org_app
-                .try_state::<crate::state::AtlasConfigHandle>()
-                .is_some_and(|config| config.lock().effective().agent_org_access)
-        });
-        // Every call is audited: its record goes to the window, which writes
-        // the call's Logs row.
-        let audit_app = app.clone();
-        // The account and the Project's binding, read by the offer and again
-        // by every call, so signing out or unbinding stops a running session.
-        let session_orgs: Arc<dyn super::org_server::SessionOrgs> =
-            Arc::new(super::org_server::AppSessionOrgs::new(app.clone()));
-        let org_tools = super::org_server::OrgTools::new(
-            Arc::new(super::org_server::AppOrganisationCloud::new(app.clone())),
-            org_access.clone(),
-            session_orgs.clone(),
-        )
-        .with_audit(Arc::new(
-            move |record: &super::org_server::OrgActionRecord| {
-                let _ = audit_app.emit(super::org_server::ORG_ACTION_EVENT, record);
-            },
-        ))
-        // Drawing on a Space page crosses to the window: the page's codec
-        // lives in the frontend.
-        .with_window(ui_bridge);
-        let org_router = super::org_server::router(org_tools.clone());
-        // Every agent that can take the server is handed it on each session
-        // request, with a token of its own. It is the only way memory reaches
-        // an agent (ADR-0010): nothing is prepended to a prompt. A connection
-        // that carries UI control is also handed the UI tool server, and one
-        // that carries organisation access the organisation tool server, all
-        // on the same token.
-        host.set_session_mcp(Arc::new(
-            super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
-                .with_ui(super::ui_server::UiOffer::new(navigation))
-                // The same tools describe an outward call on the approval
-                // card — whom it reaches, and the full body — and keep the
-                // user's approval of it, which the call checks (ADR-0014).
-                .with_org(
-                    super::org_server::OrgOffer::new(org_access, session_orgs)
-                        .describing_with(org_tools),
-                ),
-        ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
         let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {
@@ -860,7 +546,6 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
-            vec![ui_router, org_router],
         );
     }
 
@@ -904,18 +589,6 @@ pub fn install_manager(app: &AppHandle) {
                         error: atlas_acp_thread::LoadError::TimedOut { phase, after, .. },
                     }) => {
                         tracing::warn!(plugin_id = %id, %phase, after_s = after.as_secs(), "agent start timed out");
-                        if let Some(telemetry) =
-                            app.try_state::<Arc<crate::telemetry::TelemetryClient>>()
-                        {
-                            telemetry.capture(
-                                "agent_start_timed_out",
-                                serde_json::json!({
-                                    "agent_id": id.to_string(),
-                                    "phase": phase.to_string(),
-                                    "after_s": after.as_secs(),
-                                }),
-                            );
-                        }
                     }
                     Ok(_) => {}
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
@@ -1093,54 +766,6 @@ pub fn install_manager(app: &AppHandle) {
             emit_catalog_changed(&app, "discovery");
         });
     }
-
-    // The D10 token provider (#51): the native agent authenticates with the
-    // user's Atlas account, minting a short-TTL access JWT per request.
-    //
-    // Registered rather than passed in — these types are behind a cargo
-    // feature, and a constructor parameter would `cfg`-gate `AgentHost::new`'s
-    // signature and every caller of it — and read at *connect*
-    // time rather than construction — `AgentHost` is built before the auth
-    // state exists, so a source resolved in its constructor would always be
-    // absent and every turn would go out with no credential.
-    //
-    // No cfg gate. This block used to sit behind `ported-engine`, and when #54
-    // deleted that feature the gate did not fail the build — a cfg on a feature
-    // that no longer exists silently compiles to NOTHING, so the registration
-    // vanished and the first live turn went out with no Authorization header at
-    // all ("Missing bearer token", straight from the gateway). Cargo does warn
-    // (`unexpected_cfgs`), but only as a warning.
-    //
-    // The handle is captured and the auth state resolved **per mint**, not
-    // here: `install_manager` runs at line ~176 of setup and `AuthState` is
-    // managed at ~193, so an eager `app.state::<AuthState>()` panics the app
-    // at launch — `state() called before manage()`. The old feature gate hid
-    // exactly this ordering bug by never letting the line run.
-    atlas_native_agent::engine::auth::register_token_source(Arc::new(AccountTokenSource {
-        app: app.clone(),
-    }));
-
-    // The paying org, on every gateway request. Resolved from the live auth
-    // snapshot per request rather than captured once: the user can switch org
-    // mid-session, and the next message must bill — and be admitted by — the
-    // org they switched to. Without this header the gateway attributes every
-    // request to the caller *personally*, and an account whose AI grant lives
-    // on its organisation is refused `403 no_entitlement` while that org sits
-    // fully entitled.
-    {
-        let app_for_org = app.clone();
-        atlas_native_agent::engine::set_org_source(Arc::new(move || {
-            // `try_state`, lazily: this closure can in principle run before
-            // `AuthState` is managed (same launch-ordering hazard as the token
-            // source above), and "no org yet" is the honest answer then —
-            // personal attribution, never a panic.
-            let state = app_for_org.try_state::<crate::commands::auth::AuthState>()?;
-            match state.core().snapshot() {
-                crate::auth::AuthSnapshot::SignedIn { active_org_id, .. } => active_org_id,
-                _ => None,
-            }
-        }));
-    }
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
@@ -1272,21 +897,6 @@ pub fn agents_respond_elicitation(
     let _ = agent_id;
     host.respond_elicitation(request_id, &action, content)
         .map_err(|e| e.to_string())
-}
-
-/// Branch a session from its current state.
-///
-/// Real for the native agent — the engine's `thread/fork` copies the stored
-/// conversation into a new thread, and the frontend opens the returned id
-/// through the normal reopen path (which replays the forked history). Still
-/// `null` for every ACP agent: Zed does not implement `session/fork`, the
-/// trait has no method for it, and `supportsFork` hides the affordance there.
-#[tauri::command]
-pub async fn agents_fork_session(
-    key: SessionKey,
-    host: State<'_, Arc<AgentHost>>,
-) -> Result<Option<String>, String> {
-    host.fork_session(&key).await.map_err(|e| e.to_string())
 }
 
 /// Rewind the last exchange, returning the prompt that started it.
@@ -1743,8 +1353,6 @@ pub async fn agents_drop_session(
     let _ = agent_id;
     // Release the per-turn accumulator with the session, so a tab closed
     // mid-turn doesn't hold one for the life of the process.
-    app.state::<Arc<AnalyticsState>>()
-        .forget_session(&session_id);
     let host = app.state::<Arc<AgentHost>>().inner().clone();
     host.drop_session(&session_id)
         .await
@@ -1771,15 +1379,6 @@ pub async fn agents_set_model(
     host.set_model(&key, model_id)
         .await
         .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn agents_set_effort(
-    key: SessionKey,
-    effort: String,
-    host: State<'_, Arc<AgentHost>>,
-) -> Result<(), String> {
-    host.set_effort(&key, effort).map_err(|e| e.to_string())
 }
 
 // `agents_set_compress` is gone (#54). Tool-output compression was a knob on
@@ -2193,60 +1792,6 @@ mod auth_url_tests {
             first_url("https://first.example.com and https://second.example.com").as_deref(),
             Some("https://first.example.com")
         );
-    }
-}
-
-/// The native agent's credential: an Atlas access JWT from the signed-in
-/// account (#51, spec D10/D14).
-///
-/// A thin adapter and deliberately so — the caching, the proactive re-mint at
-/// `exp − 60s` and the refresh-once-on-401 all live in the seam's
-/// `AtlasExternalAuth`, which is where the engine can drive them. This only has
-/// to answer "mint me one now".
-///
-/// `mint_access_token` is a bare `GET /token` with no cache of its own, which
-/// is *correct* for its other callers: they mint at the point of use, so their
-/// token is never near expiry. It is the engine's long-lived session, holding a
-/// credential across a multi-minute turn, that needs the caching layer above.
-struct AccountTokenSource {
-    /// The app handle, not the auth core: this source is registered during
-    /// setup, *before* `AuthState` is managed, so the core cannot be captured
-    /// at construction. It is resolved per mint — by which time a turn is in
-    /// flight and the state has long existed.
-    app: AppHandle,
-}
-
-impl atlas_native_agent::engine::auth::AtlasTokenSource for AccountTokenSource {
-    fn mint(&self) -> atlas_native_agent::engine::auth::ExternalAuthFuture<'_, String> {
-        Box::pin(async move {
-            let Some(state) = self.app.try_state::<crate::commands::auth::AuthState>() else {
-                return Err(std::io::Error::other(
-                    "Atlas auth state is not ready yet — try again in a moment",
-                ));
-            };
-            state.core().mint_access_token().await.map_err(|err| {
-                // The engine's trait speaks `io::Error`, so the reason has to
-                // survive as text or the user is told only that auth failed.
-                // Each verdict gets its own words: "not signed in" and "the
-                // network is down" call for different actions, and the
-                // Indeterminate one used to surface as a Debug dump
-                // (`Indeterminate { retry_after: None, reason: "error sending
-                // request" }`) — which is what a user with no DNS at launch
-                // read on 2026-09-14, behind a toast about the engine runtime.
-                use crate::auth::AuthFailure;
-                let text = match err {
-                    AuthFailure::NoCredential => "not signed in to Atlas".to_string(),
-                    AuthFailure::Rejected => {
-                        "the Atlas sign-in was rejected — sign in again".to_string()
-                    }
-                    AuthFailure::Denied => "the Atlas account may not use Atlas Agent".to_string(),
-                    AuthFailure::Indeterminate { reason, .. } => {
-                        format!("Atlas can't be reached ({reason})")
-                    }
-                };
-                std::io::Error::other(text)
-            })
-        })
     }
 }
 

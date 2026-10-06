@@ -8,7 +8,6 @@ import {
   NON_RUST,
   REPO_ROOT,
   affectedPackages,
-  dialectPackages,
   loadWorkspace,
   matches,
   plan,
@@ -45,8 +44,7 @@ import {
 const workspace = loadWorkspace(REPO_ROOT);
 const crates = readCrateMatrix(REPO_ROOT);
 const ciYml = readFileSync(path.join(REPO_ROOT, ".github", "workflows", "ci.yml"), "utf8");
-const dialect = dialectPackages(ciYml);
-const ctx = { workspace, crates, dialect };
+const ctx = { workspace, crates };
 const names = new Set(workspace.packages.map((p) => p.name));
 
 function rustFiles(dir: string, out: string[] = []): string[] {
@@ -122,7 +120,7 @@ describe("the CI planner sees every input", () => {
   it("finds the workspace and the out-of-tree reads it already knows about", () => {
     // Floor guards: an empty workspace or a scan that matches nothing would
     // make every assertion below pass vacuously.
-    expect(workspace.packages.length).toBeGreaterThan(100);
+    expect(workspace.packages.length).toBeGreaterThan(20);
     const sites = escapes().map((e) => e.pkg);
     expect(sites).toEqual(expect.arrayContaining(["atlas", "atlas-theme", "atlas-process"]));
   });
@@ -144,7 +142,7 @@ describe("the CI planner sees every input", () => {
     // NON_RUST, or GLOBAL_INPUTS if it can change how Rust builds.
     const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: REPO_ROOT, encoding: "utf8" })
       .split("\0")
-      .filter(Boolean);
+      .filter((file) => file && existsSync(path.join(REPO_ROOT, file)));
     expect(tracked.length).toBeGreaterThan(1000);
     const unclassified = tracked.filter((f) => {
       const { all } = affectedPackages([f], workspace);
@@ -164,9 +162,8 @@ describe("the CI planner sees every input", () => {
 describe("the CI plan", () => {
   it("runs no Rust job for a frontend-only change", () => {
     const p = run(["src/features/chat/components/chat-panel.tsx", "docs/adr/0001-x.md"]);
-    expect({ app: p.app, dialect: p.engineDialect, crates: p.crates }).toEqual({
+    expect({ app: p.app, crates: p.crates }).toEqual({
       app: false,
-      dialect: false,
       crates: [],
     });
   });
@@ -179,14 +176,7 @@ describe("the CI plan", () => {
 
   it("runs a crate's dependents, and the app, when the crate changes", () => {
     const hit = crateNames(["crates/atlas-process/src/lib.rs"]);
-    expect(hit).toEqual(
-      expect.arrayContaining([
-        "atlas-process",
-        "atlas-terminal",
-        "atlas-git",
-        "atlas-native-agent",
-      ]),
-    );
+    expect(hit).toEqual(expect.arrayContaining(["atlas-process", "atlas-terminal", "atlas-git"]));
     expect(hit).not.toContain("atlas-theme");
     expect(run(["crates/atlas-process/src/lib.rs"]).app).toBe(true);
   });
@@ -201,16 +191,6 @@ describe("the CI plan", () => {
       "atlas-process",
       "atlas-redact",
     ]);
-    expect(p.engineDialect).toBe(false);
-  });
-
-  it("runs the engine dialect, the native agent and the spawn audit for an engine change", () => {
-    const p = run(["vendor/atlas-engine/atlas-engine-api/src/lib.rs"]);
-    expect(p.engineDialect).toBe(true);
-    expect(p.app).toBe(true);
-    expect(p.crates.map((c) => c.crate)).toEqual(
-      expect.arrayContaining(["atlas-native-agent", "atlas-process"]),
-    );
   });
 
   it("runs atlas-kb-server, and the app that compiles it, for a kb-server change", () => {
@@ -228,11 +208,6 @@ describe("the CI plan", () => {
         n: crates.length,
       });
     }
-  });
-
-  it("reads the engine dialect's packages out of ci.yml", () => {
-    expect(dialect).toContain("atlas-engine-api");
-    expect(dialect.filter((d) => !names.has(d))).toEqual([]);
   });
 });
 
@@ -285,9 +260,6 @@ describe("the CI workflow follows the plan", () => {
   it("gates each planned job on the changes job's output", () => {
     expect(block("app")).toMatch(/^ {4}if: needs\.changes\.outputs\.app == 'true'$/m);
     expect(block("app-linux")).toMatch(/^ {4}if: needs\.changes\.outputs\.app == 'true'$/m);
-    expect(block("engine-dialect")).toMatch(
-      /^ {4}if: needs\.changes\.outputs\.engine-dialect == 'true'$/m,
-    );
     expect(block("crates")).toMatch(
       /^ {8}include: \$\{\{ fromJSON\(needs\.changes\.outputs\.crates\) \}\}$/m,
     );

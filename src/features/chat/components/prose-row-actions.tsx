@@ -15,17 +15,15 @@ import { Pin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HintGroup } from "@/ui/hint-group";
 import { useChatPinsStore } from "../stores/chat-pins-store";
-import { useRowHasComments } from "./chat-comment-pills";
-import { ActionButton, CommentAndCopy } from "./user-row-actions";
+
+import { ActionButton, CopyAction } from "./user-row-actions";
 
 export function ProseRowActions({
-  tabId,
   messageId,
   timestamp,
   text,
   pinScopeKey,
 }: {
-  tabId: string;
   /** `ChatMessage.id` — the row id is `p:<messageId>`. */
   messageId: string;
   timestamp: string;
@@ -37,7 +35,6 @@ export function ProseRowActions({
   const pinned = useChatPinsStore((s) =>
     (s.pins[pinScopeKey] ?? []).some((p) => p.messageId === messageId),
   );
-  const discussed = useRowHasComments(tabId, messageId);
 
   const onPin = useCallback(() => {
     useChatPinsStore.getState().actions.toggle(pinScopeKey, {
@@ -55,13 +52,13 @@ export function ProseRowActions({
         className={cn(
           // Into the column's reserved `pb-7`: 8px of air, then the 20px icons.
           "absolute bottom-0 left-6 z-popover flex w-max items-center gap-0.5 pt-2",
-          discussed ? "visible" : "invisible group-hover:visible focus-within:visible",
+          "invisible group-hover:visible focus-within:visible",
         )}
       >
         <ActionButton label="Pin response" onClick={onPin} active={pinned}>
           <Pin size={12} fill={pinned ? "currentColor" : "none"} />
         </ActionButton>
-        <CommentAndCopy tabId={tabId} messageId={messageId} text={text} label="Copy response" />
+        <CopyAction text={text} label="Copy response" />
       </div>
     </HintGroup>
   );

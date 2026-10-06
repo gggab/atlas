@@ -1,4 +1,4 @@
-import { startTransition, useState, useEffect, useMemo, useRef } from "react";
+import { startTransition, useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppLayout } from "@/features/layout/components/app-layout";
 import { AppContextMenu } from "@/components/app-context-menu";
@@ -70,8 +70,6 @@ import {
 import { AgentOAuthModalHost } from "@/features/agents/components/agent-oauth-modal";
 import { watchRemovedAgents } from "@/features/chat/lib/removed-agents";
 import { AgentElicitationHost } from "@/features/chat/components/agent-elicitation-host";
-import { UiActionBridge } from "@/features/ui-actions/components/ui-action-bridge";
-import { OrgActionLogBridge } from "@/features/org-actions/components/org-action-log-bridge";
 import { initWindowFocusTracking, isWindowFocused } from "@/lib/window-focus";
 import { initDockBadgeClearing } from "@/lib/dock-badge";
 import { primeNativeNotificationPermission } from "@/lib/native-notify";
@@ -81,64 +79,25 @@ import {
   resolveAgentPermission,
 } from "@/features/notifications/lib/agent-notifier";
 import { initSourceOpenedClearing } from "@/features/notifications/lib/source-opened";
-import { notifyChatEnvelope } from "@/features/notifications/lib/chat-notifier";
-import { noteAtlasSignedIn, notifyAtlasSignedOut } from "@/features/notifications/lib/app-notifier";
 import {
   notifyAgentUpdateFailed,
   startAppWarnings,
 } from "@/features/notifications/lib/app-warning-notifier";
-import {
-  notifyModelDownload,
-  notifyUpdateReady,
-} from "@/features/notifications/lib/outcome-notifier";
+import { notifyModelDownload } from "@/features/notifications/lib/outcome-notifier";
 import { logEvent } from "@/features/log/lib/log";
 import { warmMarkdownWorker, primeMarkdownRenderer } from "@/lib/markdown-cache";
 import { primeMarkdown } from "@/lib/markdown";
 import { NotificationPanel } from "@/features/notifications/components/notification-panel";
-import { FeedbackPanel } from "@/features/feedback/components/feedback-panel";
-import { UpdateAvailableModal } from "@/features/updater/components/update-available-modal";
-import { LoadingOrganisationOverlay } from "@/features/organisations/components/loading-organisation-overlay";
 import { StopAgentsDialog } from "@/features/projects/components/stop-agents-dialog";
 import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
-import {
-  isOrgReconciled,
-  markOrgReconciled,
-} from "@/features/organisations/lib/org-reconciliation";
-import { comms, listenComms, type CommsEnvelope } from "@/features/comms/lib/comms-api";
+
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
-import { commsActions, pruneTyping } from "@/features/comms/stores/comms-store";
-import { useUpdaterStore } from "@/features/updater/stores/updater-store";
-import {
-  updater,
-  listenUpdateProgress,
-  listenUpdateReady,
-  listenUpdateApplied,
-  listenUpdateError,
-  listenUpdateChecking,
-} from "@/features/updater/lib/updater-api";
 import { Toaster, toast } from "sonner";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
 import { IconThemeFonts } from "@/features/icon-theme/components/file-icon";
-import {
-  auth,
-  listenAuthChanged,
-  listenAuthError,
-  listenAuthSignedOut,
-} from "@/features/auth/lib/auth-api";
-import { useAuthStore } from "@/features/auth/stores/auth-store";
-import { createWakeRefresher } from "@/features/auth/lib/refresh-on-wake";
-import { useMembersStore } from "@/features/organisations/stores/members-store";
-import { ConnectDialog } from "@/features/auth/components/connect-dialog";
 import { clampScale, SCALE_STEP, DEFAULT_SCALE } from "@/features/settings/lib/ui-scale";
 import { listenModelDone } from "@/features/settings/lib/models-api";
 import { useModelsStore } from "@/features/settings/stores/models-store";
-
-/** Minimum gap between two wake-triggered account re-pulls. Long enough that a
- *  burst of focus edges (Space switches) costs one pull; short enough that a
- *  rename made on the web is visible the next time the user comes back. */
-const AUTH_WAKE_REFRESH_MS = 5 * 60_000;
 
 // Interface-zoom helpers (⌘+/⌘-/⌘0). They read + write the persisted
 // `uiScale` setting; `updateSettings` applies it to the native WebView zoom.
@@ -254,201 +213,6 @@ export function App() {
     };
   }, []);
 
-  // Auto-update: route the Rust updater events into the updater store, which
-  // drives the titlebar arc/badge and the <UpdateAvailableModal />. The
-  // check/download/verify/stage all run in Rust; here we just reflect the phase.
-  // See src/features/updater + commands::updater.
-  useEffect(() => {
-    const a = useUpdaterStore.getState().actions;
-    const offs: Array<Promise<() => void>> = [
-      listenUpdateProgress((e) => a.setDownloading(e.version, e.downloaded, e.total, e.phase)),
-      listenUpdateReady((e) => {
-        a.setReady(e.version);
-        notifyUpdateReady(e.version);
-      }),
-      listenUpdateApplied((e) => {
-        a.reset();
-        toast.success(`Updated to Atlas ${e.version}.`);
-      }),
-      listenUpdateError((e) => a.setError(e.message)),
-      listenUpdateChecking((e) => a.setChecking(e.checking)),
-    ];
-    // Hydrate from the current backend state (e.g. staged before this mount).
-    // Show the titlebar badge but don't pop the modal on launch — the live
-    // `atlas:update-ready` event opens it; hydration is badge-only.
-    void updater.state().then((s) => {
-      if (s.phase === "ready" && s.version) {
-        a.setReady(s.version);
-        a.dismissModal();
-      }
-    });
-    return () => {
-      for (const p of offs) void p.then((off) => off());
-    };
-  }, []);
-
-  // Account auth (ATL-35). Rust owns the credential and every transition; this
-  // only mirrors `atlas:auth-changed` into the store. Broadcast (not per-window)
-  // so two open windows always agree on who is signed in.
-  useEffect(() => {
-    const a = useAuthStore.getState().actions;
-    const offs: Array<Promise<() => void>> = [
-      listenAuthChanged((snapshot) => {
-        a.setSnapshot(snapshot);
-        if (snapshot.status === "signed-in") noteAtlasSignedIn();
-        // Merge the server's org list into the local switcher (adds new ones,
-        // takes renamed names onto linked ones, never removes).
-        // Guarded on `orgs !== null` (three-state): `null` is "not known yet"
-        // (offline), not "no orgs", and must never touch the local list.
-        if (snapshot.status === "signed-in" && snapshot.orgs) {
-          useOrgStore.getState().actions.mergeServerOrgs(snapshot.orgs);
-        }
-      }),
-      listenAuthError((e) => a.setError(e.message)),
-      // A revoked or expired session arrives with nothing on screen, so it must
-      // announce itself — the title bar quietly reverting to a signed-out icon
-      // reads as a bug. Through the pipeline: toast, center and (away) a banner.
-      listenAuthSignedOut((e) => notifyAtlasSignedOut(e.message)),
-    ];
-    void a.hydrate();
-    // Re-pull on wake so an org renamed on the web shows up when the user
-    // comes back to Atlas, not at the next relaunch. `atlas:window-active` is
-    // the focus rising edge / page-visible signal from `window-focus.ts`, and
-    // the first input after 30 s idle (below) — all throttled by one gate.
-    const refreshOnWake = createWakeRefresher({
-      refresh: auth.refresh,
-      isSignedIn: () => useAuthStore.getState().snapshot.status === "signed-in",
-      minIntervalMs: AUTH_WAKE_REFRESH_MS,
-    });
-    window.addEventListener("atlas:window-active", refreshOnWake);
-    return () => {
-      window.removeEventListener("atlas:window-active", refreshOnWake);
-      for (const p of offs) void p.then((off) => off());
-    };
-  }, []);
-
-  // Boot reconciliation of the ACTIVE org. Rust's stored value is seeded from
-  // the web and historically fell back to the account's *first* organisation,
-  // while the desktop's real choice lives in the local org store and is only
-  // pushed on an explicit switch. Push it once at boot too, so the auth
-  // snapshot — and everything keyed off it: the chat socket's target and the
-  // gateway `atlas-org` billing header — follows the org actually on screen
-  // rather than whichever one the server listed first.
-  const orgReconciledRef = useRef(false);
-  const bootAuthStatus = useAuthStore((s) => s.snapshot.status);
-  const bootLocalActiveOrg = useOrgStore.use.activeOrganisationId();
-  const bootOrganisations = useOrgStore.use.organisations();
-  useEffect(() => {
-    // `isOrgReconciled` covers the other pusher: an explicit `switchOrg` that
-    // ran before sign-in settled has already told Rust, and this push landing
-    // after it would drag the chat socket back to the org just left.
-    if (orgReconciledRef.current || isOrgReconciled()) return;
-    if (bootAuthStatus !== "signed-in" || !bootLocalActiveOrg) return;
-    const active = bootOrganisations.find((o) => o.id === bootLocalActiveOrg);
-    if (!active) return;
-    orgReconciledRef.current = true;
-    markOrgReconciled();
-    void invoke("auth_set_active_org", { orgId: active.remoteId ?? null }).catch((e) => {
-      console.warn("boot org reconciliation failed:", e);
-    });
-  }, [bootAuthStatus, bootLocalActiveOrg, bootOrganisations]);
-
-  // The Timeline's cloud half, pointed at the Organisation on screen.
-  //
-  // App scope rather than the Timeline panel, for the same reason the chat
-  // socket is: the sockets are how a teammate's Session and a new comment
-  // arrive, and a panel-scoped target would mean "Timeline closed, nothing
-  // arrives". Rust reads each project's binding to decide which of them are
-  // actually bound to Cloud — passing paths keeps that judgement in one place.
-  const cloudProjects = useActiveOrgProjects();
-  const cloudProjectsKey = useMemo(
-    () =>
-      cloudProjects
-        .map((p) => p.path)
-        .sort()
-        .join("\n"),
-    [cloudProjects],
-  );
-  useEffect(() => {
-    const active = bootOrganisations.find((o) => o.id === bootLocalActiveOrg);
-    // A local-only Organisation has no `remoteId` and nothing to point at;
-    // `null` is what tears the previous tenant's sockets down.
-    const orgId = bootAuthStatus === "signed-in" ? (active?.remoteId ?? null) : null;
-    void invoke("artifacts_cloud_retarget", {
-      orgId,
-      projectPaths: cloudProjectsKey ? cloudProjectsKey.split("\n") : [],
-    }).catch((e) => {
-      // The Timeline still renders every local Session without this; a toast
-      // for a background target would be noise.
-      console.warn("timeline cloud retarget failed:", e);
-    });
-  }, [bootAuthStatus, bootLocalActiveOrg, bootOrganisations, cloudProjectsKey]);
-
-  // Team chat: the renderer is a projection of Rust's chat state. The socket
-  // lives in Rust for the app's lifetime (it is also the notification
-  // transport), so this listener runs at app scope rather than with the panel —
-  // a panel-scoped one would mean "panel closed, no notifications".
-  useEffect(() => {
-    // rAF-coalesced, the agent-delta batcher's shape: a burst of socket frames
-    // (a backfill, a reaction flood, a presence storm) used to be one zustand
-    // `set` — and one React commit — PER FRAME. Buffer and drain once per
-    // animation frame; React 18 batches every `set` inside the synchronous
-    // drain into a single commit. The timeout backstop drains while the
-    // window is hidden, where rAF never fires (same trap as the delta path).
-    let buffer: CommsEnvelope[] = [];
-    let scheduled = 0;
-    let backstop = 0;
-    const drain = () => {
-      scheduled = 0;
-      if (backstop) {
-        window.clearTimeout(backstop);
-        backstop = 0;
-      }
-      const batch = buffer;
-      buffer = [];
-      const apply = commsActions().applyEnvelope;
-      for (const envelope of batch) {
-        apply(envelope);
-        // After the store has the message, so "on screen" and names are current.
-        notifyChatEnvelope(envelope);
-      }
-    };
-    const off = listenComms((envelope) => {
-      buffer.push(envelope);
-      if (!scheduled) {
-        scheduled = window.requestAnimationFrame(drain);
-        backstop = window.setTimeout(drain, 120);
-      }
-    });
-    // Subscribe FIRST, then ask Rust to re-announce. Tauri events are not
-    // buffered and the socket opens seconds after launch — possibly before this
-    // component mounts — so a `resync` emitted into a void was leaving the panel
-    // empty until an org switch happened to fire another one.
-    void off.then(() => comms.ready()).catch(() => {});
-    // There is no "stopped typing" frame, so hints are aged out on a timer.
-    const prune = window.setInterval(pruneTyping, 2_000);
-    return () => {
-      void off.then((fn) => fn());
-      window.clearInterval(prune);
-      if (scheduled) window.cancelAnimationFrame(scheduled);
-      if (backstop) window.clearTimeout(backstop);
-    };
-  }, []);
-
-  // Warm the member roster at APP scope, so the chat panel's first paint has
-  // names — the panel used to be the only fetcher, which meant a boot with the
-  // panel closed guaranteed an "Unknown"-titled DM list on first open. Guarded
-  // AND keyed on the auth transition (the members-modal pattern): the org id
-  // is persisted locally and ready long before the credential is.
-  const bootRemoteOrgId =
-    bootOrganisations.find((o) => o.id === bootLocalActiveOrg)?.remoteId ?? null;
-  const bootSignedIn = bootAuthStatus === "signed-in";
-  useEffect(() => {
-    if (bootRemoteOrgId && bootSignedIn) {
-      void useMembersStore.getState().actions.load(bootRemoteOrgId);
-    }
-  }, [bootRemoteOrgId, bootSignedIn]);
-
   // NOTE: we intentionally do NOT wipe localStorage on boot anymore. Several
   // stores legitimately persist there via zustand `persist` — the project
   // "Chats" list (`atlas-recent-chats`), layout prefs (`atlas-layout-prefs`),
@@ -516,13 +280,6 @@ export function App() {
             // defaults and persistence is denied — see `appStateWritable`.
             setAppStateWritable(true);
             useAppStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
-            // Hydration replaces the org list wholesale, so re-apply any server
-            // orgs from a snapshot that may have already arrived — otherwise a
-            // sign-in that landed before this bootstrap would be overwritten.
-            const snap = useAuthStore.getState().snapshot;
-            if (snap.status === "signed-in" && snap.orgs) {
-              useOrgStore.getState().actions.mergeServerOrgs(snap.orgs);
-            }
           });
         } else {
           // Every attempt failed. Come up in an explicitly READ-ONLY session
@@ -618,7 +375,7 @@ export function App() {
   const {
     toggleLeftPanel,
     toggleRightPanel,
-    toggleRightChatPanel,
+
     toggleChatSidebar,
     toggleTabBar,
     addTab,
@@ -918,42 +675,6 @@ export function App() {
       pendingDeltas.push(env);
     };
 
-    // After a native-agent turn that may have changed files, refresh the
-    // project's codebase index (incremental + structural — cheap, no LLM) so
-    // `memory_search` and the Memory tab stay current. Debounced per project so
-    // a burst of turns triggers one rebuild.
-    const indexTimers = new Map<string, ReturnType<typeof setTimeout>>();
-    const autoIndexAfterTurn = (acpSessionId: string) => {
-      const sessions = useChatStore.getState().sessions;
-      const sess = Object.values(sessions).find((s) => s.acpSessionId === acpSessionId);
-      if (sess?.agentType !== "atlas-agent") return;
-      const path = sess.workingDirectory;
-      if (!path) return;
-      const existing = indexTimers.get(path);
-      if (existing) clearTimeout(existing);
-      indexTimers.set(
-        path,
-        setTimeout(() => {
-          indexTimers.delete(path);
-          // Broadcast index activity so the composer's memory pill can show
-          // "Indexing…" then refresh its status.
-          const emit = (active: boolean) =>
-            window.dispatchEvent(
-              new CustomEvent("atlas:agent-index", {
-                detail: { path, active },
-              }),
-            );
-          emit(true);
-          void invoke("codebase_index_build", {
-            projectPath: path,
-            opts: { mode: "incremental", backend: "structural" },
-          })
-            .catch((err) => console.warn("auto codebase index failed:", err))
-            .finally(() => emit(false));
-        }, 4000),
-      );
-    };
-
     // Record a chat into the sidebar "Chats" (recently-invoked) list whenever a
     // session sees meaningful activity. Resolves project + title from the chat
     // session that owns this acpSessionId.
@@ -1097,7 +818,6 @@ export function App() {
           // the memory reindex and log too (the notifier checks this itself).
           if (isStaleAgentTurn(env.session_id, env.turn_seq)) return;
           // Keep the native agent's project memory fresh (debounced, cheap).
-          if (env.stop_reason !== "cancelled") autoIndexAfterTurn(env.session_id);
           logEvent({
             source: "atlas",
             kind: "agent-turn-finished",
@@ -1167,7 +887,6 @@ export function App() {
       window.removeEventListener("wheel", onUserActivity);
       window.clearInterval(keepWarm);
       window.clearTimeout(pruneTimer);
-      indexTimers.forEach((t) => clearTimeout(t));
       unlisten?.();
     };
   }, []);
@@ -1374,10 +1093,6 @@ export function App() {
     "nav.search": () => setSearchOpen(true),
     "panels.left": toggleLeftPanel,
     "panels.right": toggleRightPanel,
-    // ⌘⇧C — team chat. Shares the right slot with source control: pressing
-    // this while source control is open swaps the occupant rather than
-    // opening a second panel, and pressing it again closes the slot.
-    "panels.teamChat": toggleRightChatPanel,
     "panels.terminal": toggleTerminal,
     "panels.agentSidebar": toggleChatSidebar,
     // ⌥J — open the Knowledge Base, or jump to it if already open, WITHIN
@@ -1511,14 +1226,8 @@ export function App() {
       {/* Sign-in asks questions of its own (device codes, login URLs), and they
           arrive before the agent has any session to route them by. */}
       <AgentElicitationHost />
-      <UiActionBridge />
-      <OrgActionLogBridge />
       <NotificationPanel />
-      <FeedbackPanel />
-      <UpdateAvailableModal />
       <KeymapOnboarding />
-      <ConnectDialog />
-      <LoadingOrganisationOverlay />
       <StopAgentsDialog />
       <RemoveAgentDialog />
       <BrowserOverlayWatcher />

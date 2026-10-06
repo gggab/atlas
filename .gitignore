@@ -34,12 +34,9 @@ Thumbs.db
 skills-lock.json
 
 # Markdown docs (working notes, PRDs, comparison docs) — except the ones that
-# ship with the app. TELEMETRY.md is referenced from the telemetry module and
-# from the consent toggle in Settings, so it has to be in the repo the user is
-# pointed at.
+# ship with the app.
 *.md
 !README.md
-!TELEMETRY.md
 !CONTRIBUTING.md
 !ARCHITECTURE.md
 !.github/SECURITY.md
@@ -56,7 +53,7 @@ skills-lock.json
 !docs/requests/*.md
 # The bundled `atlas-self-configure` skill's content — `include_str!`'d into
 # the binary at compile time (`commands/skills.rs`), so it has to ship from a
-# fresh clone the same way the vendored Atlas Agent prompts below do.
+# fresh clone the same way other bundled resources do.
 !src-tauri/resources/**/*.md
 graphify-out/
 # Local-only working folders (plans/specs + helper scripts)
@@ -66,16 +63,6 @@ scripts/release-macos.sh
 
 # Stakpak session files
 .stakpak/session*
-
-# The vendored Atlas Agent engine is committed verbatim (#42). Without this, the
-# broad `*.md` rule above silently drops the engine's baked system prompts
-# (`core/*_prompt.md`), its guardian policy templates and its skill samples —
-# 35 paths, most of them `include_str!`d at compile time. The tree would build
-# from a working copy and fail from a fresh clone, which is the worst shape a
-# vendoring bug can take.
-!vendor/atlas-engine/**
-# ...except build output, if anyone ever builds in-tree there.
-vendor/atlas-engine/**/target/
 
 # design-sync (claude.ai/design)
 .ds-sync/

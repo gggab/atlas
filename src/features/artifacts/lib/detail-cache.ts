@@ -32,14 +32,12 @@ const cache = new Map<string, SessionDetail>();
 export interface DetailRef {
   sessionId: string;
   projectPath: string;
-  remoteProjectId?: string | null;
 }
 
 function key(ref: DetailRef): string {
   return boardKey({
     id: ref.sessionId,
     projectPath: ref.projectPath,
-    remoteProjectId: ref.remoteProjectId ?? null,
   });
 }
 

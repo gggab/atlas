@@ -39,10 +39,7 @@ function isTarget(t: unknown): t is NotificationTarget {
   if (typeof t !== "object" || t === null) return false;
   const r = t as Record<string, unknown>;
   // App-level targets own no tab.
-  if (r.type === "atlas-sign-in") return true;
   if (r.type === "agent-sign-in") return typeof r.agentType === "string" && !!r.agentType;
-  if (r.type === "chat-conversation") return typeof r.convId === "string" && !!r.convId;
-  if (r.type === "app-update") return true;
   if (r.type === "settings") return isNotificationSettingsSection(r.section);
   if (r.type === "config-file") return true;
   if (r.type === "git-panel") return typeof r.projectId === "string" && !!r.projectId;

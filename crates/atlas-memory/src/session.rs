@@ -1,17 +1,6 @@
 //! Session-memory extraction: categories, output parsing, memdir persistence.
 //!
 //! Ported into Atlas from the old SDK's session-memory module. The SDK's
-//! `should_extract` / `count_tool_calls_since` are **not** here — they operate on
-//! the old SDK's message type, and `crate::extract` already reimplements the same
-//! gates over its own format-neutral `TranscriptTurn`.
-//!
-//! Two things in this module are on-disk contracts rather than implementation
-//! details, and both are pinned in `tests/behaviour.rs`:
-//!
-//! - [`MemoryCategory::label`] is written into the memdir markdown.
-//! - [`persist_memories`]'s rendered line is parsed back by the record store's
-//!   legacy memdir import (`crate::record::legacy`), so its exact shape couples
-//!   the two.
 
 use std::path::Path;
 

@@ -271,7 +271,17 @@ fn connect_options() -> ConnectOptions {
 }
 
 fn manager(catalog: Arc<FakeCatalog>, native: Arc<dyn AgentServer>) -> Arc<AgentManager> {
-    AgentManager::new(catalog, native, connect_options())
+    {
+        let manager = AgentManager::new(catalog.clone(), connect_options());
+        if native.agent_id().as_str() == "test-agent"
+            && catalog
+                .external_agents()
+                .contains(&AgentId::new("test-agent"))
+        {
+            manager.request_connection(custom("test-agent"), native);
+        }
+        manager
+    }
 }
 
 fn custom(id: &str) -> Agent {
@@ -488,7 +498,7 @@ async fn an_agent_nobody_installed_cannot_be_connected_to() {
     // ladder to fall back to, so an agent that is not in the installed map does
     // not exist.
     let catalog = FakeCatalog::new(&[]);
-    let (server, attempts) = FakeServer::new("atlas-agent", vec![]);
+    let (server, attempts) = FakeServer::new("test-agent", vec![]);
     let manager = manager(catalog, server.clone());
 
     let error = settle(manager.connect_to(custom("claude-code")))
@@ -499,29 +509,28 @@ async fn an_agent_nobody_installed_cannot_be_connected_to() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_native_agent_is_always_connectable() {
-    // No installed map, no registry: the native agent is still there. This is
-    // the fresh-install shape.
-    let catalog = FakeCatalog::new(&[]);
-    let (server, _) = FakeServer::new("atlas-agent", vec![]);
+async fn an_explicitly_registered_external_server_connects() {
+    // An explicitly installed external test agent connects without any Atlas account.
+    let catalog = FakeCatalog::new(&["test-agent"]);
+    let (server, _) = FakeServer::new("test-agent", vec![]);
     let manager = manager(catalog, server.clone());
 
-    let state = settle(manager.request_connection(Agent::Native, server.clone()))
+    let state = settle(manager.request_connection(custom("test-agent"), server.clone()))
         .await
-        .expect("the native agent connects");
-    assert_eq!(state.connection.agent_id().as_str(), "atlas-agent");
+        .expect("the external test agent connects");
+    assert_eq!(state.connection.agent_id().as_str(), "test-agent");
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_turn_opens_and_closes_around_the_prompt() {
-    let catalog = FakeCatalog::new(&[]);
-    let (server, _) = FakeServer::new("atlas-agent", vec![]);
+    let catalog = FakeCatalog::new(&["test-agent"]);
+    let (server, _) = FakeServer::new("test-agent", vec![]);
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
-        .expect("a session opens on the native agent");
+        .expect("a session opens on the external test agent");
     let session_id = thread.lock().unwrap().session_id().clone();
     assert!(
         manager.session(&session_id).is_some(),
@@ -552,12 +561,12 @@ async fn a_turn_opens_and_closes_around_the_prompt() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_turn_marks_the_thread_instead_of_leaving_it_generating() {
-    let catalog = FakeCatalog::new(&[]);
-    let server = FakeServer::failing_turns("atlas-agent");
+    let catalog = FakeCatalog::new(&["test-agent"]);
+    let server = FakeServer::failing_turns("test-agent");
     let manager = manager(catalog, server.clone());
 
     let thread = manager
-        .new_session(Agent::Native, vec![PathBuf::from("/tmp")])
+        .new_session(custom("test-agent"), vec![PathBuf::from("/tmp")])
         .await
         .expect("a session opens");
     let session_id = thread.lock().unwrap().session_id().clone();

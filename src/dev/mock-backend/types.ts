@@ -3,7 +3,6 @@
 import type { AgentResponses } from "./fake-agent";
 import type { ArtifactsResponses } from "./fixtures/artifacts";
 import type { CaptureResponses } from "./fixtures/capture";
-import type { CommsResponses } from "./fixtures/comms";
 import type { FsResponses } from "./fixtures/files";
 import type { GitResponses } from "./fixtures/git";
 import type { IconThemeResponses } from "./fixtures/icon-themes";
@@ -13,7 +12,6 @@ import type { LogResponses } from "./fixtures/log";
 import type { MemoryResponses } from "./fixtures/memory";
 import type { SettingsResponses } from "./fixtures/settings";
 import type { SkillsResponses } from "./fixtures/skills";
-import type { SpacesResponses } from "./fixtures/spaces";
 import type { TerminalResponses } from "./fixtures/terminal";
 import type { ThemeImportResponses } from "./fixtures/theme-import";
 
@@ -59,7 +57,6 @@ export interface MockResponses
     AgentResponses,
     ArtifactsResponses,
     CaptureResponses,
-    CommsResponses,
     FsResponses,
     GitResponses,
     IconThemeResponses,
@@ -69,7 +66,6 @@ export interface MockResponses
     MemoryResponses,
     SettingsResponses,
     SkillsResponses,
-    SpacesResponses,
     TerminalResponses,
     ThemeImportResponses {}
 

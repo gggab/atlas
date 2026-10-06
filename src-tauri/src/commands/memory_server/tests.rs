@@ -649,7 +649,7 @@ async fn memory_search_also_returns_indexed_project_documents() {
         },
     )
     .await;
-    let client = connect(&server.url(), &tokens.mint("s1", "atlas-agent", &project))
+    let client = connect(&server.url(), &tokens.mint("s1", "codex", &project))
         .await
         .unwrap();
 
@@ -707,7 +707,7 @@ async fn forgetting_through_the_tool_evicts_the_document_before_returning() {
         },
     )
     .await;
-    let client = connect(&server.url(), &tokens.mint("s1", "atlas-agent", &project))
+    let client = connect(&server.url(), &tokens.mint("s1", "codex", &project))
         .await
         .unwrap();
 
@@ -756,7 +756,7 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
     let memory = ticking_memory();
 
     let writer = crate::commands::shared_memory::Writer {
-        agent: "atlas-agent".to_string(),
+        agent: "codex".to_string(),
         session_id: "s1".to_string(),
     };
     let live = memory
@@ -807,7 +807,7 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
         },
     )
     .await;
-    let client = connect(&server.url(), &tokens.mint("s1", "atlas-agent", &project))
+    let client = connect(&server.url(), &tokens.mint("s1", "codex", &project))
         .await
         .unwrap();
 
@@ -854,7 +854,7 @@ async fn a_search_counts_as_consulting_memory_even_though_it_moves_no_clock() {
     )
     .await
     .unwrap();
-    let client = connect(&server.url(), &tokens.mint("s1", "atlas-agent", &project))
+    let client = connect(&server.url(), &tokens.mint("s1", "codex", &project))
         .await
         .unwrap();
 
@@ -887,7 +887,7 @@ async fn remembering_something_is_not_consulting_memory() {
     )
     .await
     .unwrap();
-    let client = connect(&server.url(), &tokens.mint("s1", "atlas-agent", &project))
+    let client = connect(&server.url(), &tokens.mint("s1", "codex", &project))
         .await
         .unwrap();
 
@@ -1245,8 +1245,8 @@ fn each_decision_is_one_log_line_naming_the_agent_its_capability_and_the_outcome
          reason=\"agent did not advertise mcpCapabilities.http\"",
     );
     assert_eq!(
-        OfferDecision::decide(true, false, true).log_line("atlas-agent", true),
-        "memory tool server offer: agent=atlas-agent http_mcp=true memory_server=omitted \
+        OfferDecision::decide(true, false, true).log_line("codex", true),
+        "memory tool server offer: agent=codex http_mcp=true memory_server=omitted \
          reason=\"shared memory is off for this project\"",
     );
 }

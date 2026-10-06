@@ -1,4 +1,4 @@
-// The fake project every scenario opens: one org, a few projects, and the
+// The local projects every scenario opens, and the
 // helpers that turn a relative path into the absolute one Rust would see.
 //
 // The tree itself lives in `fixtures/files.ts` (with the files' real content),
@@ -8,14 +8,11 @@
 import type { AppStateWire } from "@/features/app/stores/app-store";
 import type { Project } from "@/features/projects/stores/project-store";
 
-export const MOCK_ORG_ID = "org-mock";
-
 export const MOCK_PROJECT = {
   id: "ws-mock",
   name: "acme-app",
   path: "/Users/dev/acme-app",
   groupId: null,
-  orgId: MOCK_ORG_ID,
 } satisfies Project;
 
 /**
@@ -30,14 +27,12 @@ export const OTHER_PROJECTS = [
     name: "acme-platform-migration-experiments",
     path: "/Users/dev/acme-platform-migration-experiments",
     groupId: null,
-    orgId: MOCK_ORG_ID,
   },
   {
     id: "ws-mock-3",
     name: "docs",
     path: "/Users/dev/docs",
     groupId: null,
-    orgId: MOCK_ORG_ID,
   },
 ] satisfies Project[];
 
@@ -53,19 +48,6 @@ export function appState(overrides: Partial<AppStateWire> = {}): AppStateWire {
     workspaces: ALL_PROJECTS,
     groups: [],
     activeWorkspaceId: MOCK_PROJECT.id,
-    // Sync is ON, and the org carries a `remoteId`: `CommsPanel` renders
-    // "not connected" for a local-only org, so a local org would hide the
-    // whole team-chat surface behind a placeholder no fixture can fill.
-    organisations: [
-      {
-        id: MOCK_ORG_ID,
-        name: "Acme",
-        slug: "acme",
-        syncEnabled: true,
-        remoteId: MOCK_ORG_ID,
-      },
-    ],
-    activeOrganisationId: MOCK_ORG_ID,
     configStatus: { status: "ok" },
     configGeneration: 1,
     version: 3,

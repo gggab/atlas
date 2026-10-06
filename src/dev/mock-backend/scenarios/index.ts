@@ -2,7 +2,7 @@
 // reachable at `localhost:1420/?scenario=<name>`.
 
 import type { Scenario } from "../types";
-import { commsIncomingMessage } from "../fixtures/comms";
+
 import {
   requestPermission,
   requestPermissionLongArgs,
@@ -10,18 +10,11 @@ import {
   requestPermissionQuestion,
   requestPermissionQuestionMulti,
 } from "../fake-agent";
-import {
-  chatComments,
-  chatCommentsError,
-  chatCommentsMany,
-  chatCommentsOrphan,
-  chatCommentsRepliesOnly,
-  chatCommentsTools,
-} from "./chat-comments";
+
 import { chatLongPrompt } from "./chat-long-prompt";
 import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
-import { collab } from "./collab";
+
 import { designSystem } from "./design-system";
 import { gitConflict } from "./git-conflict";
 import { keymapFirstRun } from "./keymap-first-run";
@@ -48,20 +41,15 @@ const all: Scenario[] = [
     description: "Every surface, populated. The one to review a theme against.",
     // The only thing the default scenario cannot show by sitting still: a
     // message arriving while you are looking at something else.
-    actions: { commsIncomingMessage, ...permissionActions },
+    actions: { ...permissionActions },
   },
   chatTools,
-  chatComments,
-  chatCommentsOrphan,
-  chatCommentsMany,
-  chatCommentsRepliesOnly,
-  chatCommentsTools,
-  chatCommentsError,
+
   chatLongPrompt,
   chatMarkdown,
   gitConflict,
   knowledge,
-  collab,
+
   memorySetup,
   timelineEmpty,
   keymapFirstRun,

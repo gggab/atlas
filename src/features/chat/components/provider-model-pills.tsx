@@ -1,4 +1,4 @@
-//! Single model combo for the native Atlas agent composer.
+//! BYOK model combo used by the retained local session-analysis panel.
 //!
 //! The ACP agents (Claude Code / Codex) advertise their own models through the
 //! agent process, but the in-process native agent picks its provider+model from
@@ -8,7 +8,7 @@
 //! searchable model list (strong coding models pinned + starred via the shared
 //! coding-model catalog).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { Check, ChevronDown, Loader2, RefreshCw, Search, Star } from "lucide-react";
 import { ProviderLogo } from "@/components/provider-logo";
@@ -26,7 +26,6 @@ import {
   isPreferredModel,
   preferredModels,
 } from "@/features/settings/lib/model-catalog";
-import { loadNativeModelPref } from "../lib/native-model-pref";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 
@@ -90,13 +89,11 @@ export function ProviderModelPills({
   const hasKey = useCallback((id: string) => !!keys[id], [keys]);
 
   // Last-used selection (persisted) — seeds a fresh composer.
-  const prefRef = useRef(loadNativeModelPref());
 
   // Default the committed provider: remembered (if still keyed), else first keyed.
   useEffect(() => {
     if (provider || configuredIds.length === 0) return;
-    const pref = prefRef.current;
-    const next = pref && configuredIds.includes(pref.provider) ? pref.provider : configuredIds[0];
+    const next = configuredIds[0];
     onProvider(next);
   }, [provider, configuredIds, onProvider]);
 
@@ -124,10 +121,7 @@ export function ProviderModelPills({
       // Auto-pick a default ONLY for the committed provider — browsing another
       // provider must never commit a model.
       if (viewProvider !== provider || model || ids.length === 0) return;
-      const pref = prefRef.current;
-      const remembered =
-        pref && pref.provider === provider && ids.includes(pref.model) ? pref.model : null;
-      onModel(remembered ?? defaultModelFor(provider, ids) ?? ids[0]);
+      onModel(defaultModelFor(provider, ids) ?? ids[0]);
     };
     const cached = modelListCache.get(viewProvider);
     if (cached) {

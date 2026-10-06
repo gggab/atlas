@@ -52,7 +52,7 @@ export function CanvasHeader({
           {pageIcon || DEFAULT_PAGE_ICON}
         </span>
         <span className="max-w-[180px] truncate text-sm font-semibold text-foreground">
-          {pageName || "Spaces"}
+          {pageName || "Canvas"}
         </span>
         <div className="mx-0.5 h-4 w-px bg-border-subtle" />
         <HintItem label="Fit to view">

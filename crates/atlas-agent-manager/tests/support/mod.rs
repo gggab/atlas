@@ -500,7 +500,21 @@ pub fn connect_options() -> ConnectOptions {
 }
 
 pub fn manager(catalog: Arc<TestCatalog>, native: Arc<dyn AgentServer>) -> Arc<AgentManager> {
-    AgentManager::new(catalog, native, connect_options())
+    {
+        // Register the fake external process like any installed ACP agent.
+        if native.agent_id().as_str() == "test-agent" {
+            catalog
+                .agents
+                .lock()
+                .unwrap()
+                .push(AgentId::new("test-agent"));
+        }
+        let manager = AgentManager::new(catalog, connect_options());
+        if native.agent_id().as_str() == "test-agent" {
+            manager.request_connection(custom("test-agent"), native);
+        }
+        manager
+    }
 }
 
 pub fn custom(id: &str) -> Agent {

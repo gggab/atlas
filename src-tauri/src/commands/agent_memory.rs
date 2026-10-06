@@ -991,7 +991,7 @@ mod tests {
                     },
                     "refactor the retry loop in the gateway client",
                     1,
-                    Some(atlas_native_agent::ATLAS_AGENT_ID),
+                    Some("atlas-agent"),
                     None,
                     Some(&project),
                 )

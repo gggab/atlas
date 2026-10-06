@@ -21,12 +21,12 @@ const OPTIONS = [
 function pending(toolName: string, title: string) {
   useChatStore.setState({
     sessions: {
-      "chat-1": { acpSessionId: "sess-1", agentType: "atlas-agent", messages: [] },
+      "chat-1": { acpSessionId: "sess-1", agentType: "claude-acp", messages: [] },
     } as never,
     pendingPermissions: {
       "sess-1": [
         {
-          agentId: "atlas-agent",
+          agentId: "claude-acp",
           acpSessionId: "sess-1",
           requestId: "req-1",
           toolCall: {
@@ -55,41 +55,21 @@ afterEach(cleanup);
 
 describe("keys on the permission card", () => {
   /// L7: the keys listen on the whole window, so an Enter meant for the
-  /// composer as an outward card appeared would have posted in the user's
+  /// composer as a permission card appeared would have posted in the user's
   /// name. Allow on that card is a click.
-  it("an outward card is never allowed by Enter or its digit", () => {
-    pending("atlas_org.org_send", "Message #general");
-    fireEvent.keyDown(window, { key: "Enter" });
-    fireEvent.keyDown(window, { key: "1" });
-    expect(respondPermission).not.toHaveBeenCalled();
-    expect(screen.queryByText("↵")).toBeNull();
-  });
 
   /// Found in the live run: with Enter no longer taken as Allow, it fell
   /// through to the composer, where Enter on an empty field is Stop — the
   /// card was cancelled and the turn ended. The card keeps its keys.
-  it("an outward card's Enter and Allow digit never reach the composer", () => {
-    pending("atlas_org.org_send", "Message #general");
-    const composer = document.createElement("textarea");
-    document.body.appendChild(composer);
-    const reached = vi.fn();
-    composer.addEventListener("keydown", reached);
-    composer.focus();
-    expect(fireEvent.keyDown(composer, { key: "Enter" })).toBe(false);
-    expect(fireEvent.keyDown(composer, { key: "1" })).toBe(false);
-    expect(reached).not.toHaveBeenCalled();
-    expect(respondPermission).not.toHaveBeenCalled();
-    composer.remove();
-  });
 
-  it("an outward card is allowed by a click, and declined by its digit", () => {
-    pending("atlas_org.org_send", "Message #general");
+  it("a permission card is allowed by a click, and declined by its digit", () => {
+    pending("shell", "Run a command");
     fireEvent.keyDown(window, { key: "2" });
     expect(picked()).toEqual(["reject"]);
   });
 
-  it("an outward card's Allow button still works", () => {
-    pending("atlas_org.org_send", "Message #general");
+  it("a permission card's Allow button still works", () => {
+    pending("shell", "Run a command");
     fireEvent.click(screen.getByText("Allow"));
     expect(picked()).toEqual(["allow-once"]);
   });

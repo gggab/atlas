@@ -116,7 +116,7 @@ export const EXTRA_INPUTS = [
     why: "tests/contract.rs reads the prose contract when it exists",
   },
   // tests/spawn_audit.rs walks every Rust source in the workspace.
-  ...["src-tauri/src/", "crates/", "vendor/atlas-engine/"].map((p) => ({
+  ...["src-tauri/src/", "crates/"].map((p) => ({
     path: p,
     packages: ["atlas-process"],
     testOnly: true,
@@ -240,21 +240,11 @@ export function affectedPackages(files, workspace) {
   return { all: null, packages: marked };
 }
 
-/** The `-p` packages the `engine-dialect` job tests, read out of ci.yml. */
-export function dialectPackages(ciYml) {
-  const start = ciYml.search(/^ {2}engine-dialect:\s*$/m);
-  if (start < 0) throw new Error("ci.yml has no engine-dialect job");
-  const rest = ciYml.slice(start + 1);
-  const next = rest.search(/^ {2}[a-z][a-z0-9_-]*:\s*$/m);
-  const block = next < 0 ? rest : rest.slice(0, next);
-  return [...block.matchAll(/-p ([a-z0-9_-]+)/g)].map((m) => m[1]);
-}
-
 /**
  * Which Rust jobs to run for `files`; `files === null` means run everything
  * for `allReason`.
  */
-export function plan(files, { workspace, crates, dialect }, allReason = "everything requested") {
+export function plan(files, { workspace, crates }, allReason = "everything requested") {
   const { all, packages } =
     files === null ? { all: allReason, packages: new Set() } : affectedPackages(files, workspace);
   const hit = (name) => all !== null || packages.has(name);
@@ -263,7 +253,6 @@ export function plan(files, { workspace, crates, dialect }, allReason = "everyth
     reason: all ?? `${files.length} changed file(s)`,
     affected: all !== null ? null : [...packages].sort(),
     app: hit(nameOfDir.get("src-tauri") ?? "atlas"),
-    engineDialect: dialect.some(hit),
     crates: crates.filter((c) => hit(nameOfDir.get(`crates/${c.crate}`) ?? c.crate)),
   };
 }
@@ -312,14 +301,12 @@ export function changedFiles(base, head) {
   ];
 }
 
-const firstParty = (names) =>
-  names.filter((n) => !n.startsWith("atlas-engine-")).join(", ") || "none";
+const firstParty = (names) => names.join(", ") || "none";
 
 function summarise(p, crates) {
   const jobs = [
     ["app (src-tauri)", p.app],
     ["app (src-tauri, Linux)", p.app],
-    ["engine dialect", p.engineDialect],
     ...crates.map((c) => [c.crate, p.crates.some((x) => x.crate === c.crate)]),
   ];
   const ran = jobs.filter(([, r]) => r).length;
@@ -369,24 +356,16 @@ function main(argv) {
   }
 
   const crates = readCrateMatrix();
-  const dialect = dialectPackages(
-    readFileSync(path.join(REPO_ROOT, ".github", "workflows", "ci.yml"), "utf8"),
-  );
   const workspace = loadWorkspace();
   const files = range.all ? null : changedFiles(range.base, range.head);
-  const result = plan(files, { workspace, crates, dialect }, range.all);
+  const result = plan(files, { workspace, crates }, range.all);
 
   const summary = summarise(result, crates);
   process.stdout.write(`${summary}\n`);
   if (github) {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
-      [
-        `app=${result.app}`,
-        `engine-dialect=${result.engineDialect}`,
-        `crates=${JSON.stringify(result.crates)}`,
-        "",
-      ].join("\n"),
+      [`app=${result.app}`, `crates=${JSON.stringify(result.crates)}`, ""].join("\n"),
     );
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   }

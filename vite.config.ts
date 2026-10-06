@@ -226,8 +226,7 @@ export default defineConfig(() => ({
               test: (id) =>
                 !id.endsWith(".css") &&
                 !id.includes("@codemirror/lang-") &&
-                (id.includes("@codemirror") ||
-                  /@lezer\/(common|highlight|lr)\//.test(id)),
+                (id.includes("@codemirror") || /@lezer\/(common|highlight|lr)\//.test(id)),
             },
             {
               name: "vendor-xterm",
@@ -274,27 +273,13 @@ export default defineConfig(() => ({
               name: "vendor-pdf",
               priority: 30,
               test: (id) =>
-                !id.endsWith(".css") &&
-                (id.includes("pdfjs-dist") || id.includes("react-pdf")),
+                !id.endsWith(".css") && (id.includes("pdfjs-dist") || id.includes("react-pdf")),
             },
             {
               name: "vendor-tauri",
               priority: 20,
               test: (id) => !id.endsWith(".css") && id.includes("@tauri-apps"),
             },
-            // posthog-js is loaded with a dynamic import after the telemetry
-            // config IPC (see posthog-client.ts); a named group keeps it a
-            // recognisable lazy chunk instead of an anonymous hash.
-            {
-              name: "vendor-posthog",
-              priority: 20,
-              test: (id) => !id.endsWith(".css") && id.includes("/node_modules/posthog-js/"),
-            },
-            // Keep the heavy lazy-panel libs OUT of vendor-react. `@xyflow/react`
-            // (Canvas) and `@tiptap/react` (Knowledge) are only reached through
-            // lazy() panels, so they must land in their own lazy chunks — an
-            // earlier `/react/` substring match pulled them into the EAGER
-            // vendor-react chunk, loading ~500KB+ at startup.
             {
               name: "vendor-xyflow",
               priority: 10,

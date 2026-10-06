@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { ScrollArea } from "@/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { isLinux, isMac, isWindows } from "@/lib/platform";
+import { isMac, isWindows } from "@/lib/platform";
 import { Hint } from "@/ui/tooltip";
 import {
   Settings,
@@ -20,7 +20,6 @@ import {
   Minus,
   ChevronLeft,
   ChevronRight,
-  DownloadCloud,
 } from "lucide-react";
 import { clampScale, SCALE_STEP, MIN_SCALE, MAX_SCALE, DEFAULT_SCALE } from "../lib/ui-scale";
 import { APP_ICONS } from "../lib/app-icons";
@@ -35,10 +34,7 @@ import { ModelsManager } from "./models-manager";
 import { KeybindingsSettings } from "./keybindings-settings";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { useModelPricingStore } from "../stores/model-pricing-store";
-import { setEnabled as setTelemetryEnabled } from "@/features/telemetry/posthog-client";
-import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
-import { updater } from "@/features/updater/lib/updater-api";
-import { useUpdaterStore } from "@/features/updater/stores/updater-store";
+
 import { useAppProfile } from "@/lib/app-profile";
 import { useSettingsNav, type SettingsSection } from "../stores/settings-nav-store";
 import { openConfigFile } from "../lib/atlas-config-api";
@@ -63,7 +59,7 @@ const SECTIONS: Array<{
   { id: "skills", label: "Skills", icon: Zap },
   { id: "agents", label: "Agents", icon: WandSparkles },
   { id: "models", label: "Local Models", icon: Boxes },
-  { id: "updates", label: "Updates", icon: DownloadCloud },
+
   { id: "keybindings", label: "Keybindings", icon: Keyboard },
   { id: "about", label: "About", icon: Info },
 ];
@@ -222,7 +218,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
           <div className="max-w-[500px]">
             {activeSection === "general" && <GeneralSettings />}
             {activeSection === "layouts" && <LayoutsSettings />}
-            {activeSection === "updates" && <UpdatesSettings />}
+
             {activeSection === "about" && <AboutSettings />}
           </div>
         </ScrollArea>
@@ -458,47 +454,7 @@ function GeneralSettings() {
           onChange={(next) => updateSettings({ enableAtlasLogs: next })}
         />
       </SettingRow>
-      <SettingRow
-        label="Share usage data"
-        description="Privacy-preserving usage data (app launches, which agents and tools you use, how many files a turn touched, token counts, crashes) to help improve Atlas. Never your prompts, code, file paths, or keys. See TELEMETRY.md."
-      >
-        <Toggle
-          checked={settings.shareTelemetry}
-          onChange={(next) => {
-            // Rust re-syncs the live gate itself on every settings commit
-            // (`notify_settings_changed`) — this only needs to flip the
-            // frontend-only `posthog-js` crash reporter, which Rust can't
-            // reach.
-            updateSettings({ shareTelemetry: next });
-            setTelemetryEnabled(next);
-          }}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Link usage data to my account"
-        description="While signed in, attribute usage data to your Atlas account instead of an anonymous per-device id. Turn this off to stay anonymous even when signed in — already-linked history stays linked."
-      >
-        <Toggle
-          checked={settings.linkTelemetryToAccount}
-          disabled={!settings.shareTelemetry}
-          onChange={(next) => updateSettings({ linkTelemetryToAccount: next })}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Send feedback"
-        description="Report a bug, request a feature, or tell us what feels clumsy — with an optional screenshot. Opens a panel in the bottom-right corner."
-      >
-        <button
-          type="button"
-          onClick={() => useFeedbackStore.getState().actions.openPanel("settings")}
-          className={cn(
-            "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
-            "text-foreground hover:bg-element-hover transition-colors",
-          )}
-        >
-          Send feedback
-        </button>
-      </SettingRow>
+
       <SettingRow
         label="Next-step suggestions"
         description="After each turn, the coding agent suggests 2-3 follow-up actions as clickable chips (click = send). It uses the agent's own live session context — no extra API key — and the request/suggestions are hidden from the thread."
@@ -544,24 +500,7 @@ function GeneralSettings() {
           onChange={(next) => updateSettings({ instructionSync: next })}
         />
       </SettingRow>
-      <SettingRow
-        label="Let Atlas Agent navigate the app"
-        description="Atlas Agent can open files at a line, switch tabs and panels, fill in a chat message and type a command into a terminal for you to run. It never switches projects, sends a message for you or presses Enter. Each action shows in the chat and the Logs panel."
-      >
-        <Toggle
-          checked={settings.agentUiNavigation}
-          onChange={(next) => updateSettings({ agentUiNavigation: next })}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Let Atlas Agent act in your organisation"
-        description="In a Project bound to the cloud, Atlas Agent can read your organisation's recorded sessions, comments, members and conversations, and act there as you. Anything that reaches another person asks you first. Each action shows in the chat and the Logs panel."
-      >
-        <Toggle
-          checked={settings.agentOrgAccess}
-          onChange={(next) => updateSettings({ agentOrgAccess: next })}
-        />
-      </SettingRow>
+
       <SettingRow
         label="Atlas CLI"
         description={`Adds an \`atlas\` command to your shell — type \`atlas .\` in any terminal to open the current folder as a project. Refreshed automatically on every launch so an older copy never lingers. ${cliInstalledLine}.`}
@@ -650,120 +589,6 @@ function ZoomControl() {
           <Plus size={12} />
         </button>
       </Hint>
-    </div>
-  );
-}
-
-function UpdatesSettings() {
-  const settings = useSettingsStore.use.settings();
-  const { updateSettings } = useSettingsStore.use.actions();
-  const phase = useUpdaterStore.use.phase();
-  const version = useUpdaterStore.use.version();
-  const progress = useUpdaterStore.use.progress();
-  const { beginApply, setError } = useUpdaterStore.use.actions();
-  const [checking, setChecking] = useState(false);
-  // A dev-profile build (`bun run dev:app`) never fetches or installs a
-  // release: the backend refuses both, since the release would replace the
-  // installed Atlas. Say so instead of offering a button that can only fail.
-  const { dev: devProfile, productName } = useAppProfile();
-
-  const downloading = phase === "downloading";
-  const ready = phase === "ready" || phase === "applying";
-
-  const checkNow = async () => {
-    setChecking(true);
-    try {
-      const status = await updater.checkNow();
-      // When an update exists, the background download starts and the store
-      // reflects it below; only surface the "up to date" case here.
-      if (!status.available) {
-        toast.success(`You're on the latest version (${status.currentVersion}).`);
-      }
-    } catch (e) {
-      toast.error(`Update check failed: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  const restart = () => {
-    beginApply();
-    void updater.apply().catch((e) => setError(String(e)));
-  };
-
-  // The "Check for updates" row swaps its control based on the live phase:
-  // downloading → progress; ready → Restart button; else → Check now.
-  const control = devProfile ? (
-    <span className="text-xs text-muted-foreground">Off in {productName}</span>
-  ) : ready ? (
-    <button
-      type="button"
-      onClick={restart}
-      className={cn(
-        "h-7 rounded-md px-2.5 text-xs font-medium",
-        "bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity",
-      )}
-    >
-      Restart to update
-    </button>
-  ) : downloading ? (
-    <span className="text-xs text-muted-foreground tabular-nums">
-      {progress != null ? `Downloading ${Math.round(progress * 100)}%` : "Preparing…"}
-    </span>
-  ) : (
-    <button
-      type="button"
-      onClick={() => void checkNow()}
-      disabled={checking}
-      className={cn(
-        "h-7 rounded-md px-2.5 text-xs font-medium border border-border bg-card",
-        "text-foreground hover:bg-element-hover transition-colors",
-        "disabled:opacity-50 disabled:cursor-not-allowed",
-      )}
-    >
-      {checking ? "Checking…" : "Check now"}
-    </button>
-  );
-
-  return (
-    <div className="space-y-6">
-      <SectionTitle title="Updates" subtitle="How Atlas keeps itself up to date" />
-      <SettingRow
-        label="Automatic updates"
-        description={
-          isWindows
-            ? "Check for a newer version in the background and download the installer automatically. Windows asks for permission before it is installed. Turn off to never check or download."
-            : isLinux
-              ? "Check for a newer version in the background. On Linux, update via your package manager (AUR, deb, rpm) or download the latest release asset. Turn off to never check."
-              : "Check for a newer version in the background and download it automatically. Updates are Apple-signed and notarized; Atlas verifies the signature before installing. Turn off to never check or download."
-        }
-      >
-        <Toggle
-          checked={settings.autoUpdate}
-          onChange={(next) => updateSettings({ autoUpdate: next })}
-        />
-      </SettingRow>
-      <SettingRow
-        label="Sync the Atlas Agent's plugin catalogue"
-        description="Let the agent engine fetch OpenAI's curated plugin catalogue (github.com/openai/plugins) when it starts. Off by default — it is a network request at every launch. Applies the next time the agent starts."
-      >
-        <Toggle
-          checked={settings.curatedPluginSync}
-          onChange={(next) => updateSettings({ curatedPluginSync: next })}
-        />
-      </SettingRow>
-      <SettingRow
-        label={ready ? `Update ready${version ? ` (${version})` : ""}` : "Check for updates"}
-        description={
-          devProfile
-            ? "This is a source build (bun run dev:app). It never downloads or installs a release, because that would replace your installed Atlas — update the installed app from itself."
-            : ready
-              ? "A new version has been downloaded and verified. Restart now, or it'll be applied automatically the next time you quit Atlas."
-              : "Check now regardless of the automatic-update setting. Newer versions download in the background; you'll be prompted to restart when ready."
-        }
-      >
-        {control}
-      </SettingRow>
     </div>
   );
 }

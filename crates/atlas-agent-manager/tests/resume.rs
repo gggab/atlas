@@ -319,8 +319,7 @@ impl Harness {
         let thread_events: ThreadEventSink =
             Arc::new(|_session_id| atlas_acp_thread::event_channel().0);
         let manager = AgentManager::new(
-            Arc::new(FakeCatalog(id)),
-            server,
+            Arc::new(FakeCatalog(id.clone())),
             ConnectOptions {
                 root_dir: None,
                 defaults: AcpConnectionDefaults::default(),
@@ -333,9 +332,11 @@ impl Harness {
                 client_version: "0.0.0".to_string(),
             },
         );
+        let agent = Agent::Custom { id };
+        manager.request_connection(agent.clone(), server);
         Self {
             manager,
-            agent: Agent::Native,
+            agent,
             calls,
             spawns,
         }
@@ -430,16 +431,15 @@ async fn an_agent_that_can_do_neither_says_so_and_starts_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn resuming_starts_an_agent_that_is_not_running() {
+async fn resuming_joins_the_external_connection_without_a_second_spawn() {
     let harness = Harness::new(Capabilities::load());
-    assert_eq!(harness.spawns.load(Ordering::SeqCst), 0);
 
     harness.resume().await.unwrap();
 
     assert_eq!(
         harness.spawns.load(Ordering::SeqCst),
         1,
-        "spawned on demand"
+        "resume joins the registered external connect attempt"
     );
 }
 

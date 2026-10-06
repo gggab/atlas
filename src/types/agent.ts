@@ -3,8 +3,7 @@ import type { MentionData } from "@/features/chat/lib/mentions";
 
 /** The agents Atlas has first-party BRANDING for — labels, brand icons and
  *  `.agent-*` CSS tokens, which are Atlas's own design rather than registry
- *  metadata. It is not a list of agents that exist: apart from `atlas-agent` (the
- *  native agent) every one of these must be installed from the Marketplace
+ *  metadata. It is not a list of agents that exist:  every one of these must be installed from the Marketplace
  *  before it can run (ADR-0002), and an installed agent with no entry here
  *  simply renders from its registry metadata. */
 export type FirstPartyAgent =
@@ -22,17 +21,11 @@ export type AgentType = FirstPartyAgent | "custom" | (string & {});
 
 /** Open alias — kept for call-site readability where "switchable" intent
  *  matters. The actual switchable list is dynamic and entirely catalog-derived:
- *  `useSwitchableAgents()` in features/agents (the native agent + whatever the
- *  user installed). */
+ *  `useSwitchableAgents()` in features/agents (the installed external
+ *  agents). */
 export type SwitchableAgent = FirstPartyAgent | (string & {});
 
-/** The native, in-process agent. The one id that is always runnable: it needs
- *  no install, cannot be uninstalled, and is what a fresh profile offers on its
- *  own (ADR-0002 — Atlas ships no ACP agents).
- *
- *  This is NOT a default ACP agent and must never be used as a stand-in for
- *  one; it is the identity of "Atlas itself". The switchable list is otherwise
- *  entirely catalog-derived — see `switchableAgentIds()` in features/agents. */
+/** Historical native-agent identity, used only to render existing records. */
 export const NATIVE_AGENT_ID = "atlas-agent";
 
 /** Upstream 0.3.0-x's name for the same constant — its identity model calls
@@ -69,17 +62,9 @@ function isFirstPartyAgent(agentType: string): agentType is FirstPartyAgent {
   return Object.prototype.hasOwnProperty.call(PLUGIN_ID_BY_AGENT, agentType);
 }
 
-/** The spawnable spec id for an agent type.
- *
- *  No identity at all — absent, or the retired `"custom"` — routes to the
- *  NATIVE agent. It used to route to Claude Code, the last hardcoded default
- *  plugin id: on a fresh profile that silently aimed at an agent nobody had
- *  installed, and it is reached for real by resuming a history row that
- *  recorded no agent type. `switchableAgentOf` already resolves the same
- *  inputs to the native agent, and the two must not disagree about one
- *  session (ADR-0002). */
+/** Resolve a stored agent type to its external plugin id; missing identity stays empty. */
 export function pluginIdForAgent(agentType: AgentType | undefined): string {
-  if (!agentType || agentType === "custom") return PLUGIN_ID_BY_AGENT[NATIVE_AGENT_ID];
+  if (!agentType || agentType === "custom") return "";
   if (isFirstPartyAgent(agentType)) return PLUGIN_ID_BY_AGENT[agentType];
   // External agents: the agent type IS the plugin id.
   return agentType;
@@ -276,9 +261,7 @@ export interface ChatSession {
    *  the picker in a loading state, optimistically pre-filled from the persisted
    *  per-agent modes cache so switching feels instant. Cleared by `setAcpModes`. */
   acpModesPending?: boolean;
-  /** Currently selected ACP model id (default / sonnet / haiku / …). For the
-   *  native agent this is the bare model id; the provider lives in
-   *  `nativeProvider` and the two are pushed to the backend as `provider/model`. */
+  /** Currently selected ACP model id (default / sonnet / haiku / …). Uses the id advertised by the external agent. */
   acpCurrentModel?: string;
   /** Raw ACP `configOptions` for this session (P2.2). Kept current by the
    *  `config_options_updated` delta so a knob toggled INSIDE the agent is
@@ -297,9 +280,6 @@ export interface ChatSession {
    *  composer's model picker. Seeded from the snapshot's `available_models`;
    *  empty for agents (or the native one) that don't expose ACP model lists. */
   acpAvailableModels?: SessionModeInfo[];
-  /** BYOK provider id backing the native agent's model selection
-   *  (e.g. "anthropic", "openai"). Unused by the ACP agents. */
-  nativeProvider?: string;
   /** Cumulative token split for the session, from `usage_updated` deltas.
    *  The native engine reports it as a running total; an ACP agent's
    *  end-of-turn usage is folded into the same counters in Rust. Drives the
@@ -320,9 +300,7 @@ export interface ChatSession {
   };
   /** Reasoning-effort level for the native agent ("" / low / medium / high /
    *  max). Only meaningful for Anthropic models (maps to a thinking budget). */
-  nativeEffort?: string;
   /** RTK tool-output compression for the native agent (default on). */
-  nativeCompress?: boolean;
   /** Cumulative usage snapshot at the end of the previous turn — used to derive
    *  per-turn usage for the message footer. */
   lastUsageSnapshot?: { input: number; output: number; cost: number };

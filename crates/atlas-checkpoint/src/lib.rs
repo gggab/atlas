@@ -5,9 +5,8 @@
 //! Agent Sessions are ephemeral. They live in the sidebar until they scroll
 //! away, and the reasoning behind a change is gone the moment the conversation
 //! ends — so six weeks later nobody can answer "why was it written this way",
-//! including the person who wrote it. In an Organisation it is worse: two
-//! developers working the same repository cannot see what the other's agent did,
-//! and every Session starts from zero.
+//! including the person who wrote it. Multiple agents working in the same repository
+//! need a durable local record of their work.
 //!
 //! # The shape
 //!
@@ -18,11 +17,8 @@
 //!
 //! Everything is written to `.atlas/sessions.db`, a SQLite database in the
 //! Project's already-gitignored state directory, with bodies over 64 KB
-//! spilled to content-addressed files beside it. The tables mirror the eventual
-//! server shape so syncing is a copy rather than a translation, and the outbox
-//! is a `sync_state` column on each row rather than a separate queue — which is
-//! what makes Local mode the same code path with draining switched off, instead
-//! of a second thing to keep correct.
+//! spilled to content-addressed files beside it. Legacy sync-state columns remain readable for existing databases; no
+//! upload queue or remote synchronization runs.
 //!
 //! # Three properties worth stating outright
 //!
@@ -49,7 +45,6 @@
 //! no mock traits, no assertions on internal call ordering. What is asserted is
 //! what ends up in the store.
 
-pub mod artifacts;
 pub mod binding;
 pub mod blobs;
 pub mod capture;
@@ -63,7 +58,6 @@ pub mod model;
 mod schema;
 pub mod sketch;
 mod store;
-pub mod sync;
 pub mod timeline;
 pub mod title;
 pub mod tools;
@@ -88,11 +82,6 @@ pub use model::{
 };
 pub use schema::{REQUIRED_INDEXES, SCHEMA_VERSION};
 pub use store::{CheckpointInput, MessageInput, Store};
-pub use sync::{
-    connect_workspace, drain, list_workspaces, preselect, register_workspace, ConnectOutcome,
-    ConnectRequest, DrainOutcome, DrainStatus, MatchReason, Preselection, Registration,
-    RemoteWorkspace, SlugAvailability, SyncConfig, Visibility,
-};
 pub use timeline::{
     anchors as session_anchors, detail as session_detail, recent_checkpoints, session_summary,
     sessions as session_summaries, AnchorEntry, CheckpointRow, EntryCounts, EntryKind,

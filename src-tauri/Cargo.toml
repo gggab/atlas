@@ -24,10 +24,6 @@ tauri-build = { version = "2", features = [] }
 
 [features]
 default = []
-# The `ported-engine` switch is gone with the path it switched away from (#54).
-# The ported engine is now the only implementation of the native agent, so
-# there is nothing left to select and every build contains it.
-
 [dependencies]
 atlas-process = { path = "../crates/atlas-process" }
 # Whose data this process owns — the released app's or the dev profile's.
@@ -72,10 +68,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Bundled so the Memory panel's reader of a third-party CLI's history database (in-process, WAL-concurrent) is
 # self-contained and doesn't shell out to the `sqlite3` CLI.
-# Pinned to rusqlite 0.39 because its `libsqlite3-sys` is 0.37, the major the
-# vendored engine pins; `links = "sqlite3"` admits exactly one. Full
-# rationale — and the reason 0.38 and 0.40 are both wrong — lives on the same
-# declaration in `crates/atlas-thread-metadata/Cargo.toml`. Issue #39.
+# The workspace shares one bundled SQLite version with the WAL corruption fix.
 rusqlite = { version = "0.39", features = ["bundled"] }
 # NOT `full`: that pulls every driver (process, signal, net, io-std, …)
 # whether used or not. This is the measured set — add a feature when the
@@ -117,12 +110,9 @@ atlas-agent-manager = { path = "../crates/atlas-agent-manager" }
 atlas-agent-delta = { path = "../crates/atlas-agent-delta" }
 atlas-agent-wire = { path = "../crates/atlas-agent-wire" }
 atlas-agent-transcript = { path = "../crates/atlas-agent-transcript" }
-atlas-native-agent = { path = "../crates/atlas-native-agent" }
 # Atlas's session history — the only source for the sidebar (ADR-0001).
 atlas-thread-metadata = { path = "../crates/atlas-thread-metadata" }
 atlas-bus = { path = "../crates/atlas-bus" }
-atlas-artifacts = { path = "../crates/atlas-artifacts" }
-atlas-comms = { path = "../crates/atlas-comms" }
 # Only to name a crypto provider at startup — see `run()`. Both `ring` and
 # `aws-lc-rs` are already in the graph via the vendored engine tree, which is
 # exactly why rustls cannot pick one on its own.
@@ -191,10 +181,9 @@ notify-debouncer-full = "0.6"
 # key-by-key so a UI/skill patch preserves comments, ordering and unknown
 # keys instead of reserializing the whole file; `toml` (serde-based) does
 # the typed parse/validate pass. Both pinned versions already exist in the
-# workspace lockfile via vendored deps, so this adds no new resolution.
 toml_edit = "0.24.0"
 toml = "0.9.5"
-# Per-cwd engine registry map for the background memory indexer
+# Per-cwd local memory registry map for the background memory indexer
 # (`commands::memory_indexer`). Same 6.x already used by the workspace crates.
 dashmap = "6"
 nucleo-matcher = "0.3"
@@ -210,36 +199,18 @@ mimalloc = { version = "0.1", default-features = false }
 # server crate template).
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 rig-core = "0.38.1"
-# Loads a `.env` (cwd) at startup so source / fork builds can point telemetry at
-# their own PostHog OSS project via `POSTHOG_KEY`/`POSTHOG_HOST` without a
-# rebuild. Tiny, zero transitive deps. See `crate::telemetry`.
-dotenvy = "0.15"
-# Semver comparison for the auto-updater's version gate (PostHog `version`
-# remote-config value vs the running `CARGO_PKG_VERSION`). See
-# `crate::commands::updater`.
-semver = "1"
-posthog-rs = "0.14"
 # The memory tool server (`commands::memory_server`): MCP over streamable HTTP
-# on loopback. Both crates are already linked into this binary through the
-# vendored engine (`atlas-engine-rmcp-client` enables exactly these rmcp
-# features; `atlas-engine-app-server` these axum ones), so this adds no resolution.
+# on loopback. Independent of any agent execution engine.
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
 axum = { workspace = true, features = ["http1", "tokio"] }
 
 [dev-dependencies]
 # An in-process MCP client for the memory tool server's loopback tests.
-# `transport-streamable-http-client-reqwest` is only the union of two features
-# `atlas-engine-rmcp-client` already turns on (`transport-streamable-http-client`, and
-# `__reqwest` through `auth`), so it compiles nothing new.
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
 # Self-deleting temp dirs for the state/config tests.
 tempfile = "3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-# Read the Windows Installer's uninstall entry for Atlas: the auto-updater
-# relaunches from (and only upgrades) the MSI's `InstallLocation`. See
-# `crate::commands::updater`. Already in the tree transitively.
-winreg = "0.55"
 # Native toasts (`crate::notifier::toast`). 0.61 is the version
 # `tauri-winrt-notification` already resolves, so no second `windows` major.
 windows = { version = "0.61", features = [

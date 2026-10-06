@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card } from "@/components/usage-primitives";
 import { GradualBlur } from "@/components/gradual-blur";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useUsageStore } from "../stores/usage-store";
 import { useUsageView } from "../lib/use-usage-view";
@@ -19,7 +19,7 @@ import { UsageHeader, type ExportKind } from "./usage-header";
 import { UsageTables } from "./usage-tables";
 
 /**
- * The Usage tab: the organisation's token usage, filtered client-side over one payload.
+ * The Usage tab: local projects' token usage, filtered client-side over one payload.
  *
  * Order, top to bottom: the headline band, the token classes, the daily series and its
  * insight side by side, the efficiency report, then the tables. Everything above the tables
@@ -38,10 +38,7 @@ export function UsagePanel() {
     setTable,
     setSearch,
   } = useUsageStore.use.actions();
-  const orgName = useOrgStore((s) => {
-    const id = s.activeOrganisationId;
-    return s.organisations.find((o) => o.id === id)?.name ?? null;
-  });
+
   // Re-fetch when the org's project set changes (this also covers an org switch).
   const projectSig = useProjectStore((s) => s.projects.map((p) => p.path).join("|"));
   useEffect(() => {
@@ -87,7 +84,8 @@ export function UsagePanel() {
     // line up when they sit side by side in a split.
     <div className="flex h-full min-h-0 flex-col bg-[var(--card)]">
       <UsageHeader
-        orgName={orgName}
+        orgName="Local projects"
+
         range={range}
         onRange={setRange}
         earliest={earliest}
@@ -122,7 +120,7 @@ export function UsagePanel() {
               <Card index={0} section="empty">
                 <div className="text-xs font-medium text-[var(--foreground)]">Nothing yet</div>
                 <div className="mt-0.5 text-2xs leading-snug text-[var(--muted-foreground)]">
-                  Usage appears after the first agent turn in one of this organisation's projects.
+                  Usage appears after the first agent turn in one of your local projects.
                 </div>
               </Card>
             </div>

@@ -14,7 +14,7 @@ import type { LogEntry, LogSource } from "@/features/log/stores/log-store";
 import type { UsageDashboard } from "@/features/usage/types";
 import { fixture as usageFixture } from "@/features/usage/lib/__fixtures__/dashboard";
 import type { TypedHandlers, Unread } from "../types";
-import { ALL_PROJECTS, MOCK_ORG_ID, MOCK_PROJECT } from "../project";
+import { ALL_PROJECTS, MOCK_PROJECT } from "../project";
 
 /** Fixed "now" so the seeded series is stable between reloads. */
 const NOW = Date.parse("2026-09-18T11:30:00Z");
@@ -64,9 +64,7 @@ const SEEDS: Seed[] = [
   ["github", "clone", "acme/design-tokens", { sizeMb: 12.4 }],
   ["project", "open", "acme-app", { path: MOCK_PROJECT.path }],
   ["system", "index", "Codebase index rebuilt — 1,284 files", { durationMs: 8_120 }],
-  ["system", "update", "Checked for updates — already on the latest build"],
   ["atlas", "settings", "Theme changed to Atlas Dark", { theme: "atlas-dark" }],
-  ["atlas", "settings", "Telemetry sharing turned off"],
 ];
 
 function seedEntries(): LogEntry[] {
@@ -80,7 +78,6 @@ function seedEntries(): LogEntry[] {
       source,
       kind,
       summary,
-      orgId: MOCK_ORG_ID,
       projectPath: MOCK_PROJECT.path,
       projectName: MOCK_PROJECT.name,
       ...(payload ? { payload } : {}),
@@ -102,9 +99,7 @@ const projectLogs = new Map<string, string>([
   ],
 ]);
 
-const pinnedLogs = new Map<string, string>([
-  [MOCK_ORG_ID, toJsonl(SEEDED.filter((row) => row.kind === "error" || row.kind === "commit"))],
-]);
+let pinnedLog = toJsonl(SEEDED.filter((row) => row.kind === "error" || row.kind === "commit"));
 
 // ── Usage ─────────────────────────────────────────────────────────────────
 
@@ -153,22 +148,19 @@ export const logHandlers: TypedHandlers<LogResponses> = {
     projectLogs.set(String(project), "");
     return null;
   },
-  // The pinned console calls this with no `org` at all; fall back to the only one.
-  load_pinned_log: ({ org }): string => pinnedLogs.get(String(org ?? MOCK_ORG_ID)) ?? "",
-  append_pinned_log: ({ org, entryJson }): null => {
-    const key = String(org ?? MOCK_ORG_ID);
-    pinnedLogs.set(key, `${pinnedLogs.get(key) ?? ""}${String(entryJson)}\n`);
+  load_pinned_log: (): string => pinnedLog,
+  append_pinned_log: ({ entryJson }): null => {
+    pinnedLog += `${String(entryJson)}\n`;
     return null;
   },
-  rewrite_pinned_log: ({ org, entriesJson }): null => {
-    pinnedLogs.set(String(org), String(entriesJson));
+  rewrite_pinned_log: ({ entriesJson }): null => {
+    pinnedLog = String(entriesJson);
     return null;
   },
-  clear_pinned_log: ({ org }): null => {
-    pinnedLogs.set(String(org), "");
+  clear_pinned_log: (): null => {
+    pinnedLog = "";
     return null;
   },
-
   usage_dashboard: ({ projectPaths }): UsageDashboard => {
     const paths = Array.isArray(projectPaths) ? (projectPaths as string[]) : [];
     return usage(paths.length ? paths : ALL_PROJECTS.map((project) => project.path));

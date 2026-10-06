@@ -3,16 +3,13 @@
 //! Per-project engine that owns a persistent **usearch HNSW** index fed by an
 //! on-device MiniLM [`provider::MiniLmProvider`] (the old SDK's `EmbeddingProvider`
 //! trait). Retrieval returns [`RetrievedDoc`]s, blending in promoted global
-//! memory when local memory is sparse; the Tauri layer maps those onto
-//! the old wrapper's `MemDoc` so the frozen `MemorySearchFn` seam — and all three
-//! agents — are unchanged. The shared-memory record store (`record`) and the
-//! global promotion over it (`global`) live here too.
+//! memory when local memory is sparse. The shared-memory record store (`record`)
+//! and global promotion (`global`) live here too. External ACP agents use the
+//! app's loopback MCP server to read and write this shared corpus.
 //!
 //! This is a LOW crate: it has **no Tauri dependency** and never depends on
 //! the agent seam (the dependency only ever points the other way, app-side).
 //!
-//! Build order (see `plans/atlas-atlas-agent-rag-replan.md`): the modules below are
-//! stubs filled in step by step.
 
 use std::path::PathBuf;
 
@@ -28,10 +25,6 @@ pub mod store;
 // descendant.
 pub mod docstore;
 mod retrieve;
-
-// The extractor's gates, prompt and parser (it writes record entries). The LLM
-// call is injected by the Tauri layer via a closure.
-pub mod extract;
 
 // Global cross-repository memory under `~/.atlas/memory/`. Deterministic,
 // conservative promotion over the record table (Fact, conf ≥ 0.8, seen in ≥2
@@ -52,9 +45,6 @@ pub mod embedding;
 pub mod session;
 
 pub use docstore::{DocStore, DocText};
-pub use extract::{
-    extract, parse_extracted, should_extract, ExtractState, Extracted, TranscriptTurn, Trigger,
-};
 pub use global::{global_recall, promote_facts, CandidateEntry};
 pub use manifest::{Diff, Entry, Manifest};
 pub use provider::{MiniLmProvider, DIM, PROVIDER_NAME};
@@ -97,14 +87,11 @@ pub struct IndexStats {
     pub unchanged: usize,
 }
 
-/// One retrieved memory snippet. Neutral shape (NOT the old wrapper's `MemDoc` —
-/// this crate must not depend on the agent seam); the Tauri layer maps it onto
-/// `MemDoc` at the `MemorySearchFn` boundary.
+/// One retrieved memory snippet, shared by all callers.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RetrievedDoc {
     /// Stable doc id (the corpus id for embedding hits, a synthetic `global::…`
-    /// hash for global hits). Carried so the Tauri layer can dedup site-C
-    /// pushes per session; the `MemDoc` seam drops it.
+    /// hash for global hits). Used by MCP and the memory UI to identify hits.
     pub id: String,
     pub title: String,
     pub source: String,

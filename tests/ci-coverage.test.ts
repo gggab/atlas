@@ -187,7 +187,7 @@ describe("CI's Rust jobs", () => {
     const wrapped = [...jobs].filter(([, block]) => /^\s*RUSTC_WRAPPER:\s*sccache\b/m.test(block));
     // Floor guard: the app, engine dialect and per-crate jobs.
     expect(wrapped.map(([id]) => id)).toEqual(
-      expect.arrayContaining(["app", "app-linux", "engine-dialect", "crates"]),
+      expect.arrayContaining(["app", "app-linux", "crates"]),
     );
     for (const [id, block] of wrapped) {
       const steps = stepsOf(block);
@@ -205,19 +205,6 @@ describe("CI's Rust jobs", () => {
     // call added there.
     const header = src.slice(0, src.search(/^jobs:\s*$/m));
     expect(header).not.toMatch(/^\s*RUSTC_WRAPPER:/m);
-  });
-
-  it("keeps scripts/test-rust.sh testing the same vendored crates as the engine dialect job", () => {
-    // `bun run test:rust` is the local subset of CI; its vendored `-p` list is
-    // a copy of the job's, and a copy drifts unless something compares them.
-    const packages = (text: string) =>
-      [...text.matchAll(/-p (atlas-engine-[a-z0-9-]+)/g)].map((m) => m[1]).sort();
-    const job = stepsOf(jobs.get("engine-dialect")!)
-      .map((s) => s.run ?? "")
-      .join("\n");
-    const script = readFileSync(path.join(REPO_ROOT, "scripts", "test-rust.sh"), "utf8");
-    expect(packages(job)).toContain("atlas-engine-api");
-    expect(packages(script)).toEqual(packages(job));
   });
 
   it("keeps incremental compilation off, which sccache requires", () => {

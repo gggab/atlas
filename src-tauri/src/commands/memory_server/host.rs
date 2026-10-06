@@ -51,23 +51,6 @@ impl MemoryServer {
         gate: SharingGate,
         sources: Sources,
     ) -> std::io::Result<Self> {
-        Self::start_with(memory, tokens, clocks, reads, gate, sources, Vec::new()).await
-    }
-
-    /// [`start`](Self::start), also serving each of `mounts` — another MCP
-    /// service already routed at its own path, such as the UI tool server at
-    /// `/ui` — on the same listener and behind the same token check. One
-    /// listener means one token per session covers every service: the token
-    /// table holds one token per session, so a second would revoke the first.
-    pub async fn start_with(
-        memory: SharedMemoryStore,
-        tokens: Arc<MemoryTokens>,
-        clocks: Arc<SessionClocks>,
-        reads: Arc<SessionReads>,
-        gate: SharingGate,
-        sources: Sources,
-        mounts: Vec<axum::Router>,
-    ) -> std::io::Result<Self> {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
         let addr = listener.local_addr()?;
         let tools = MemoryTools::new(memory, gate, clocks, reads, sources);
@@ -76,13 +59,8 @@ impl MemoryServer {
             Arc::new(LocalSessionManager::default()),
             StreamableHttpServerConfig::default(),
         );
-        let router = mounts
-            .into_iter()
-            .fold(
-                axum::Router::new().nest_service(MCP_PATH, service),
-                axum::Router::merge,
-            )
-            // Last, so it wraps every mounted service too.
+        let router = axum::Router::new()
+            .nest_service(MCP_PATH, service)
             .layer(middleware::from_fn_with_state(tokens, require_token));
         let (stop, stopped) = oneshot::channel::<()>();
         tokio::spawn(async move {
@@ -105,11 +83,6 @@ impl MemoryServer {
     /// The MCP endpoint, e.g. `http://127.0.0.1:53124/mcp`.
     pub fn url(&self) -> String {
         format!("http://{}{MCP_PATH}", self.addr)
-    }
-
-    /// The endpoint of a service mounted at `path`, e.g. `url_at("/ui")`.
-    pub fn url_at(&self, path: &str) -> String {
-        format!("http://{}{path}", self.addr)
     }
 
     /// Stop serving.
@@ -166,31 +139,18 @@ impl MemoryServerHost {
         self.server.get().map(MemoryServer::url)
     }
 
-    /// The endpoint of a service mounted at `path`, once the server has bound.
-    pub fn url_at(&self, path: &str) -> Option<String> {
-        self.server.get().map(|s| s.url_at(path))
-    }
-
-    /// Start the server on the async runtime, with `mounts` served beside the
-    /// memory tools; returns at once. A failure to bind is logged and leaves
+    /// Start the memory server on the async runtime; returns at once. A failure to bind leaves
     /// [`url`](Self::url) `None`.
-    pub fn start(
-        self: &Arc<Self>,
-        memory: SharedMemoryStore,
-        gate: SharingGate,
-        sources: Sources,
-        mounts: Vec<axum::Router>,
-    ) {
+    pub fn start(self: &Arc<Self>, memory: SharedMemoryStore, gate: SharingGate, sources: Sources) {
         let host = self.clone();
         tauri::async_runtime::spawn(async move {
-            let started = MemoryServer::start_with(
+            let started = MemoryServer::start(
                 memory,
                 host.tokens.clone(),
                 host.clocks.clone(),
                 host.reads.clone(),
                 gate,
                 sources,
-                mounts,
             )
             .await;
             match started {

@@ -1,10 +1,11 @@
+import { AddProjectMenu } from "./add-project-menu";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useProjectGitStore, type GitSummary } from "../stores/project-git-store";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Hint } from "@/ui/tooltip";
-import { recentsForOrg } from "@/features/app/lib/recent-projects";
+
 import {
   FolderPlus,
   Folder,
@@ -21,13 +22,10 @@ import {
   Trash2,
   Pencil,
   Copy,
-  MessagesSquare,
   GitBranch,
   TerminalSquare,
-  Users,
   HelpCircle,
   MessageCircle,
-  MessageCircleQuestion,
   Keyboard,
   Settings,
   Globe,
@@ -42,7 +40,6 @@ import { UiScaleControl } from "@/features/settings/components/ui-scale-control"
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GithubIcon } from "@/components/github-icon";
-import { useFeedbackStore } from "@/features/feedback/stores/feedback-store";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
 import { useProjectStore, type Project, type ProjectGroup } from "../stores/project-store";
 import { useRunningChatKeys } from "../lib/agent-activity";
@@ -52,10 +49,7 @@ import { AtlasLoader } from "@/components/atlas-loader";
 import { AgentIcons } from "@/components/agent-icons";
 import { useRecentChatsStore, type RecentChat } from "../stores/recent-chats-store";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgProjects, useActiveOrgGroups } from "../lib/org-scope";
-import { OrgSwitcher } from "@/features/organisations/components/org-switcher";
-import { MembersModal } from "@/features/organisations/components/members-modal";
+import { useLocalProjects, useLocalGroups } from "../lib/project-scope";
 import { CaptureControl } from "@/features/capture/components/capture-control";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
@@ -639,8 +633,8 @@ export function ProjectSidebar() {
   const allProjects = useProjectStore.use.projects();
   // The sidebar shows only the ACTIVE org's projects/groups (strict filter —
   // see org-scope.ts for why there is no null-orgId fallback).
-  const projects = useActiveOrgProjects();
-  const groups = useActiveOrgGroups();
+  const projects = useLocalProjects();
+  const groups = useLocalGroups();
   const activeProjectId = useProjectStore.use.activeProjectId();
   const optimisticActiveId = useProjectStore.use.optimisticActiveId();
   // Highlight the clicked project INSTANTLY (optimistic), falling back to the
@@ -655,14 +649,6 @@ export function ProjectSidebar() {
   // Source control needs a project (app-layout hides the slot without one), so
   // the item says so instead of toggling a panel that never appears.
   const hasProject = useAppStore((s) => !!s.currentProject);
-  // Team chat and the member roster are SERVER features: every route names a
-  // server org id, so a local-only organisation has nothing to talk to. Same
-  // test comms-panel.tsx applies before it connects.
-  const organisations = useOrgStore.use.organisations();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
-  const activeOrg = organisations.find((o) => o.id === activeOrganisationId) ?? null;
-  const orgSynced = !!(activeOrg?.syncEnabled && activeOrg?.remoteId);
-  const [membersOpen, setMembersOpen] = useState(false);
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
   // Mirrors `panels.knowledge` in App.tsx: one Knowledge tab per split column,
   // focused if it already exists.
@@ -734,11 +720,8 @@ export function ProjectSidebar() {
   // paths in this list — see `recentsForOrg`.
   const openPaths = useMemo(() => new Set(allProjects.map((w) => w.path)), [allProjects]);
   const recents = useMemo(
-    () =>
-      recentsForOrg(recentProjects, allProjects, activeOrganisationId).filter(
-        (r) => !openPaths.has(r.path),
-      ),
-    [recentProjects, allProjects, activeOrganisationId, openPaths],
+    () => recentProjects.filter((r) => !openPaths.has(r.path)),
+    [recentProjects, allProjects, openPaths],
   );
 
   // Chats are recorded globally (no orgId), so scope the sidebar list to the
@@ -881,8 +864,7 @@ export function ProjectSidebar() {
       //    user across organisations. addProject registers an org-scoped
       //    row when this org has none.
       const st = useProjectStore.getState();
-      const orgId = useOrgStore.getState().activeOrganisationId;
-      const ws = st.projects.find((w) => w.path === chat.projectPath && w.orgId === orgId);
+      const ws = st.projects.find((w) => w.path === chat.projectPath);
       if (ws) await st.actions.switchTo(ws.id);
       else await addProject(chat.projectPath);
       // 2. Open THIS session (by acp session id — not the tab id, which is reused
@@ -935,7 +917,9 @@ export function ProjectSidebar() {
       </div>
 
       {/* Organisation switcher — the top-level tenant picker. */}
-      <OrgSwitcher />
+      <div className="flex items-center justify-between px-3 py-2 text-sm">
+        Projects <AddProjectMenu />
+      </div>
 
       {/* Virtualized list. */}
       {/* The rail's interface card — the same recipe as team chat's
@@ -1000,21 +984,6 @@ export function ProjectSidebar() {
            *  the rail: Usage and Settings in the org row already reach them. */}
           <nav className="pt-1 pb-1 space-y-px">
             <CaptureControl />
-            <NavItem
-              icon={<MessagesSquare size={14} />}
-              label="Chat"
-              active={rightMode === "chat"}
-              disabled={!orgSynced}
-              title={orgSynced ? undefined : "Sync this organisation to use team chat"}
-              onClick={() => toggleRightPanelMode("chat")}
-            />
-            <NavItem
-              icon={<Users size={14} />}
-              label="Members"
-              disabled={!orgSynced}
-              title={orgSynced ? undefined : "Sync this organisation to manage members"}
-              onClick={() => setMembersOpen(true)}
-            />
 
             <SectionHeaderRow
               id="sec:tools"
@@ -1105,7 +1074,6 @@ export function ProjectSidebar() {
           <AppVersion />
         </div>
       </div>
-      <MembersModal org={activeOrg} open={membersOpen} onOpenChange={setMembersOpen} />
     </aside>
   );
 }
@@ -1478,13 +1446,7 @@ function HelpMenu() {
               label="Docs"
               onSelect={() => void openUrl(DOCS_URL)}
             />
-            <HelpItem
-              icon={<MessageCircleQuestion size={12} />}
-              label="Send feedback"
-              // The panel is non-modal and anchored bottom-right; `toggle` is what
-              // the status-bar button uses, and the source tags the report.
-              onSelect={() => useFeedbackStore.getState().actions.toggle("status-bar")}
-            />
+
             <HelpItem
               icon={<Keyboard size={12} />}
               label="Keyboard shortcuts"

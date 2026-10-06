@@ -35,7 +35,6 @@ import { loadCachedAcpModels, saveCachedAcpModels } from "../lib/acp-models-cach
 import { resolveModelLabel } from "../lib/model-label";
 import { defaultAgentForNewSession } from "../lib/default-agent";
 import { loadCachedContextUsage, saveCachedContextUsage } from "../lib/context-usage-cache";
-import { saveNativeModelPref, saveNativeEffort } from "../lib/native-model-pref";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { extractPlanMarkdown, type PlanRecord } from "../lib/plans";
@@ -256,41 +255,6 @@ function pushAcpModelToAgent(state: ChatState, sessionId: string): void {
   }).catch((err) => console.warn("agents_set_model failed:", err));
 }
 
-/** Push the native agent's `provider/model` selection to its bound agent via
- *  `agents_set_model`. The id is forwarded verbatim: `AgentHost::set_model`
- *  (`src-tauri/src/commands/agent_host.rs`) hands it to the connection's model
- *  selector, and the native agent validates it against its catalogue
- *  (`crates/atlas-native-agent/src/engine/connection.rs`, `select_model`).
- *  No-op until the session is bound and both provider + model are chosen. */
-function pushNativeModelToAgent(state: ChatState, sessionId: string): void {
-  const session = state.sessions[sessionId];
-  if (!session?.acpAgentId || !session.acpSessionId) return;
-  if (session.agentType !== "atlas-agent") return;
-  const provider = session.nativeProvider;
-  const model = session.acpCurrentModel;
-  if (!provider || !model) return;
-  void invoke("agents_set_model", {
-    key: { agent_id: session.acpAgentId, session_id: session.acpSessionId },
-    modelId: `${provider}/${model}`,
-  }).catch((err) => console.warn("agents_set_model failed:", err));
-}
-
-/** Push the native agent's reasoning-effort level to its bound agent via
- *  `agents_set_effort`. No-op until bound / for non-native sessions. */
-function pushNativeEffortToAgent(state: ChatState, sessionId: string): void {
-  const session = state.sessions[sessionId];
-  if (!session?.acpAgentId || !session.acpSessionId) return;
-  if (session.agentType !== "atlas-agent") return;
-  void invoke("agents_set_effort", {
-    key: { agent_id: session.acpAgentId, session_id: session.acpSessionId },
-    effort: session.nativeEffort ?? "",
-  }).catch((err) => console.warn("agents_set_effort failed:", err));
-}
-
-// `pushNativeCompressToAgent` stood here, pushing the RTK compression toggle
-// through `agents_set_compress`. Both are gone (#54): the ported engine has no
-// tool-output compressor, so there was nothing on the other end of the command.
-
 /** Convert an atlas-agents wire ToolCall into the in-store ChatMessage shape. */
 function toChatToolCall(tc: AgentToolCall): ChatMessage["toolCalls"][number] {
   return {
@@ -471,12 +435,9 @@ interface ChatActions {
     setAcpConfigOptions: (tabId: string, options: unknown[], sourceAgentType?: string) => void;
     /** Native agent: pick the BYOK provider. Clears the model so the
      *  composer re-selects a default for the new provider before pushing. */
-    setNativeProvider: (sessionId: string, provider: string) => void;
     /** Native agent: pick the model and push `provider/model` to the
      *  bound agent via `agents_set_model`. No-op until the session is bound. */
-    setNativeModel: (sessionId: string, model: string) => void;
     /** Native agent: set the reasoning-effort level and push it. */
-    setNativeEffort: (sessionId: string, effort: string) => void;
     /** Native agent: toggle RTK tool-output compression and push it. */
     replaceMessages: (
       sessionId: string,
@@ -870,7 +831,6 @@ export const useChatStore = createSelectors(
             sess.unrestoredModeId = undefined;
             // The provider only applies to the native agent; clear it so the
             // composer re-defaults from BYOK keys if the native agent is chosen.
-            sess.nativeProvider = undefined;
             // Slash commands are per-agent (ACP `available_commands_update`);
             // the old agent's list must not survive the switch or it renders
             // under the new agent until its own update lands.
@@ -956,7 +916,6 @@ export const useChatStore = createSelectors(
             // same-agent variant). The resume snapshot's real models/current
             // land right after via `setAcpModels` (which only seeds current
             // when unset, so clearing here is what lets it take effect).
-            sess.nativeProvider = undefined;
             const cachedModels = loadCachedAcpModels(agentType);
             sess.acpAvailableModels = cachedModels?.availableModels ?? [];
             sess.acpCurrentModel = undefined;
@@ -1410,35 +1369,6 @@ export const useChatStore = createSelectors(
             if (session) session.acpCurrentModel = modelId;
           });
           pushAcpModelToAgent(get(), sessionId);
-        },
-        setNativeProvider: (sessionId, provider) =>
-          set((s) => {
-            const session = s.sessions[sessionId];
-            if (!session || session.nativeProvider === provider) return;
-            session.nativeProvider = provider;
-            // New provider → the prior model id is meaningless; let the composer
-            // pick this provider's default before anything is pushed.
-            session.acpCurrentModel = undefined;
-          }),
-        setNativeModel: (sessionId, model) => {
-          set((s) => {
-            const session = s.sessions[sessionId];
-            if (session) session.acpCurrentModel = model;
-          });
-          // Remember the full selection so the next new chat seeds from it.
-          const sess = get().sessions[sessionId];
-          if (sess?.nativeProvider && model) {
-            saveNativeModelPref({ provider: sess.nativeProvider, model });
-          }
-          pushNativeModelToAgent(get(), sessionId);
-        },
-        setNativeEffort: (sessionId, effort) => {
-          set((s) => {
-            const session = s.sessions[sessionId];
-            if (session) session.nativeEffort = effort;
-          });
-          saveNativeEffort(effort);
-          pushNativeEffortToAgent(get(), sessionId);
         },
         replaceMessages: (sessionId, messages) =>
           set((s) => {
@@ -2035,39 +1965,12 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // Per-turn usage footer (native agent): derive this turn's tokens/cost as
       // the delta from the previous turn's cumulative snapshot, and attach it to
       // the trailing assistant message so it renders at the end of the turn.
-      if (session.usage && session.agentType === "atlas-agent") {
-        const cum = {
-          input: session.usage.input_tokens ?? 0,
-          output: session.usage.output_tokens ?? 0,
-          cost: session.usage.cost ?? 0,
-        };
-        const prev = session.lastUsageSnapshot ?? {
-          input: 0,
-          output: 0,
-          cost: 0,
-        };
-        const turn = {
-          input: Math.max(0, cum.input - prev.input),
-          output: Math.max(0, cum.output - prev.output),
-          cost: Math.max(0, cum.cost - prev.cost),
-          saved: session.pendingSavedTokens ?? 0,
-        };
-        session.lastUsageSnapshot = cum;
-        session.pendingSavedTokens = undefined;
-        if (turn.input + turn.output > 0) {
-          for (let i = session.messages.length - 1; i >= 0; i--) {
-            if (session.messages[i].role === "assistant") {
-              session.messages[i].usage = turn;
-              break;
-            }
-          }
-        }
-      }
+
       // ACP agents (Claude Code / Codex) can't report a per-turn input/output
       // split, but they stream a cumulative context-window gauge. Snapshot the
       // latest onto the trailing assistant message so its turn card renders a
       // context gauge in the same slot the native agent uses for per-turn usage.
-      if (session.contextUsage && session.agentType !== "atlas-agent") {
+      if (session.contextUsage) {
         for (let i = session.messages.length - 1; i >= 0; i--) {
           if (session.messages[i].role === "assistant") {
             session.messages[i].contextUsage = { ...session.contextUsage };
@@ -2468,12 +2371,8 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       return;
     }
     case "model_changed": {
-      // The native agent's model is UI-driven and stored as a BARE id
-      // (its provider lives in `nativeProvider`). The worker echoes back the
-      // full "provider/model" we pushed, so applying it here would re-prefix
-      // the value every cycle ("google/google/google/…") via the composer's
-      // re-push. Ignore the echo for the native agent — the UI is the source of truth.
-      if (session.agentType !== "atlas-agent") session.acpCurrentModel = env.model_id;
+      // Reflect the external agent's negotiated model.
+      session.acpCurrentModel = env.model_id;
       return;
     }
     default:

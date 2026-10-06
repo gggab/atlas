@@ -24,8 +24,8 @@ import { timeAgo } from "@/lib/time-ago";
 import { ThreadHistoryView } from "./thread-history-view";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+import { useLocalProjects } from "@/features/projects/lib/project-scope";
+
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
 import { bumpLoadToken, isLoadStale } from "../lib/load-tokens";
@@ -145,8 +145,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   // ACTIVE-org projects only — the fallback below must never resolve to (or
   // hold, via the sticky ref) a path that belongs to another organisation.
   // (`projects` further down is the thread-history grouping, not this list.)
-  const orgProjects = useActiveOrgProjects();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
+  const orgProjects = useLocalProjects();
+
   const resolvedCwd =
     project?.path ?? orgProjects.find((w) => w.id === activeProjectId)?.path ?? "";
   // STICKY cwd. It no longer keys any query — history is one app-level store —
@@ -163,11 +163,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   // outgoing org's cwd (and thus its thread ordering) into the new org while
   // teardown has everything transiently null. Reset it the moment the org
   // changes, render-synchronously.
-  const lastOrgRef = useRef(activeOrganisationId);
-  if (lastOrgRef.current !== activeOrganisationId) {
-    lastOrgRef.current = activeOrganisationId;
-    lastCwdRef.current = "";
-  }
+
   if (resolvedCwd) {
     lastCwdRef.current = resolvedCwd;
   } else if (orgProjects.length === 0) {

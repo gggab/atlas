@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
-import { CheckCircle2, XCircle, AlertTriangle, ClipboardList, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 import { useChatStore } from "../stores/chat-store";
 import { respondAndPopPermission, type PermissionAnswer } from "../lib/respond-permission";
@@ -15,14 +15,6 @@ import { ApprovalCard, type Answer } from "./approval-card";
 import type { PermissionOptionRef, PendingPermission } from "@/types/acp";
 import { type AgentType } from "@/types/agent";
 import { agentMeta } from "@/features/agents/lib/agent-meta";
-import {
-  isOutwardCall,
-  keyMayPick,
-  outwardApprovalOf,
-  outwardPreparingOf,
-  type OutwardApproval,
-  type OutwardPreparing,
-} from "@/features/org-actions/lib/outward-approval";
 
 function isAllow(kind: string) {
   return kind === "allow_once" || kind === "allow_always";
@@ -78,7 +70,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   const queueLength = useChatStore((s) =>
     acpSessionId ? (s.pendingPermissions[acpSessionId]?.length ?? 0) : 0,
   );
-  const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "atlas-agent");
+  const agentType = useChatStore((s) => s.sessions[tabId]?.agentType ?? "");
   const { applyExitPlanSelection } = useChatStore.use.actions();
 
   const [draft, setDraft] = useState("");
@@ -92,9 +84,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
 
   // The option Enter picks, and the one drawn as primary. None on an outward
   // action's card: its Allow is a click (`keyMayPick`).
-  const primaryId = current?.options.find(
-    (o) => isAllow(o.kind) && keyMayPick(current.toolCall, o.kind),
-  )?.optionId;
+  const primaryId = current?.options.find((o) => isAllow(o.kind))?.optionId;
 
   // Keyboard: digits 1–9 select, Enter = primary, Esc = cancel — except while
   // the free-text field is focused (there Enter submits text, Esc still cancels).
@@ -134,18 +124,13 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
         if (primaryId) {
           consume();
           send({ kind: "selected", option_id: primaryId });
-        } else if (isOutwardCall(current.toolCall)) {
-          // An outward action's Allow is a click. Its Enter does nothing —
-          // it neither posts nor stops the turn under the card.
-          consume();
-        }
-        return;
+        } else return;
       }
       const n = parseInt(e.key, 10);
       if (!Number.isNaN(n) && n >= 1 && n <= current.options.length) {
         const picked = current.options[n - 1];
         consume();
-        if (!keyMayPick(current.toolCall, picked.kind)) return;
+
         send({ kind: "selected", option_id: picked.optionId });
       }
     };
@@ -216,8 +201,7 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
   const title = current.toolCall.title ?? current.toolCall.kind ?? "Tool call";
   const planMarkdown = extractPlanMarkdown(current.toolCall);
   const questions = extractQuestions(current.toolCall);
-  const outward = outwardApprovalOf(current.toolCall);
-  const preparing = outward ? null : outwardPreparingOf(current.toolCall, current.options);
+
   const queueNote = queueLength > 1 ? `${queueLength - 1} more pending after this` : null;
 
   // Numbered option list — shared by both layouts.
@@ -358,26 +342,18 @@ function PermissionModalImpl({ tabId, onSendMessage }: PermissionModalProps) {
       >
         <div className="flex items-start gap-2 px-3 pt-3">
           <div className="flex-1 min-w-0">
-            {preparing ? (
-              <OutwardPreparingHeading preparing={preparing} />
-            ) : outward ? (
-              <OutwardActionHeading approval={outward} />
-            ) : (
+            {
               <div className="text-base font-medium leading-snug text-foreground">
                 The agent wants to run <span className="font-mono text-foreground">{title}</span>?
               </div>
-            )}
+            }
             {queueNote && (
               <div className="mt-0.5 text-xs text-secondary-foreground">{queueNote}</div>
             )}
           </div>
         </div>
 
-        {preparing ? null : outward ? (
-          <OutwardActionBody approval={outward} />
-        ) : (
-          <ToolCallPreview tc={current.toolCall} />
-        )}
+        {<ToolCallPreview tc={current.toolCall} />}
 
         <div className="px-3 py-2.5">{optionList}</div>
 
@@ -463,48 +439,17 @@ function PermissionOption({
  * the recipient in full — in place of "The agent wants to run …?", which
  * reads wrongly for a message.
  */
-export function OutwardActionHeading({ approval }: { approval: OutwardApproval }) {
-  return (
-    <>
-      <div className="text-base font-medium leading-snug text-foreground">{approval.title}</div>
-      <div className="mt-0.5 text-xs text-secondary-foreground">{approval.recipient}</div>
-    </>
-  );
-}
 
 /**
  * An outward action's card while the host is still describing it (ADR-0014):
  * a loading heading and what is being looked up. The only option below is
  * Decline; the described card replaces this one when it is ready.
  */
-export function OutwardPreparingHeading({ preparing }: { preparing: OutwardPreparing }) {
-  return (
-    <div role="status" aria-live="polite" data-testid="outward-preparing">
-      <div className="flex items-center gap-2 text-base font-medium leading-snug text-foreground">
-        <Loader2 className="size-4 shrink-0 animate-spin text-secondary-foreground" aria-hidden />
-        <span>{preparing.title}</span>
-      </div>
-      <div className="mt-0.5 text-xs text-secondary-foreground">{preparing.note}</div>
-    </div>
-  );
-}
 
 /**
  * The exact words an outward action will post, in the tool-call preview's
  * box: the whole body, never truncated, scrolling inside the card when long.
  */
-export function OutwardActionBody({ approval }: { approval: OutwardApproval }) {
-  return (
-    <div className="mx-3 mt-2 rounded-md border border-border bg-background px-3 py-2">
-      <div
-        data-testid="outward-body"
-        className="max-h-64 overflow-auto whitespace-pre-wrap text-sm leading-snug text-foreground"
-      >
-        {approval.body}
-      </div>
-    </div>
-  );
-}
 
 function ToolCallPreview({ tc }: { tc: PendingPermission["toolCall"] }) {
   const inputValue =

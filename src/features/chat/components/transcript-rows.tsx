@@ -14,7 +14,7 @@
 //  3. Rows never subscribe to the chat store or the detail-panel store. Data
 //     arrives as props; actions are fired imperatively via `getState()`.
 
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Bookmark, Brain, ChevronDown, ChevronRight, Code2, Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CachedMarkdown } from "@/lib/markdown-cache";
@@ -24,12 +24,7 @@ import { openTurnDiff } from "../lib/open-turn-diff";
 import { UserRowActions } from "./user-row-actions";
 import { ImageAttachmentStrip } from "./image-attachments";
 import { FILE_DETAIL, ICON_PX, ICON_STROKE, ToolGlyph } from "./tool-glyph";
-import {
-  GroupCommentPill,
-  RowCommentPill,
-  useGroupHasComments,
-  useRowHasComments,
-} from "./chat-comment-pills";
+
 import { ProseRowActions } from "./prose-row-actions";
 import type {
   UserRow,
@@ -277,7 +272,7 @@ function clampable(row: UserRow): boolean {
 
 export const ProseRowView = memo(function ProseRowView({
   row,
-  tabId,
+  tabId: _tabId,
   agentLabel,
   priority,
   pinScopeKey,
@@ -342,7 +337,6 @@ export const ProseRowView = memo(function ProseRowView({
       )}
       {!row.streaming && (
         <ProseRowActions
-          tabId={tabId}
           messageId={row.id.slice(2)}
           timestamp={row.timestamp}
           text={row.text}
@@ -357,7 +351,7 @@ export const ProseRowView = memo(function ProseRowView({
 
 export const ThinkingRowView = memo(function ThinkingRowView({
   row,
-  tabId,
+  tabId: _tabId,
   onToggleExpand,
 }: {
   row: ThinkingRow;
@@ -366,15 +360,14 @@ export const ThinkingRowView = memo(function ThinkingRowView({
 }) {
   // `th:<messageId>`. A discussed thought wears its pill; the wrapper exists
   // only then, so an undiscussed row's DOM is exactly what it was.
-  const messageId = row.id.slice(3);
-  const discussed = useRowHasComments(tabId, messageId);
+
   const toggle = (
     <button
       type="button"
       onClick={() => onToggleExpand(row.id)}
       className={cn(
         "flex h-[26px] items-center gap-2 text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)] cursor-pointer transition-colors",
-        discussed ? "min-w-0 flex-1" : "w-full",
+        "w-full",
       )}
     >
       {/* Same slot, size and stroke as the tool rows around it. */}
@@ -400,14 +393,7 @@ export const ThinkingRowView = memo(function ThinkingRowView({
     // takes the pitch to 32px (the row plus a quarter) which is enough to tell
     // them apart without turning them into paragraphs.
     <Column className="py-[3px]">
-      {discussed ? (
-        <div className="flex items-center gap-2">
-          {toggle}
-          <RowCommentPill tabId={tabId} chatKey={messageId} />
-        </div>
-      ) : (
-        toggle
-      )}
+      {toggle}
       {row.expanded && (
         <div className="pb-3 pl-6">
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-[19px] text-[var(--muted-foreground)] select-text">
@@ -449,7 +435,6 @@ export const MarkerRowView = memo(function MarkerRowView({
     }
   }, [row.opens, row.path, row.toolCallId, tabId]);
   const fileLink = clickable && FILE_DETAIL.has(row.tool);
-  const discussed = useRowHasComments(tabId, row.toolCallId);
 
   const line = (
     <button
@@ -458,7 +443,7 @@ export const MarkerRowView = memo(function MarkerRowView({
       onClick={clickable ? onClick : undefined}
       className={cn(
         "atlas-marker group/marker min-w-0 text-left text-base text-[var(--muted-foreground)]",
-        discussed ? "flex-1" : "w-full",
+        "w-full",
         clickable && "cursor-pointer hover:text-[var(--secondary-foreground)]",
         row.state === "running" && "atlas-marker-running",
       )}
@@ -502,14 +487,7 @@ export const MarkerRowView = memo(function MarkerRowView({
   );
   // A discussed call wears its pill beside the line; the wrapper exists only
   // then, so every other marker row's DOM is exactly what it was.
-  const body = discussed ? (
-    <div className="flex items-center gap-2">
-      {line}
-      <RowCommentPill tabId={tabId} chatKey={row.toolCallId} />
-    </div>
-  ) : (
-    line
-  );
+  const body = line;
   return embedded ? body : <Column>{body}</Column>;
 });
 
@@ -552,8 +530,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
   // them is keyed by. Derived here rather than carried on the row: it is a map
   // over a list the row already holds, and the projection would have to redo it
   // on every marker state change.
-  const callIds = useMemo(() => row.markers.map((marker) => marker.toolCallId), [row.markers]);
-  const discussed = useGroupHasComments(tabId, callIds);
+
   const summary = (
     <button
       type="button"
@@ -564,7 +541,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
         "atlas-marker group/tool-summary cursor-pointer text-left text-base text-[var(--muted-foreground)] hover:text-[var(--secondary-foreground)]",
         // Discussed, the line shares its row with the pill and has to fill
         // the space so the pill lands at the end of it.
-        discussed ? "min-w-0 flex-1" : "max-w-full",
+        "max-w-full",
       )}
     >
       <span className="flex w-4 shrink-0 justify-center">
@@ -604,20 +581,7 @@ export const MarkerGroupRowView = memo(function MarkerGroupRowView({
           faces and a count over the calls inside, opening the fold so the call
           that was discussed can show its own pill. The wrapper exists only
           then, so every other group's DOM is exactly what it was. */}
-      {discussed ? (
-        <div className="flex items-center gap-2">
-          {summary}
-          <GroupCommentPill
-            tabId={tabId}
-            chatKeys={callIds}
-            onOpen={() => {
-              if (!row.open) onExpandTurn(row.id);
-            }}
-          />
-        </div>
-      ) : (
-        summary
-      )}
+      {summary}
       {row.open && (
         // Laid out in the thread, not in a 240px scroller. A nested scroll area
         // inside a scrolling transcript is two scrollbars fighting over the

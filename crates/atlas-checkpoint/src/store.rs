@@ -8,8 +8,7 @@
 //! Two properties are worth stating because everything else follows from them:
 //!
 //! * **The store is on the critical path; the network is not.** Nothing in this
-//!   module can block on a network call, because Local mode and offline capture
-//!   are the same code path as everything else.
+//!   module can block on a network call, because all capture and retrieval are local.
 //! * **One turn is one transaction.** A crash mid-write rolls back to the last
 //!   completed turn rather than leaving a torn record that reads as finished.
 
@@ -98,6 +97,14 @@ impl Store {
         let db_path = root.join("sessions.db");
         let conn = Self::open_connection(&db_path, create)?;
         schema::migrate(&conn)?;
+        // Existing cloud-bound databases become local. Session rows, blob ids,
+        // checkpoint links and schema columns are preserved for compatibility.
+        conn.execute(
+            "UPDATE binding SET mode = 'local', org_id = NULL, slug = NULL,
+            remote_workspace_id = NULL, drain_state = 'ok', import_approved = 1
+            WHERE mode = 'cloud'",
+            [],
+        )?;
 
         let store = Self {
             conn,
@@ -1464,118 +1471,12 @@ impl Store {
         Ok(())
     }
 
-    /// Record the Organisation this Project was registered to.
-    ///
-    /// Separate from [`Store::upsert_binding`] because it is a different event:
-    /// binding is local and immediate, registration is a server round-trip that
-    /// must succeed before anything local changes.
-    ///
-    /// Becoming Cloud revokes any earlier import approval — the disclosure class
-    /// changed, so the confirmation must be given again — and clears a stale
-    /// `not_authorized` drain gate, since this is a fresh registration.
-    pub fn set_cloud_binding(
-        &self,
-        org_id: &str,
-        slug: &str,
-        remote_workspace_id: Option<&str>,
-    ) -> Result<()> {
-        self.require_writer()?;
-        self.conn.execute(
-            "UPDATE binding
-                SET mode = 'cloud', org_id = ?1, slug = ?2,
-                    remote_workspace_id = COALESCE(?3, remote_workspace_id),
-                    import_approved = 0, drain_state = 'ok', updated_at = ?4
-              WHERE id = 1",
-            rusqlite::params![org_id, slug, remote_workspace_id, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    /// Promote to Cloud atomically: the binding flip and the row flip commit
-    /// together, so a crash can never leave a Cloud Project whose history is
-    /// stranded as `local` — invisible to the drain forever, after the user was
-    /// told it would be shared.
-    pub fn promote_to_cloud(
-        &self,
-        workspace_id: &str,
-        org_id: &str,
-        slug: &str,
-        remote_workspace_id: Option<&str>,
-    ) -> Result<i64> {
-        self.require_writer()?;
-        let now = Utc::now().to_rfc3339();
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "UPDATE binding
-                SET mode = 'cloud', org_id = ?1, slug = ?2,
-                    remote_workspace_id = COALESCE(?3, remote_workspace_id),
-                    import_approved = 0, drain_state = 'ok', updated_at = ?4
-              WHERE id = 1",
-            rusqlite::params![org_id, slug, remote_workspace_id, now],
-        )?;
-        let moved = promote_local_rows_in(&tx, workspace_id)?;
-        tx.commit()?;
-        Ok(moved)
-    }
-
-    /// Point a Cloud Project at a different Cloud Project, re-sending its history.
-    ///
-    /// The server has no move: each Project is its own object, so the rows
-    /// already accepted by the old one stay there and the new one has to be
-    /// sent everything. The binding flip and the row requeue commit together
-    /// for the same reason [`Store::promote_to_cloud`] does — a crash between
-    /// them would leave a Project whose history the new destination never
-    /// receives, after the user was told it would.
-    ///
-    /// Every row goes back to `pending` with a fresh attempt count: `sent`
-    /// because the new destination has not seen it, `failed` because the
-    /// failure was against the old one, `local` for convergence.
-    pub fn switch_cloud_project(
-        &self,
-        workspace_id: &str,
-        org_id: &str,
-        slug: &str,
-        remote_workspace_id: &str,
-    ) -> Result<i64> {
-        self.require_writer()?;
-        let now = Utc::now().to_rfc3339();
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "UPDATE binding
-                SET mode = 'cloud', org_id = ?1, slug = ?2, remote_workspace_id = ?3,
-                    drain_state = 'ok', updated_at = ?4
-              WHERE id = 1",
-            rusqlite::params![org_id, slug, remote_workspace_id, now],
-        )?;
-        let moved = requeue_all_rows_in(&tx, workspace_id)?;
-        tx.commit()?;
-        Ok(moved)
-    }
-
-    /// Was promotion interrupted? A Cloud Project should have no `local` rows;
-    /// any that exist were stranded by a crash between registration and the row
-    /// flip on an older build, and flipping them is always correct.
-    pub fn heal_stranded_local_rows(&self, workspace_id: &str) -> Result<i64> {
-        self.require_writer()?;
-        promote_local_rows_in(&self.conn, workspace_id)
-    }
-
     /// Record or revoke the bulk-import disclosure confirmation.
     pub fn set_import_approved(&self, approved: bool) -> Result<()> {
         self.require_writer()?;
         self.conn.execute(
             "UPDATE binding SET import_approved = ?1, updated_at = ?2 WHERE id = 1",
             rusqlite::params![i64::from(approved), Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
-    }
-
-    /// Remember whether the server rejected this identity.
-    pub fn set_drain_state(&self, state: DrainGate) -> Result<()> {
-        self.require_writer()?;
-        self.conn.execute(
-            "UPDATE binding SET drain_state = ?1, updated_at = ?2 WHERE id = 1",
-            rusqlite::params![state.as_str(), Utc::now().to_rfc3339()],
         )?;
         Ok(())
     }
@@ -1590,302 +1491,12 @@ impl Store {
         Ok(())
     }
 
-    // ── The outbox ──────────────────────────────────────────────────────────
-
-    /// The next batch of pending rows, in sequence order.
-    ///
-    /// Ordered by `seq` so a Session's own rows arrive in the order they
-    /// happened, and bounded by **both** a count and a byte ceiling — a hundred
-    /// artifacts can be enormous, and a request the server refuses on size would
-    /// otherwise be retried forever.
-    ///
-    /// Rows already marked `failed` are excluded, which is what lets one poison
-    /// row be skipped while everything behind it keeps draining.
-    pub fn pending_artifacts(
-        &self,
-        workspace_id: &str,
-        wire_workspace_id: &str,
-        org_id: &str,
-        max_count: usize,
-        max_bytes: usize,
-    ) -> Result<Vec<crate::artifacts::AtlasArtifact>> {
-        use crate::artifacts::*;
-
-        let mut out: Vec<AtlasArtifact> = Vec::new();
-        let mut bytes = 0usize;
-
-        // The byte ceiling is checked *before* appending, so a batch never
-        // overshoots the limit the server enforces — except for a single
-        // artifact that is alone over the ceiling, which still ships by itself
-        // rather than deadlocking the queue.
-        macro_rules! push_or_stop {
-            ($artifact:expr) => {{
-                let artifact = $artifact;
-                let cost = artifact.approx_bytes();
-                if !out.is_empty() && (out.len() >= max_count || bytes + cost > max_bytes) {
-                    return Ok(out);
-                }
-                bytes += cost;
-                out.push(artifact);
-                if out.len() >= max_count || bytes >= max_bytes {
-                    return Ok(out);
-                }
-            }};
-        }
-
-        // Sessions first: a Message referencing a Session the server has not
-        // seen is a dangling reference of a different kind.
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {SESSION_COLUMNS} FROM agent_session
-              WHERE workspace_id = ?1 AND sync_state = 'pending'
-              ORDER BY started_at LIMIT ?2"
-        ))?;
-        let sessions = stmt
-            .query_map(
-                rusqlite::params![workspace_id, max_count as i64],
-                row_to_session,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        for session in sessions {
-            // The hash covers the fields that can change after a first send —
-            // title, totals, model — so a mutated Session re-sends as new
-            // content instead of being dropped by the server's replay dedupe.
-            let token_totals =
-                serde_json::to_value(session.token_totals).unwrap_or(serde_json::Value::Null);
-            let content_hash = blobs::key_for(
-                format!(
-                    "{}:{}:{}:{}:{}",
-                    session.id,
-                    session.title.as_deref().unwrap_or(""),
-                    session.agent.as_deref().unwrap_or(""),
-                    session.model.as_deref().unwrap_or(""),
-                    token_totals
-                )
-                .as_bytes(),
-            );
-            push_or_stop!(AtlasArtifact::AgentSession(SessionArtifact {
-                base: ArtifactBase {
-                    row_id: session.id.clone(),
-                    org_id: org_id.to_string(),
-                    workspace_id: wire_workspace_id.to_string(),
-                    seq: 0,
-                    content_hash,
-                    created_at: session.started_at.to_rfc3339(),
-                },
-                session_id: session.id.clone(),
-                source: session.source.as_str().to_string(),
-                native_session_id: session.native_session_id.clone(),
-                title: session.title.clone(),
-                agent: session.agent.clone(),
-                model: session.model.clone(),
-                token_totals,
-                started_at: session.started_at.to_rfc3339(),
-            }));
-        }
-
-        // Rows from aborted turns stay home: a turn the process died inside is
-        // not a completed turn, and uploading its fragments would present them
-        // to the Organisation as finished work. The abort verdict lives only in
-        // the local `turn` table, so the server could never learn otherwise.
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {MESSAGE_COLUMNS} FROM agent_message m
-              WHERE sync_state = 'pending'
-                AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)
-                AND NOT EXISTS (
-                    SELECT 1 FROM turn t
-                     WHERE t.session_id = m.session_id
-                       AND t.turn_seq = m.turn_seq
-                       AND t.state = 'aborted')
-              ORDER BY seq LIMIT ?2"
-        ))?;
-        let messages = stmt
-            .query_map(
-                rusqlite::params![workspace_id, max_count as i64],
-                row_to_message,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        for message in messages {
-            push_or_stop!(AtlasArtifact::AgentMessage(MessageArtifact {
-                base: ArtifactBase {
-                    row_id: message.id.clone(),
-                    org_id: org_id.to_string(),
-                    workspace_id: wire_workspace_id.to_string(),
-                    seq: message.seq,
-                    content_hash: message.content_hash.clone(),
-                    created_at: message.created_at.to_rfc3339(),
-                },
-                session_id: message.session_id.clone(),
-                turn_seq: message.turn_seq,
-                role: message.role.as_str().to_string(),
-                mode: message.mode.as_str().to_string(),
-                preview: message.preview.clone(),
-                body: message.body.clone(),
-                body_ref: message.body_ref.clone(),
-            }));
-        }
-
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {TOOL_CALL_COLUMNS} FROM tool_call c
-              WHERE sync_state = 'pending'
-                AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)
-                AND NOT EXISTS (
-                    SELECT 1 FROM turn t
-                     WHERE t.session_id = c.session_id
-                       AND t.turn_seq = c.turn_seq
-                       AND t.state = 'aborted')
-              ORDER BY seq LIMIT ?2"
-        ))?;
-        let calls = stmt
-            .query_map(
-                rusqlite::params![workspace_id, max_count as i64],
-                row_to_tool_call,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        for call in calls {
-            // Status and payload refs change across a call's lifetime; hash them
-            // so a completed call re-sends over its earlier pending sighting.
-            let content_hash = blobs::key_for(
-                format!(
-                    "{}:{}:{}:{}",
-                    call.id,
-                    call.status.as_str(),
-                    call.result_ref.as_deref().unwrap_or(""),
-                    call.result.as_deref().unwrap_or("")
-                )
-                .as_bytes(),
-            );
-            push_or_stop!(AtlasArtifact::ToolCall(ToolCallArtifact {
-                base: ArtifactBase {
-                    row_id: call.id.clone(),
-                    org_id: org_id.to_string(),
-                    workspace_id: wire_workspace_id.to_string(),
-                    seq: call.seq,
-                    content_hash,
-                    created_at: call.created_at.to_rfc3339(),
-                },
-                session_id: call.session_id.clone(),
-                turn_seq: call.turn_seq,
-                tool_name: call.tool_name.as_str().to_string(),
-                title: call.title.clone(),
-                kind: call.kind.clone(),
-                status: call.status.as_str().to_string(),
-                locations: call.locations.clone(),
-                arguments: call.arguments.clone(),
-                arguments_ref: call.arguments_ref.clone(),
-                result: call.result.clone(),
-                result_ref: call.result_ref.clone(),
-                result_binary: call.result_binary,
-            }));
-        }
-
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoint
-              WHERE sync_state = 'pending'
-                AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)
-              ORDER BY created_at LIMIT ?2"
-        ))?;
-        let checkpoints = stmt
-            .query_map(
-                rusqlite::params![workspace_id, max_count as i64],
-                row_to_checkpoint,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        for checkpoint in checkpoints {
-            let artifact = AtlasArtifact::Checkpoint(CheckpointArtifact {
-                base: ArtifactBase {
-                    row_id: checkpoint.id.clone(),
-                    org_id: org_id.to_string(),
-                    workspace_id: wire_workspace_id.to_string(),
-                    seq: 0,
-                    // (session, commit) is the Checkpoint's natural key; the
-                    // link state is folded in so a re-point or an orphaning
-                    // re-sends as changed content rather than being dropped by
-                    // the server's replay dedupe.
-                    content_hash: blobs::key_for(
-                        format!(
-                            "{}:{}:{}",
-                            checkpoint.session_id,
-                            checkpoint.commit_sha,
-                            checkpoint.link_state.as_str()
-                        )
-                        .as_bytes(),
-                    ),
-                    created_at: checkpoint.created_at.to_rfc3339(),
-                },
-                session_id: checkpoint.session_id.clone(),
-                commit_sha: checkpoint.commit_sha.clone(),
-                patch_id: checkpoint.patch_id.clone(),
-                link_state: checkpoint.link_state.as_str().to_string(),
-                branch: checkpoint.branch.clone(),
-                git_author_name: checkpoint.git_author_name.clone(),
-                git_author_email: checkpoint.git_author_email.clone(),
-                files_touched: checkpoint.files_touched.clone(),
-                insertions: checkpoint.insertions,
-                deletions: checkpoint.deletions,
-            });
-            push_or_stop!(artifact);
-        }
-
-        Ok(out)
-    }
-
-    /// Mark every pending row that has exhausted its attempts as `failed`.
-    ///
-    /// This is what makes the poison-row guarantee real for *batch-level*
-    /// rejections, where the server never names the offending row: attempts
-    /// accrue per pass, and once a row crosses the cap it leaves the queue so
-    /// everything behind it drains. Returns how many rows were failed.
-    pub fn mark_exhausted_rows_failed(&self, workspace_id: &str, max_attempts: i64) -> Result<i64> {
-        self.require_writer()?;
-        let mut failed = 0i64;
-        failed += self.conn.execute(
-            "UPDATE agent_session SET sync_state = 'failed'
-              WHERE workspace_id = ?1 AND sync_state = 'pending' AND sync_attempts >= ?2",
-            rusqlite::params![workspace_id, max_attempts],
-        )? as i64;
-        for table in ["agent_message", "tool_call", "checkpoint"] {
-            failed += self.conn.execute(
-                &format!(
-                    "UPDATE {table} SET sync_state = 'failed'
-                      WHERE sync_state = 'pending' AND sync_attempts >= ?2
-                        AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)"
-                ),
-                rusqlite::params![workspace_id, max_attempts],
-            )? as i64;
-        }
-        Ok(failed)
-    }
-
-    /// Give every `failed` row another chance: flip it back to `pending` with a
-    /// fresh attempt count. The `failed → pending` transition of the outbox
-    /// state machine — a deliberate human action, never automatic.
-    pub fn retry_failed_rows(&self, workspace_id: &str) -> Result<i64> {
-        self.require_writer()?;
-        let mut retried = 0i64;
-        retried += self.conn.execute(
-            "UPDATE agent_session SET sync_state = 'pending', sync_attempts = 0
-              WHERE workspace_id = ?1 AND sync_state = 'failed'",
-            [workspace_id],
-        )? as i64;
-        for table in ["agent_message", "tool_call", "checkpoint"] {
-            retried += self.conn.execute(
-                &format!(
-                    "UPDATE {table} SET sync_state = 'pending', sync_attempts = 0
-                      WHERE sync_state = 'failed'
-                        AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)"
-                ),
-                [workspace_id],
-            )? as i64;
-        }
-        Ok(retried)
-    }
-
     /// Re-key every row after the project folder moved.
     ///
     /// The Project's identity must survive renaming the repo folder: `.atlas/`
     /// travels with the directory, but rows written under the old absolute path
     /// would be invisible to every query keyed on the new one — the timeline,
-    /// the health counts and the promotion preview would all silently read as
+    /// the health counts would all silently read as
     /// empty. One transaction, so a crash re-keys nothing rather than half.
     pub fn rekey_project(
         &self,
@@ -1913,71 +1524,6 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
-    }
-
-    /// Mark a row as durably accepted by the server.
-    ///
-    /// The row id identifies its table by prefix, so one call handles every
-    /// artifact kind without the caller tracking which is which.
-    pub fn mark_sent(&self, row_id: &str) -> Result<()> {
-        self.set_row_sync_state(row_id, SyncState::Sent)
-    }
-
-    /// Mark a row as permanently rejected — skipped, never retried at the head
-    /// of the queue, so one poison row cannot stall everything behind it.
-    pub fn mark_failed(&self, row_id: &str) -> Result<()> {
-        self.set_row_sync_state(row_id, SyncState::Failed)
-    }
-
-    /// Count one more attempt against a row.
-    pub fn record_attempt(&self, row_id: &str) -> Result<()> {
-        self.require_writer()?;
-        let Some(table) = table_for(row_id) else {
-            return Ok(());
-        };
-        self.conn.execute(
-            &format!("UPDATE {table} SET sync_attempts = sync_attempts + 1 WHERE id = ?1"),
-            [row_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn attempts(&self, row_id: &str) -> Result<i64> {
-        let Some(table) = table_for(row_id) else {
-            return Ok(0);
-        };
-        Ok(self.conn.query_row(
-            &format!("SELECT sync_attempts FROM {table} WHERE id = ?1"),
-            [row_id],
-            |row| row.get(0),
-        )?)
-    }
-
-    fn set_row_sync_state(&self, row_id: &str, state: SyncState) -> Result<()> {
-        self.require_writer()?;
-        let Some(table) = table_for(row_id) else {
-            return Ok(());
-        };
-        self.conn.execute(
-            &format!("UPDATE {table} SET sync_state = ?2 WHERE id = ?1"),
-            rusqlite::params![row_id, state.as_str()],
-        )?;
-        Ok(())
-    }
-
-    /// Flip every `local` row to `pending`, atomically.
-    ///
-    /// Promotion's whole mechanism. There is deliberately **no separate backfill
-    /// path**: the accumulated history joins the same queue as everything else,
-    /// so there is one drain to keep correct rather than two. Prefer
-    /// [`Store::promote_to_cloud`], which also flips the binding in the same
-    /// transaction.
-    pub fn promote_local_rows(&self, workspace_id: &str) -> Result<i64> {
-        self.require_writer()?;
-        let tx = self.conn.unchecked_transaction()?;
-        let moved = promote_local_rows_in(&tx, workspace_id)?;
-        tx.commit()?;
-        Ok(moved)
     }
 
     // ── Import progress ─────────────────────────────────────────────────────
@@ -2449,30 +1995,6 @@ impl Store {
         )?)
     }
 
-    /// How many rows across every synced table are in `state`.
-    ///
-    /// Counts Sessions, Messages, tool calls and Checkpoints together, because
-    /// "3 pending" should mean three things waiting rather than three of one
-    /// arbitrary kind.
-    pub fn row_count_in_state(&self, workspace_id: &str, state: SyncState) -> Result<i64> {
-        Ok(self.conn.query_row(
-            "SELECT
-               (SELECT COUNT(*) FROM agent_session
-                 WHERE workspace_id = ?1 AND sync_state = ?2)
-             + (SELECT COUNT(*) FROM agent_message
-                 WHERE sync_state = ?2
-                   AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1))
-             + (SELECT COUNT(*) FROM tool_call
-                 WHERE sync_state = ?2
-                   AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1))
-             + (SELECT COUNT(*) FROM checkpoint
-                 WHERE sync_state = ?2
-                   AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1))",
-            rusqlite::params![workspace_id, state.as_str()],
-            |row| row.get(0),
-        )?)
-    }
-
     /// Every index the store guarantees, as the database actually has them.
     pub fn index_names(&self) -> Result<Vec<String>> {
         let mut stmt = self
@@ -2648,67 +2170,6 @@ fn row_to_file_touch(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileTouch> {
         created_at: parse_time(row.get::<_, String>(10)?),
         sketch_after: row.get(11)?,
     })
-}
-
-/// Flip every `local` row of a Project to `pending`, on any connection-like
-/// handle — the shared body of [`Store::promote_to_cloud`],
-/// [`Store::promote_local_rows`] and [`Store::heal_stranded_local_rows`].
-fn promote_local_rows_in(conn: &Connection, workspace_id: &str) -> Result<i64> {
-    let mut moved = 0i64;
-    moved += conn.execute(
-        "UPDATE agent_session SET sync_state = 'pending'
-          WHERE workspace_id = ?1 AND sync_state = 'local'",
-        [workspace_id],
-    )? as i64;
-    for table in ["agent_message", "tool_call", "checkpoint"] {
-        moved += conn.execute(
-            &format!(
-                "UPDATE {table} SET sync_state = 'pending'
-                  WHERE sync_state = 'local'
-                    AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)"
-            ),
-            [workspace_id],
-        )? as i64;
-    }
-    Ok(moved)
-}
-
-/// Flip every row of a Project — whatever its state — to `pending` with a fresh
-/// attempt count. The body of [`Store::switch_cloud_project`]: the destination
-/// changed, so nothing the old one accepted counts.
-fn requeue_all_rows_in(conn: &Connection, workspace_id: &str) -> Result<i64> {
-    let mut moved = 0i64;
-    moved += conn.execute(
-        "UPDATE agent_session SET sync_state = 'pending', sync_attempts = 0
-          WHERE workspace_id = ?1 AND sync_state != 'pending'",
-        [workspace_id],
-    )? as i64;
-    for table in ["agent_message", "tool_call", "checkpoint"] {
-        moved += conn.execute(
-            &format!(
-                "UPDATE {table} SET sync_state = 'pending', sync_attempts = 0
-                  WHERE sync_state != 'pending'
-                    AND session_id IN (SELECT id FROM agent_session WHERE workspace_id = ?1)"
-            ),
-            [workspace_id],
-        )? as i64;
-    }
-    Ok(moved)
-}
-
-/// Which table a row id belongs to.
-///
-/// Ids are prefixed at creation (`as-`, `am-`, `tc-`, `cp-`) precisely so the
-/// drain can mark a row without also tracking which kind it was — the server's
-/// per-artifact result carries only the id.
-fn table_for(row_id: &str) -> Option<&'static str> {
-    match row_id.split('-').next()? {
-        "as" => Some("agent_session"),
-        "am" => Some("agent_message"),
-        "tc" => Some("tool_call"),
-        "cp" => Some("checkpoint"),
-        _ => None,
-    }
 }
 
 /// Make `.atlas/` ignore itself.

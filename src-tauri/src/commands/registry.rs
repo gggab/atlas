@@ -253,11 +253,7 @@ pub async fn acp_registry_install(agent_id: String, app: AppHandle) -> Result<()
         // Seeds the per-agent download counts behind the marketplace's trend
         // charts. Opt-in gated by the client; the payload is a registry id,
         // never user content.
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                "acp_agent_installed",
-                serde_json::json!({ "agent_id": agent_id }),
-            );
+
         super::catalog::emit_catalog_changed(&app, "install");
     }
     result
@@ -304,11 +300,6 @@ pub async fn acp_registry_install_detected(agent_id: String, app: AppHandle) -> 
     let result = install_detected(&host, &app, &agent_id).await;
 
     if result.is_ok() {
-        app.state::<Arc<crate::telemetry::TelemetryClient>>()
-            .capture(
-                "acp_agent_installed",
-                serde_json::json!({ "agent_id": agent_id, "from": "detected" }),
-            );
         super::catalog::emit_catalog_changed(&app, "install");
     }
     result
@@ -384,11 +375,6 @@ pub async fn acp_registry_uninstall(
         }
     }
 
-    app.state::<Arc<crate::telemetry::TelemetryClient>>()
-        .capture(
-            "acp_agent_uninstalled",
-            serde_json::json!({ "agent_id": agent_id }),
-        );
     super::catalog::emit_catalog_changed(&app, "uninstall");
     Ok(())
 }

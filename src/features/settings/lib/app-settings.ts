@@ -29,14 +29,6 @@ export interface AppSettings {
   /** Global interface zoom (1 == 100%). Driven by the ⌘+/⌘-/⌘0 hotkeys;
    *  applied via the native WebView zoom. */
   uiScale: number;
-  /** Anonymous product telemetry (PostHog). Default ON (opt-out) — gates both
-   *  the Rust emitter and the frontend crash reporter. See
-   *  `src/features/telemetry`. */
-  shareTelemetry: boolean;
-  /** Attribute telemetry to the signed-in Atlas account rather than keeping it
-   *  on the anonymous per-device person. Default ON; irrelevant while signed out
-   *  or while `shareTelemetry` is off — both gate it. */
-  linkTelemetryToAccount: boolean;
   /** Selected on-device embedding model id (== dir name). Managed by the Local
    *  Model Manager; carried here so settings round-trips never clobber it. */
   embeddingModelId: string;
@@ -76,42 +68,20 @@ export interface AppSettings {
   /** Background `git fetch` of the open project (on open, on window focus,
    *  every few minutes) so the Pull badge reflects the remote. Never pulls. */
   gitAutoFetch: boolean;
-  /** Auto-update master switch. ON (default) → every startup checks PostHog
-   *  remote config and prompts when a newer signed DMG is available. */
-  autoUpdate: boolean;
   /** Keep the computer awake while an Atlas agent is actively running.
    *  Default OFF. Prevents idle system sleep; display can still turn off. */
   keepAwakeWhileRunning: boolean;
-  /** Let the Atlas Agent's engine sync OpenAI's curated plugin catalogue
-   *  (github.com/openai/plugins) when it starts. OFF by default — it is a
-   *  network fetch at every launch. Applies the next time the agent starts. */
-  curatedPluginSync: boolean;
   /** Mirror the active project's convention files (`CLAUDE.md`,
    *  `.claude/rules/`) into a marked block of its `AGENTS.md`, kept current as
    *  they change, for any agent that reads `AGENTS.md`
    *  (`commands::instruction_sync`). OFF by default — it writes into the
    *  repository. Switching it off takes the block back out. */
   instructionSync: boolean;
-  /** A version the user chose to "Ignore" in the update prompt; the startup
-   *  check won't re-prompt for exactly this version. */
-  updaterIgnoredVersion: string | null;
   /** Chat composer send gesture. true (default) = Enter sends, Shift+Enter
    *  inserts a newline (Slack/Discord/ChatGPT convention). false = only
    *  Cmd/Ctrl+Enter sends, bare Enter always inserts a newline (the old
    *  default). Cmd/Ctrl+Enter always sends regardless of this setting. */
   enterToSend: boolean;
-  /** Let Atlas Agent act on this window through its UI tool server — open
-   *  files, switch tabs and panels, steer a chat composer, type into a
-   *  terminal (ADR-0012). Off: new sessions are not offered the tools and
-   *  every UI action in a running one is refused. Default ON. */
-  agentUiNavigation: boolean;
-  /** Let Atlas Agent act in your organisation, as you, through its
-   *  organisation tool server: read the recorded sessions, comments, members
-   *  and conversations of the organisation a cloud-bound Project belongs to,
-   *  and act there; anything that reaches another person asks first
-   *  (ADR-0014). Off: new sessions are not offered the tools and every call
-   *  in a running one is refused. Default ON. */
-  agentOrgAccess: boolean;
   /** "Command finished" — a successful command longer than
    *  `terminalNotifyMinDurationMs` raises a notification. (Once the terminal
    *  master switch; `notificationsEnabled` is the master now, and this is the
@@ -129,7 +99,7 @@ export interface AppSettings {
   /** Legacy (pre-tier) terminal sound switch — migrated like the one above. */
   terminalNotifySound: boolean;
   /** Notifications master switch: off silences every kind except the
-   *  not-switchable ones (Atlas signed out). */
+   *  unknown and retired ones. */
   notificationsEnabled: boolean;
   /** Per urgency tier (`NotificationTier`): allow the OS banner (still only
    *  when away) and allow sound. Every catalog kind follows its tier. */
@@ -139,8 +109,6 @@ export interface AppSettings {
   notifyOutcomeSound: boolean;
   notifyWarningNative: boolean;
   notifyWarningSound: boolean;
-  notifyTeamNative: boolean;
-  notifyTeamSound: boolean;
   /** An agent turn that finished faster than this stays quiet. 0 = off.
    *  Failures and requests for the user ignore it. */
   notifyAgentMinDurationMs: number;
@@ -167,8 +135,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   enableAtlasLogs: true,
   showHiddenFiles: true,
   uiScale: DEFAULT_SCALE,
-  shareTelemetry: true,
-  linkTelemetryToAccount: true,
   embeddingModelId: "all-MiniLM-L6-v2",
   theme: "atlas",
   themeMode: "system",
@@ -181,13 +147,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   gitBlameInline: true,
   gitAutoFetch: true,
   keepAwakeWhileRunning: false,
-  autoUpdate: true,
-  curatedPluginSync: false,
   instructionSync: false,
-  updaterIgnoredVersion: null,
   enterToSend: true,
-  agentUiNavigation: true,
-  agentOrgAccess: true,
   terminalNotifications: true,
   terminalNotifyMinDurationMs: 10_000,
   terminalNotifyOnFailure: true,
@@ -201,8 +162,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   notifyOutcomeSound: true,
   notifyWarningNative: false,
   notifyWarningSound: false,
-  notifyTeamNative: true,
-  notifyTeamSound: true,
   notifyAgentMinDurationMs: 0,
   notifyPermissionActions: true,
   notificationsMigrated: false,

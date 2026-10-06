@@ -1,5 +1,5 @@
 // Shared Cross-Agent Memory — TS bindings for the per-project toggle + handoff
-// summarizer preference. The actual injection happens Rust-side in `agents_send`
+// summarizer preference. The handoff is served by the local MCP memory briefing
 // on the first message of a session; these commands only read/write the two
 // `.atlas/*.json` settings files. Mirrors the plain-invoke pattern in
 // `memory-policy-api.ts`.

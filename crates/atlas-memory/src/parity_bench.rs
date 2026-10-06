@@ -4,20 +4,8 @@
 //! live check (agents retrieving through the running app with the MiniLM model
 //! loaded) is a MANUAL runtime step — see `crates/atlas-memory/MIGRATION.md`.
 //!
-//! ## Parity (agent-agnostic retrieval)
-//! Every agent reaches retrieval through ONE callback: the native agent through
-//! the `search_memory` tool registered with
-//! `atlas_native_agent::engine::memory::register_search`, ACP agents through
-//! the pushed `--- RELEVANT PROJECT MEMORY ---` block. Both call
-//! `memory_retrieve::retrieve` (`src-tauri`) with **no agent-type parameter**,
-//! which calls [`MemoryEngine::retrieve`] and gets
-//! [`RetrievedDoc { id, title, source, text }`](crate::RetrievedDoc); the Tauri
-//! layer maps each onto `MemDoc { title, source, text }`, dropping only `id`. So
-//! "parity" reduces to two checkable claims, both asserted below:
-//!   1. the engine's retrieve path takes no agent discriminator, so the same
-//!      (cwd, query, limit) yields identical results no matter which agent asks; and
-//!   2. every [`RetrievedDoc`] maps cleanly (total, lossless except `id`) onto the
-//!      `MemDoc` shape the `search_memory` tool expects.
+//! Retrieval takes no agent discriminator; all callers share the same engine.
+//! Cross-agent MCP writes and reads are tested in the desktop memory server.
 //!
 //! ## Benchmark
 //! [`bench_hnsw_vs_brute_force`] builds a synthetic corpus of random L2-normalized
@@ -29,78 +17,12 @@
 
 use crate::{RetrievedDoc, DIM};
 
-/// Local mirror of `atlas_native_agent::engine::memory::MemDoc`.
-/// `atlas-memory` must not depend on the agent crate (the dependency points the
-/// other way, app-side), so we redeclare the three fields here and prove
-/// [`RetrievedDoc`] maps onto them. If the real `MemDoc` ever grows/loses a
-/// field, this mirror (and the mapping below) is where the contract is pinned.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MemDocShape {
-    title: String,
-    source: String,
-    text: String,
-}
-
-/// The exact field mapping the Tauri seam performs (`agents.rs` closure +
-/// `memory_retrieve::retrieve`): carry title/source/text, drop `id`. Pure function
-/// of the doc — no agent input — which is the whole point of "agent-agnostic".
-fn to_memdoc(d: &RetrievedDoc) -> MemDocShape {
-    MemDocShape {
-        title: d.title.clone(),
-        source: d.source.clone(),
-        text: d.text.clone(),
-    }
-}
-
 /// Locate a local MiniLM model dir via `ATLAS_MINILM_DIR`, else `None`. Tests that
 /// need real embeddings are `#[ignore]`d and never download one.
 fn find_model_dir() -> Option<std::path::PathBuf> {
     let dir = std::env::var("ATLAS_MINILM_DIR").ok()?;
     let p = std::path::PathBuf::from(dir);
     p.join("model.safetensors").exists().then_some(p)
-}
-
-// ── Parity (no model required) ───────────────────────────────────────────────
-
-/// Every `RetrievedDoc` maps onto the `MemDoc` shape with all three display
-/// fields intact and `id` dropped — the shape every agent's retrieved memory
-/// arrives in.
-#[test]
-fn retrieved_doc_maps_cleanly_onto_memdoc() {
-    let docs = vec![
-        RetrievedDoc {
-            id: "claude::auth-001".into(),
-            title: "Auth strategy".into(),
-            source: "claude".into(),
-            text: "Project uses Better Auth with DB-backed sessions.".into(),
-        },
-        RetrievedDoc {
-            id: "shared:decision:7".into(),
-            title: "Decision: usearch over brute-force".into(),
-            source: "shared".into(),
-            text: "HNSW replaces O(n) cosine as the live recall path.".into(),
-        },
-        RetrievedDoc {
-            id: "global::beef".into(),
-            title: "User preference".into(),
-            source: "global".into(),
-            text: "Prefers conventional-commit messages, no AI co-author trailer.".into(),
-        },
-    ];
-
-    for d in &docs {
-        let m = to_memdoc(d);
-        assert_eq!(m.title, d.title, "title must carry through the seam");
-        assert_eq!(m.source, d.source, "source must carry through the seam");
-        assert_eq!(m.text, d.text, "text must carry through the seam");
-        // The mapping is a pure function of the doc — re-mapping is identical,
-        // i.e. it cannot depend on any hidden agent/global state.
-        assert_eq!(
-            to_memdoc(d),
-            m,
-            "mapping must be deterministic / agent-agnostic"
-        );
-    }
 }
 
 /// The retrieval entry point carries **no agent discriminator**. We can't name a
@@ -134,7 +56,7 @@ fn retrieve_signature_has_no_agent_parameter() {
 /// engine, indexes a small corpus, then issues the SAME (cwd, query, limit) twice
 /// — standing in for "agent X asks" vs "agent Y asks". Asserts the two result sets
 /// are byte-identical (no per-caller drift) and that every doc is well-formed and
-/// maps cleanly onto `MemDoc`.
+/// retains the document fields.
 #[test]
 #[ignore = "needs ATLAS_MINILM_DIR"]
 fn retrieve_is_agent_agnostic_and_well_formed_when_model_available() {
@@ -190,11 +112,13 @@ fn retrieve_is_agent_agnostic_and_well_formed_when_model_available() {
             a.id, b.id,
             "agent-agnostic: identical ordering/ids per caller"
         );
-        // Well-formed + maps cleanly onto MemDoc.
+        // The same corpus returns the same document fields.
         assert!(!a.title.trim().is_empty(), "title must be non-empty");
         assert!(!a.source.trim().is_empty(), "source must be non-empty");
         assert!(!a.text.trim().is_empty(), "text must be non-empty");
-        assert_eq!(to_memdoc(a), to_memdoc(b));
+        assert_eq!(a.title, b.title);
+        assert_eq!(a.source, b.source);
+        assert_eq!(a.text, b.text);
     }
 }
 

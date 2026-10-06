@@ -5,14 +5,10 @@ import { Hint } from "@/ui/tooltip";
 import { timeAgo } from "@/lib/time-ago";
 import { jumpToSession } from "@/features/chat/lib/tab-project";
 import { jumpToTerminal } from "@/features/terminal/lib/jump-to-terminal";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+
 import { NotificationLeadingIcon } from "./notification-leading-icon";
 import { openNotificationTarget } from "../lib/deliver";
-import {
-  useNotificationsStore,
-  visibleItems,
-  type AppNotification,
-} from "../stores/notifications-store";
+import { useNotificationsStore, type AppNotification } from "../stores/notifications-store";
 
 /** Bucket a timestamp into a relative-day group label. */
 function dayBucket(iso: string): string {
@@ -29,10 +25,8 @@ function dayBucket(iso: string): string {
 export function NotificationPanel() {
   const open = useNotificationsStore.use.panelOpen();
   const allItems = useNotificationsStore.use.items();
-  const activeOrgId = useOrgStore.use.activeOrganisationId();
-  // Org-scoped view over a global list: switching organisations must not
-  // lose the other org's items, only hide them.
-  const items = useMemo(() => visibleItems(allItems, activeOrgId), [allItems, activeOrgId]);
+
+  const items = allItems;
   const { close, clearAll } = useNotificationsStore.use.actions();
 
   // Preserve first-seen order within each day bucket (items are newest-first).

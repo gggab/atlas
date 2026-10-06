@@ -48,7 +48,7 @@ const NEXT = join(root, "dist-next");
  *  SECOND key holding only `node_modules/.bin` rather than extending the real
  *  one. The child would then see both `Path` and `PATH` — case-insensitive to
  *  Windows, so the winner is undefined — and could lose the system path with
- *  it. See the same fix in `with-posthog-env.mjs`. */
+ *  it.  */
 function childEnv() {
   const env = { ...process.env };
   const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";

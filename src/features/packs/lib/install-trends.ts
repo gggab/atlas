@@ -1,26 +1,5 @@
-// 6-month install trend for the skills registry's Discover table.
-//
-// # What is real here and what is not
-//
-// The registry's `search` API returns a single lifetime `installs` count per
-// skill and no time series at all (see the DATA NOTE in skills-marketplace).
-// So the TOTAL is real and the SHAPE over time is synthesized: a deterministic
-// split of that real total across the window, stable per skill id across
-// renders and restarts.
-//
-// That is a deliberately stronger position than the agents' equivalent
-// (`features/agents/lib/download-trends`), whose magnitude is invented too —
-// here the curve always adds up to a number the registry actually reported, so
-// its heights are relative shares of something true.
-//
-// # The path to real data
-//
-// Every skill install already captures a `skill_downloaded` PostHog event
-// (`commands/skills.rs`), the same way an agent install captures
-// `acp_agent_installed`. Neither is READ back yet — Atlas's PostHog client is
-// write-only (capture), and querying would need a separate read credential. When
-// that lands, a backend rollup replaces `installTrend` wholesale: the chart
-// component only ever sees `{ points, total, up }`.
+// Demonstration curve synthesized from the registry lifetime count.
+// No product analytics client uploads or reads this series.
 
 /** Weekly buckets over ~6 months. Weekly rather than monthly because the mark is
  *  an area curve: six points would render as a coarse zig-zag, and the shape is

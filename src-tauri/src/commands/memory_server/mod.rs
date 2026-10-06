@@ -9,8 +9,7 @@
 //!   session starts, revoked when it ends, checked on every request. The
 //!   token says who is calling and which scope's record to open.
 //! - **Handed to every agent that can take it** ([`offers`]): ACP agents that
-//!   advertise `mcpCapabilities.http`, and the native agent through its
-//!   thread's engine config.
+//!   advertise `mcpCapabilities.http`.
 //! - **Seven tools** ([`tools`]), read first, write last: `memory_briefing`,
 //!   `memory_changes`, `memory_search`, `memory_get`, `memory_list`,
 //!   `memory_remember`, `memory_forget`. The server's instructions
@@ -41,9 +40,6 @@ pub use host::{MemoryServer, MemoryServerHost, SharingGate, Sources};
 pub use offers::{MemorySessionOffers, OfferDecision};
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};
-/// How long an agent may cache a `tools/list` answer; the UI tool server
-/// answers under the same rule.
-pub(crate) use tools::TOOLS_LIST_TTL_MS;
 #[allow(unused_imports)]
 pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS};
 

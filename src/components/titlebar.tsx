@@ -15,35 +15,20 @@ import {
   anyTerminalNeedsAttention,
 } from "@/features/terminal/lib/terminal-notifier";
 import { useChatStore } from "@/features/chat/stores/chat-store";
-import {
-  PanelRight,
-  Bell,
-  Layers,
-  ArrowDownToLine,
-  Loader2,
-  Hammer,
-  Minus,
-  Square,
-  Copy,
-  X,
-} from "lucide-react";
+import { PanelRight, Bell, Layers, Hammer, Minus, Square, Copy, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppProfile } from "@/lib/app-profile";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { TitlebarDock, type DockItem } from "./titlebar-dock";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "sonner";
+
 import type { Window as TauriWindow } from "@tauri-apps/api/window";
-import { useUpdaterStore } from "@/features/updater/stores/updater-store";
-import { updater } from "@/features/updater/lib/updater-api";
-import { AccountButton } from "@/features/auth/components/account-button";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { CapturePopover } from "@/features/capture/components/capture-popover";
 import { StatusDot } from "@/features/capture/components/capture-status";
 import type { Binding, CaptureHealth } from "@/features/capture/types";
 import { activeProjectId } from "@/features/projects/lib/active-project";
-import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+import { useLocalProjects } from "@/features/projects/lib/project-scope";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { isDev } from "@/lib/env";
 import { isLinux, isMac, isWindows } from "@/lib/platform";
@@ -81,21 +66,9 @@ export function Titlebar() {
   // AppState round-trip, so a project rename took ~3-4s to show here; the
   // project store mutates synchronously on rename, so this updates instantly.
   const projects = useProjectStore.use.projects();
-  // Owning organisation, for the `org / project` pill. Read live so an org
-  // switch or rename re-labels immediately.
-  const organisations = useOrgStore.use.organisations();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
-  const orgName = organisations.find((o) => o.id === activeOrganisationId)?.name ?? null;
-  // Same path can be a project in several orgs — prefer the ACTIVE org's
-  // twin so a rename in another org never re-labels this titlebar.
-  // With no project open the label is the product: `Atlas`, or `Atlas Dev`
-  // for a dev-profile build, so the two windows can be told apart.
   const { productName } = useAppProfile();
   const displayName =
-    (currentProject
-      ? projects.find((w) => w.path === currentProject.path && w.orgId === activeOrganisationId)
-          ?.name
-      : undefined) ??
+    (currentProject ? projects.find((w) => w.path === currentProject.path)?.name : undefined) ??
     (currentProject ? projects.find((w) => w.path === currentProject.path)?.name : undefined) ??
     currentProject?.name ??
     productName;
@@ -167,7 +140,7 @@ export function Titlebar() {
           {currentProject && <LeftPanelToggle />}
         </HintGroup>
         {/* `org / project` pill — click to copy the project path. */}
-        <ProjectLabel name={displayName} orgName={orgName} path={currentProject?.path} />
+        <ProjectLabel name={displayName} path={currentProject?.path} />
       </div>
 
       {/* Dev-mode flag — centered in the titlebar, outside both flex groups.
@@ -181,13 +154,7 @@ export function Titlebar() {
       {/* One dock, account included. Without a project there are no app-level
           actions to gather, so the account stands alone as it always has —
           signing in has to be reachable from an empty window. */}
-      {currentProject ? (
-        <ActionDock />
-      ) : (
-        <div className="flex items-center">
-          <AccountButton />
-        </div>
-      )}
+      {currentProject ? <ActionDock /> : <div className="flex items-center"></div>}
 
       {(isWindows || isLinux) && <WindowControls />}
     </div>
@@ -273,15 +240,9 @@ function WindowControls() {
  * would re-render the project label and the org switcher beside it.
  */
 function ActionDock() {
-  const update = useUpdateItem();
   const notifications = useNotificationItem();
   const rightPanel = useRightPanelItem();
-  return (
-    <TitlebarDock
-      items={[update, notifications, rightPanel]}
-      trailing={{ label: "Account and settings", node: <AccountButton compact /> }}
-    />
-  );
+  return <TitlebarDock items={[notifications, rightPanel]} />;
 }
 
 /**
@@ -489,7 +450,7 @@ function ProjectToggle() {
   const { toggleSidebar } = useProjectStore.use.actions();
   // Badge counts only the active org's projects (matches what the sidebar
   // it toggles will actually show).
-  const count = useActiveOrgProjects().length;
+  const count = useLocalProjects().length;
 
   return (
     <HintItem label={sidebarOpen ? `Hide projects${suffix}` : `Show projects${suffix}`}>
@@ -529,35 +490,6 @@ function LeftPanelToggle() {
 }
 
 /** Tiny determinate ring for the titlebar download indicator. */
-function ArcProgress({ value }: { value: number }) {
-  const r = 6;
-  const c = 2 * Math.PI * r;
-  const off = c * (1 - Math.max(0, Math.min(1, value)));
-  return (
-    <svg width={12} height={12} viewBox="0 0 16 16" className="-rotate-90">
-      <circle
-        cx="8"
-        cy="8"
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.25}
-        strokeWidth={2}
-      />
-      <circle
-        cx="8"
-        cy="8"
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeDasharray={c}
-        strokeDashoffset={off}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
 
 /**
  * Titlebar auto-update indicator. Idle → a down-arrow that triggers a manual
@@ -566,70 +498,14 @@ function ArcProgress({ value }: { value: number }) {
  * → a badge dot; clicking reopens the "Restart to update" prompt. All state is
  * driven by the `atlas:update-*` events → updater store (fully non-blocking).
  */
-function useUpdateItem(): DockItem {
-  const checking = useUpdaterStore.use.checking();
-  const phase = useUpdaterStore.use.phase();
-  const progress = useUpdaterStore.use.progress();
-  const { openModal } = useUpdaterStore.use.actions();
-
-  const downloading = phase === "downloading";
-  const ready = phase === "ready" || phase === "applying";
-
-  const onClick = () => {
-    if (checking || downloading) return;
-    if (ready) {
-      openModal();
-      return;
-    }
-    void updater
-      .checkNow()
-      .then((status) => {
-        if (!status.available) {
-          toast.success(`You're on the latest version (${status.currentVersion}).`);
-        }
-      })
-      .catch((e) =>
-        toast.error(`Update check failed: ${e instanceof Error ? e.message : String(e)}`),
-      );
-  };
-
-  const label = checking
-    ? "Checking for updates…"
-    : downloading
-      ? progress != null
-        ? `Downloading update… ${Math.round(progress * 100)}%`
-        : "Preparing update…"
-      : ready
-        ? "Update ready — click to restart"
-        : "Check for updates";
-
-  return {
-    label,
-    onClick,
-    disabled: checking || downloading,
-    icon: checking ? (
-      <Loader2 size={12} className="animate-spin" />
-    ) : downloading ? (
-      progress != null ? (
-        <ArcProgress value={progress} />
-      ) : (
-        <Loader2 size={12} className="animate-spin" />
-      )
-    ) : (
-      <ArrowDownToLine size={12} />
-    ),
-    badge: ready ? <DockBadge className="bg-[var(--primary)]" /> : undefined,
-  };
-}
 
 function useNotificationItem(): DockItem {
   const { toggle } = useNotificationsStore.use.actions();
-  const activeOrgId = useOrgStore.use.activeOrganisationId();
   // Select PRIMITIVES (booleans) — returning a filtered array from the selector
   // would create a new reference every render and trigger an infinite loop.
   // Scoped to the active organisation: another org's unread items are its own.
-  const unread = useNotificationsStore((s) => hasUnread(s.items, activeOrgId));
-  const hasError = useNotificationsStore((s) => hasUnread(s.items, activeOrgId, isErrorKind));
+  const unread = useNotificationsStore((s) => hasUnread(s.items));
+  const hasError = useNotificationsStore((s) => hasUnread(s.items, isErrorKind));
   // LIVE attention state: any session (any project) blocked on a permission
   // decision, or any terminal waiting on input. Derived from live stores
   // rather than unread flags so it shows even after the panel was opened, and
@@ -642,7 +518,7 @@ function useNotificationItem(): DockItem {
 
   return {
     label: "Notifications",
-    onClick: () => toggle(activeOrgId),
+    onClick: () => toggle(),
     icon: <Bell size={12} />,
     badge:
       unread || needsAttention ? (

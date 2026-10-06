@@ -471,7 +471,7 @@ pub(crate) mod test_support {
         let key = SessionKey {
             workspace_id: crate::commands::capture::project_id_for(std::path::Path::new(project)),
             // As live capture files it: the native agent under its own source.
-            source: if agent == atlas_native_agent::ATLAS_AGENT_ID {
+            source: if agent == "atlas-agent" {
                 Source::Native
             } else {
                 Source::Acp

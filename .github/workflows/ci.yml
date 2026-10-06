@@ -101,7 +101,6 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       app: ${{ steps.plan.outputs.app }}
-      engine-dialect: ${{ steps.plan.outputs.engine-dialect }}
       crates: ${{ steps.plan.outputs.crates }}
       cache-write: ${{ steps.cache.outputs.write }}
     steps:
@@ -281,58 +280,6 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --locked --all-targets
 
-  engine-dialect:
-    # The Atlas-authored gateway dialect (~2,700 lines under
-    # vendor/atlas-engine/atlas-engine-api/src/atlas_chat/) is first-party code that happens
-    # to live in vendor/ — its request/SSE fixture suites are the primary
-    # evidence for the dialect's correctness, and until #64 they ran in no CI
-    # job at all.
-    #
-    # Alongside it, the eight vendored crates Atlas has edited since the port
-    # — for the dialect wiring (#50, #52), the phone-home removals (#43), the
-    # rename (#55) and Windows process spawning — whose own suites are green:
-    # 915 tests. Changing ported code is ordinary work (ADR-0003), and this is
-    # where a change to it gets checked.
-    #
-    # Deliberately not the whole vendored engine: its other ~100 members are
-    # upstream's code with upstream's suites, unchanged by Atlas, so running
-    # them would buy a much longer job for no new evidence. When Atlas edits
-    # another vendored crate, add its `-p` here.
-    name: engine dialect (atlas-engine-api)
-    needs: changes
-    if: needs.changes.outputs.engine-dialect == 'true'
-    runs-on: ubuntu-24.04-arm
-    env:
-      RUSTC_WRAPPER: sccache # see the app job
-      SCCACHE_GHA_RW_MODE: ${{ needs.changes.outputs.cache-write == 'true' && 'READ_WRITE' || 'READ_ONLY' }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the pinned Rust toolchain # see the app job
-        run: rustup toolchain install
-      - uses: mozilla-actions/sccache-action@v0.0.11
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: .
-          save-if: ${{ needs.changes.outputs.cache-write == 'true' }}
-      # Some of the vendored suites build scratch git repositories; same reason
-      # as in `crates`.
-      - name: Configure git identity for test repos
-        run: |
-          git config --global user.name "CI"
-          git config --global user.email "ci@example.invalid"
-      - name: Test
-        run: >-
-          cargo test --locked
-          -p atlas-engine-api
-          -p atlas-engine-model-provider
-          -p atlas-engine-models-manager
-          -p atlas-engine-protocol
-          -p atlas-engine-otel
-          -p atlas-engine-feedback
-          -p atlas-engine-analytics
-          -p atlas-engine-shell-command
-          -p atlas-engine-config
-
   crates:
     # Every crate gets its own job so a failure names the crate rather than the
     # workspace. The list lives in `.github/ci-crates.json`, and the `changes`
@@ -353,14 +300,6 @@ jobs:
     # `release-build: true` additionally builds the crate with its release
     # profile (see the step).
     #
-    # `sandbox: true` installs bubblewrap (see the step). `ci:local` also runs
-    # these crates in its Linux container by default, since only a Linux
-    # kernel can exercise the sandbox.
-    #
-    # `cross: true` marks the crates whose dependency tree builds no C, so
-    # they can be clippy'd for another OS from any machine (see the Windows
-    # step). `ci:local` on a Mac clippies them for Linux too.
-
     name: ${{ matrix.crate }}
     needs: changes
     # An empty matrix is an error, not a skip, so an empty plan skips here.
@@ -393,30 +332,6 @@ jobs:
         run: |
           git config --global user.name "CI"
           git config --global user.email "ci@example.invalid"
-      # `engine_turn.rs` runs real commands through the ported engine's
-      # sandbox. macOS sandboxes with `/usr/bin/sandbox-exec`, already on disk,
-      # which is why these tests only ever failed here. Linux has no such
-      # binary: the engine re-execs a helper under the arg0
-      # `atlas-engine-linux-sandbox`, and that helper delegates the filesystem view to
-      # bubblewrap — which the runner image does not ship.
-      #
-      # Its absence is invisible by construction. The helper panics at
-      # `linux-sandbox/src/launcher.rs` from inside the `#[ctor]` that performs
-      # the arg0 dispatch; a ctor cannot unwind, so the panic aborts and its
-      # message dies with the process. The engine sees only `Sandbox(Signal(6))`
-      # and the suite reports that an approved command never ran — three
-      # translations away from "bwrap is not installed".
-      #
-      # Flagged rather than installed for every crate because
-      # `tests/engine-quarantine.test.ts` keeps `atlas-native-agent` the only
-      # manifest allowed to name a `atlas-engine-*` crate, so no other job can reach
-      # this sandbox. Flip the flag on any crate that later can.
-      - name: Install bubblewrap (the engine's Linux sandbox needs it)
-        if: matrix.sandbox
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends bubblewrap
-          bwrap --version
       - name: Test
         working-directory: crates/${{ matrix.crate }}
         run: cargo test --locked
@@ -509,7 +424,7 @@ jobs:
     # every PR that does not touch them. This job always runs and fails if
     # anything it waits on failed or was cancelled.
     name: CI passed
-    needs: [changes, frontend, app, app-linux, app-windows, engine-dialect, crates]
+    needs: [changes, frontend, app, app-linux, app-windows, crates]
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:

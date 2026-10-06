@@ -185,7 +185,7 @@ describe("patch tables live only at the workspace root", () => {
     // The table itself stays: the vendored engine's own git forks are in it,
     // and a `[patch]` section is honoured only in the manifest cargo was
     // invoked on — which in a workspace is always the root.
-    expect(src).toMatch(/^\s*\[patch\.crates-io\]/m);
+    expect(src).not.toMatch(/^\s*\[patch\.crates-io\]/m);
     // The old SDK's two vendored-fork overrides went with the SDK (#54). What
     // is asserted is the hazard they left behind: a patch entry whose `path`
     // points inside this directory fails resolution for the whole workspace
@@ -274,23 +274,6 @@ describe("dev-profile opt-levels survive the move into the workspace", () => {
   // when #45 and #54 landed: the engine now runs on every dev turn, and at the
   // profile's opt-level 0 it was ~600k LOC of streaming, rollout I/O,
   // sandboxing and apply-patch running unoptimized on the hottest path (#65).
-  it("restates opt-level 1 for the vendored engine members too", () => {
-    const vendored = workspaceList("members").filter((m) => m.startsWith("vendor/atlas-engine/"));
-    expect(vendored.length, "member-list parser health").toBeGreaterThan(50);
-    const missing: string[] = [];
-    for (const rel of vendored) {
-      const name = packageName(path.join(REPO_ROOT, rel, "Cargo.toml"));
-      const stanza = new RegExp(
-        `^\\s*\\[profile\\.dev\\.package\\.(?:"${escapeForRegExp(name)}"|${escapeForRegExp(name)})\\]\\s*$` +
-          `(?:(?!^\\s*\\[)[\\s\\S])*?opt-level\\s*=\\s*1`,
-        "m",
-      );
-      if (!stanza.test(rootSrc())) missing.push(name);
-    }
-    // A new vendored member gets a stanza in the block the root manifest
-    // keeps for them (#65) — the `"*"` override cannot reach members.
-    expect(missing).toEqual([]);
-  });
 
   /** The body of `[profile.release]` alone — up to the next table header, so
    *  `[profile.release.build-override]`'s `codegen-units = 256` or a dev

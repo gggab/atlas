@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useProjectGitStore } from "../stores/project-git-store";
-import { useActiveOrgProjects } from "./org-scope";
+import { useLocalProjects } from "./project-scope";
 
 /**
  * Warm the project-pane data at startup so the first sidebar slide is smooth.
@@ -19,7 +19,7 @@ export function useProjectGitPrefetch() {
   // caches for projects the current org never renders. Re-runs only when the
   // SET of paths changes (the signature string is stable otherwise), which
   // includes an org switch: the incoming org's summaries warm automatically.
-  const projects = useActiveOrgProjects();
+  const projects = useLocalProjects();
   const pathsSig = projects.map((w) => w.path).join("\n");
 
   useEffect(() => {

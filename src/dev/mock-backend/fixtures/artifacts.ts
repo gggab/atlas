@@ -32,8 +32,7 @@ import type {
   ToolTally,
   BoardPage,
 } from "@/features/artifacts/types";
-import type { Comment, CommentThreads } from "@/features/artifacts/lib/comments-api";
-import type { CommentTarget } from "@/features/chat/components/chat-comments-controller";
+
 import type {
   RetrieveResult,
   SessionChatThreadWire,
@@ -180,9 +179,9 @@ const SEEDS: Seed[] = [
     id: "sess-77b0e2",
     title:
       "Walk every place the pricing table is read, explain why the General tab crashes when models_pricing_get answers with nothing at all, and propose the smallest guard that keeps the empty state honest rather than papering over it",
-    agent: "atlas-agent",
+    agent: "claude-acp",
     model: "claude-sonnet-4",
-    source: "atlas-agent",
+    source: "claude-acp",
     project: APP,
     startedAt: at(1, 16, 20),
     lastActivityAt: at(1, 18, 4),
@@ -213,9 +212,9 @@ const SEEDS: Seed[] = [
     // The detail's filter rows and stats strip all have to render at zero.
     id: "sess-5de0b1",
     title: "What does codegen-units = 1 actually buy us here?",
-    agent: "atlas-agent",
+    agent: "claude-acp",
     model: "claude-sonnet-4",
-    source: "atlas-agent",
+    source: "claude-acp",
     project: APP,
     startedAt: at(1, 9, 30),
     lastActivityAt: at(1, 9, 34),
@@ -290,9 +289,9 @@ const SEEDS: Seed[] = [
   {
     id: "sess-c40918",
     title: "Rewrite the README layout table and the token rules under it",
-    agent: "atlas-agent",
+    agent: "claude-acp",
     model: "claude-sonnet-4",
-    source: "atlas-agent",
+    source: "claude-acp",
     project: DOCS,
     startedAt: at(9, 9, 5),
     lastActivityAt: at(9, 10, 47),
@@ -349,7 +348,7 @@ const BLOBS = new Map<string, ArtifactPayload>([
     {
       text: Array.from(
         { length: 120 },
-        (_, i) => `   Compiling atlas-engine-core v0.1.0 (unit ${i + 1}/1161)`,
+        (_, i) => `   Compiling atlas-checkpoint v0.1.0 (unit ${i + 1}/1161)`,
       ).join("\n"),
       binary: false,
       bytes: 132_880,
@@ -806,89 +805,13 @@ function summaryOf(seed: Seed): SessionSummary {
   };
 }
 
-/**
- * Which Projects are bound to Cloud.
- *
- * `APP` is synced and the other two are not, so the board shows both second-line
- * states side by side rather than one of them theoretically.
- */
-const SYNCED_PROJECTS = new Map<string, string>([[APP.path, "rw_1d55e903"]]);
-
 function boardRow(seed: Seed): BoardSession {
-  const remoteProjectId = SYNCED_PROJECTS.get(seed.project.path) ?? null;
   return {
     ...summaryOf(seed),
     projectPath: seed.project.path,
     projectName: seed.project.name,
-    synced: remoteProjectId !== null,
-    // Own work in a synced Project is on both sides; the real command decides
-    // this by looking the Session id up in the cloud cache.
-    origin: remoteProjectId !== null ? "both" : "local",
-    remoteProjectId,
-    authorId: null,
+    origin: "local",
   };
-}
-
-/**
- * Teammates' Sessions, which exist only on the server.
- *
- * No `projectPath`: this machine has no checkout to read them from, which is
- * the case the detail pane has to route over the network for. Each carries an
- * `authorId` — a roster `userId` from `integrations.ts`, so the row shows a
- * name and a face — because that is the one thing a remote row says that a
- * local one does not. Two sit in `acme-app`'s Workspace beside your own rows;
- * one is in another Project the Organisation shares.
- */
-const TEAMMATE_ROWS: {
-  base: number;
-  id: string;
-  title: string;
-  projectName: string;
-  remoteProjectId: string;
-  authorId: string;
-}[] = [
-  {
-    base: 1,
-    id: "ses_teammate_01",
-    title: "Rework the billing webhook retries",
-    // The name the Organisation gave the Project, which is what both the web
-    // board and the desktop row now show — not the slug, and never the id.
-    projectName: "Acme Infra (platform)",
-    remoteProjectId: "rw_8c41f20b",
-    authorId: "usr_tobi",
-  },
-  {
-    base: 6,
-    id: "ses_teammate_02",
-    title: "Split the invoice PDF renderer out of the API worker",
-    projectName: "acme-app",
-    remoteProjectId: "rw_1d55e903",
-    authorId: "usr_sam",
-  },
-  {
-    base: 7,
-    id: "ses_teammate_03",
-    title: "Audit the feature flags still reading the v1 config",
-    projectName: "acme-app",
-    remoteProjectId: "rw_1d55e903",
-    authorId: "usr_priya",
-  },
-];
-
-function teammateBoardRows(): BoardSession[] {
-  return TEAMMATE_ROWS.map((row) => ({
-    ...summaryOf(SEEDS[row.base]),
-    id: row.id,
-    title: row.title,
-    projectPath: "",
-    projectName: row.projectName,
-    synced: true,
-    origin: "remote",
-    remoteProjectId: row.remoteProjectId,
-    authorId: row.authorId,
-    needsAttention: false,
-    attentionReason: null,
-  }));
 }
 
 function detailOf(seed: Seed): SessionDetail {
@@ -1088,19 +1011,9 @@ function sourcesFor(detail: SessionDetail, scope: string[]): SourceRef[] {
 export interface ArtifactsResponses {
   artifacts_board: BoardPage;
   artifacts_session: SessionDetail | null;
-  artifacts_cloud_retarget: Unit;
-  artifacts_cloud_follow: Unit;
-  artifacts_cloud_unfollow: Unit;
+
   /** The live chat's cloud identity; `null` = not a shared session. */
-  chat_comment_target: CommentTarget | null;
-  artifacts_cloud_refresh: boolean;
-  artifacts_cloud_session: SessionDetail;
-  artifacts_cloud_payload: ArtifactPayload;
-  artifacts_cloud_session_url: string | null;
-  artifacts_cloud_comments: CommentThreads;
-  artifacts_cloud_comment_create: Comment;
-  artifacts_cloud_comment_update: Comment;
-  artifacts_cloud_comment_delete: Comment;
+
   artifacts_checkpoints: BoardCheckpoint[];
   artifacts_payload: ArtifactPayload;
   session_chat_threads_list: ThreadMeta[];
@@ -1116,308 +1029,29 @@ export interface ArtifactsResponses {
   "plugin:dialog|save": Awaited<ReturnType<typeof save>>;
 }
 
-/**
- * Comments, by Session id, mutated in place so the thread reacts.
- *
- * Seeded on the live Session's first prompt and on a tool call, so both the
- * hover-to-reveal state and the always-visible count state are on screen at
- * once — and so the tool-call anchor, which the web UI cannot reach, is covered.
- */
-const COMMENTS = new Map<string, Comment[]>();
-
-function seedComments() {
-  if (COMMENTS.size > 0) return;
-  const entries = TIMELINES.get(LIVE_ID) ?? [];
-  const prompt = entries.find((e) => e.kind === "prompt");
-  const tool = entries.find((e) => e.kind === "tool_call");
-  // The SECOND call of a run, deliberately: a group of consecutive calls is one
-  // row on the rail, and a comment on any but its first used to have nowhere to
-  // render — it counted in the panel and the badge and appeared nowhere.
-  const laterTool = entries.filter((e) => e.kind === "tool_call")[1];
-  const rows: Comment[] = [];
-  if (prompt) {
-    rows.push(
-      mockComment({
-        id: "cm_1",
-        anchorKind: "message",
-        anchorId: prompt.id,
-        body: "Is <@usr_priya> expecting the retry helper to keep its old signature?",
-        mentions: ["usr_priya"],
-        authorId: "usr_sam",
-      }),
-      mockComment({
-        id: "cm_2",
-        anchorKind: "message",
-        anchorId: prompt.id,
-        parentId: "cm_1",
-        body: "No — I signed off on the breaking change last week.",
-      }),
-    );
-  }
-  if (tool) {
-    rows.push(
-      mockComment({
-        id: "cm_3",
-        anchorKind: "tool_call",
-        anchorId: tool.id,
-        body: "This is the call that was timing out in CI.",
-      }),
-    );
-  }
-  if (laterTool) {
-    rows.push(
-      mockComment({
-        id: "cm_5",
-        anchorKind: "tool_call",
-        anchorId: laterTool.id,
-        body: "Was this search narrow enough? It missed the legacy call site.",
-        authorId: "usr_sam",
-      }),
-    );
-  }
-  rows.push(
-    mockComment({
-      id: "cm_4",
-      anchorKind: "session",
-      anchorId: LIVE_ID,
-      body: "Picking this up tomorrow.",
-    }),
-  );
-  const laterPrompt = entries.filter((e) => e.kind === "prompt")[1];
-  if (laterPrompt) {
-    rows.push(
-      mockComment({
-        id: "cm_6",
-        anchorKind: "message",
-        anchorId: laterPrompt.id,
-        body: "Should this wait for the admin table fix to land first?",
-        authorId: "usr_tobi",
-        createdAt: at(0, 9, 40),
-        resolvedAt: at(0, 11, 2),
-        resolvedBy: "usr_dev",
-      }),
-      mockComment({
-        id: "cm_7",
-        anchorKind: "message",
-        anchorId: laterPrompt.id,
-        parentId: "cm_6",
-        body: "It landed this morning — safe to go ahead.",
-        authorId: "usr_dev",
-        createdAt: at(0, 10, 58),
-        editedAt: at(0, 11, 1),
-      }),
-    );
-  }
-  COMMENTS.set(LIVE_ID, rows);
-
-  // A teammate's Session is discussed too: the thread a reviewer lands on.
-  const teammate = TEAMMATE_ROWS[1];
-  const teammateEntries = TIMELINES.get(SEEDS[teammate.base].id) ?? [];
-  const teammatePrompt = teammateEntries.find((e) => e.kind === "prompt");
-  const teammateTool = teammateEntries.find((e) => e.kind === "tool_call");
-  const threads: Comment[] = [];
-  if (teammatePrompt) {
-    threads.push(
-      mockComment({
-        id: "ct_1",
-        sessionId: teammate.id,
-        anchorKind: "message",
-        anchorId: teammatePrompt.id,
-        body: "<@usr_dev> this touches the retry helper you just changed.",
-        mentions: ["usr_dev"],
-        authorId: "usr_priya",
-      }),
-      mockComment({
-        id: "ct_2",
-        sessionId: teammate.id,
-        anchorKind: "message",
-        anchorId: teammatePrompt.id,
-        parentId: "ct_1",
-        body: "Good catch, I'll rebase onto it.",
-        authorId: "usr_sam",
-      }),
-    );
-  }
-  if (teammateTool) {
-    threads.push(
-      mockComment({
-        id: "ct_3",
-        sessionId: teammate.id,
-        anchorKind: "tool_call",
-        anchorId: teammateTool.id,
-        body: "This run took 4 minutes on CI — worth caching?",
-        authorId: "usr_tobi",
-      }),
-    );
-  }
-  threads.push(
-    mockComment({
-      id: "ct_4",
-      sessionId: teammate.id,
-      anchorKind: "session",
-      anchorId: teammate.id,
-      body: "Looks good to merge once the renderer tests pass.",
-      guestName: "Lena (Northwind)",
-      authorId: "",
-    }),
-  );
-  COMMENTS.set(teammate.id, threads);
-}
-
-export function mockComment(over: Partial<Comment> & { id: string }): Comment {
-  return {
-    sessionId: LIVE_ID,
-    anchorKind: "message",
-    anchorId: "",
-    parentId: null,
-    authorId: "usr_priya",
-    guestName: null,
-    body: "",
-    mentions: [],
-    createdAt: at(0, 10, 4),
-    editedAt: null,
-    deletedAt: null,
-    resolvedAt: null,
-    resolvedBy: null,
-    ...over,
-  };
-}
-
-function patchComment(
-  sessionId: string,
-  commentId: string,
-  patch: (row: Comment) => Comment,
-): Comment {
-  seedComments();
-  const rows = COMMENTS.get(sessionId) ?? [];
-  const at = rows.findIndex((row) => row.id === commentId);
-  if (at < 0) throw new Error("not found");
-  const next = patch(rows[at]);
-  COMMENTS.set(
-    sessionId,
-    rows.map((row, i) => (i === at ? next : row)),
-  );
-  return next;
-}
-
-function threadsFor(sessionId: string): CommentThreads {
-  seedComments();
-  const rows = COMMENTS.get(sessionId) ?? [];
-  const byAnchor: Record<string, Comment[]> = {};
-  const session: Comment[] = [];
-  for (const row of rows) {
-    if (row.anchorKind === "session") session.push(row);
-    else (byAnchor[row.anchorId] ??= []).push(row);
-  }
-  return { byAnchor, session };
-}
-
 export const artifactsHandlers: TypedHandlers<ArtifactsResponses> = {
   // Targeting is a Rust-side concern with nothing to answer.
-  artifacts_cloud_retarget: (): null => null,
+
   // The harness never fails, so a retry always "succeeds".
-  artifacts_cloud_refresh: (): boolean => true,
-  artifacts_cloud_follow: (): null => null,
-  artifacts_cloud_unfollow: (): null => null,
+
   // A chat is only in the cloud in the scenarios that say so.
-  chat_comment_target: (): null => null,
 
   // A teammate's Session comes back in the SAME shape a local one does — the
   // real command maps the wire entries in Rust, so nothing downstream learns
   // that a Session can arrive two ways.
-  artifacts_cloud_session: ({ sessionId }): SessionDetail => {
-    const teammate = TEAMMATE_ROWS.find((row) => row.id === String(sessionId));
-    const seed =
-      SEEDS.find((s) => s.id === String(sessionId)) ?? SEEDS[teammate?.base ?? 1] ?? SEEDS[1];
-    const detail = detailOf(seed);
-    return {
-      ...detail,
-      summary: {
-        ...detail.summary,
-        id: String(sessionId),
-        title: teammate?.title ?? detail.summary.title,
-      },
-      // A remote Checkpoint has no commit subject and nothing carries a blob
-      // key: the desktop resolves the first from git and the second from its
-      // own sidecar, and a Session captured elsewhere has neither here.
-      entries: detail.entries.map((e) => ({
-        ...e,
-        commitSubject: null,
-        bodyRef: null,
-        argumentsRef: null,
-        resultRef: null,
-      })),
-    };
-  },
-
-  artifacts_cloud_session_url: ({ projectId, sessionId }): string =>
-    `https://app.tryatlas.cc/timeline?org=org_demo&workspace=${String(projectId)}&session=${String(sessionId)}`,
-
-  artifacts_cloud_payload: ({ part }): ArtifactPayload => ({
-    text: `[mock] the full ${String(part)} of this entry, fetched from the server.`,
-    binary: false,
-    bytes: 64,
-  }),
-
-  artifacts_cloud_comments: ({ sessionId }): CommentThreads => threadsFor(String(sessionId)),
-
-  artifacts_cloud_comment_create: ({
-    sessionId,
-    anchorKind,
-    anchorId,
-    parentId,
-    body,
-  }): Comment => {
-    seedComments();
-    const id = String(sessionId);
-    const created = mockComment({
-      id: `cm_${Date.now()}`,
-      sessionId: id,
-      anchorKind: anchorKind as Comment["anchorKind"],
-      anchorId: String(anchorId),
-      parentId: parentId == null ? null : String(parentId),
-      body: String(body),
-      // The signed-in account (`usr_dev` in `integrations.ts`), as the server
-      // stamps it from the token — so a new comment reads as "You" and can be
-      // edited and deleted.
-      authorId: "usr_dev",
-      mentions: [...String(body).matchAll(/<@([^>]+)>/g)].map((m) => m[1]),
-      createdAt: new Date().toISOString(),
-    });
-    COMMENTS.set(id, [...(COMMENTS.get(id) ?? []), created]);
-    return created;
-  },
-
-  artifacts_cloud_comment_update: ({ sessionId, commentId, body, resolved }): Comment =>
-    patchComment(String(sessionId), String(commentId), (row) => ({
-      ...row,
-      body: body == null ? row.body : String(body),
-      editedAt: body == null ? row.editedAt : new Date().toISOString(),
-      resolvedAt: resolved == null ? row.resolvedAt : resolved ? new Date().toISOString() : null,
-      resolvedBy: resolved == null ? row.resolvedBy : resolved ? "usr_priya" : null,
-    })),
 
   // The row survives with a null body so replies keep their places — which is
   // exactly what the real server does, and what the tombstone renders from.
-  artifacts_cloud_comment_delete: ({ sessionId, commentId }): Comment =>
-    patchComment(String(sessionId), String(commentId), (row) => ({
-      ...row,
-      body: null,
-      mentions: [],
-      deletedAt: new Date().toISOString(),
-    })),
 
   artifacts_board: ({ projects }): BoardPage => {
     const paths = Array.isArray(projects) ? (projects as string[]) : [];
     const local = SEEDS.filter((seed) => paths.includes(seed.project.path)).map(boardRow);
     // The merge the real command does: local rows, plus whatever the
     // Organisation has that this machine does not.
-    const sessions = [...local, ...teammateBoardRows()].sort((a, b) =>
-      b.lastActivityAt.localeCompare(a.lastActivityAt),
-    );
+    const sessions = local.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
     // The fixture answers in one tick, so the remote half is never outstanding
     // and never fails. Flip `cloudFailed` by hand to exercise the retry notice.
-    return { sessions, cloudPending: false, cloudFailed: false };
+    return { sessions };
   },
   // `None` when the Session is not in that project's store — the panel renders
   // its "this Session is gone" state rather than erroring.

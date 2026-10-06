@@ -23,45 +23,33 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "acceptFirstMouse": true,
-        "backgroundColor": [
-          0,
-          0,
-          0,
-          255
-        ]
+        "backgroundColor": [0, 0, 0, 255]
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://www.gravatar.com; media-src 'self' blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost blob: data: https://us.i.posthog.com; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost blob: data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'",
       "dangerousDisableAssetCspModification": ["style-src"],
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": [
-            "$HOME/**"
-          ],
+          "allow": ["$HOME/**"],
           "deny": []
         }
       },
-      "devCsp": "default-src 'self'; script-src 'self' http://localhost:1420 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https://www.gravatar.com; media-src 'self' blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ws://localhost:1420 http://localhost:1420 ipc: http://ipc.localhost asset: http://asset.localhost blob: data: https://us.i.posthog.com; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'"
+      "devCsp": "default-src 'self'; script-src 'self' http://localhost:1420 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; media-src 'self' blob: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ws://localhost:1420 http://localhost:1420 ipc: http://ipc.localhost asset: http://asset.localhost blob: data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'"
     }
   },
   "plugins": {},
   "bundle": {
     "active": true,
-    "targets": [
-      "app",
-      "dmg"
-    ],
+    "targets": ["app", "dmg"],
     "resources": {
       "resources/nvm.sh": "resources/nvm.sh",
       "licenses/Atlas-LICENSE.txt": "licenses/Atlas-LICENSE.txt",
-      "licenses/OpenAI-Codex-LICENSE.txt": "licenses/OpenAI-Codex-LICENSE.txt",
-      "licenses/OpenAI-Codex-NOTICE.txt": "licenses/OpenAI-Codex-NOTICE.txt",
       "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },
     "category": "DeveloperTool",
-    "shortDescription": "Atlas \u2014 agent-first ideation and planning tool",
+    "shortDescription": "Atlas — agent-first ideation and planning tool",
     "longDescription": "Atlas is a Tauri-based desktop app that hosts ACP-compatible coding agents (Claude Code, Codex, OpenCode) with first-class file, knowledge, and research integration.",
     "copyright": "https://tryatlas.cc/ Report bugs to Github: https://github.com/pacifio/atlas/issues/",
     "icon": [
@@ -80,9 +68,18 @@
       "providerShortName": null,
       "dmg": {
         "background": "icons/dmg-background.png",
-        "windowSize": { "width": 512, "height": 352 },
-        "appPosition": { "x": 140, "y": 160 },
-        "applicationFolderPosition": { "x": 372, "y": 160 }
+        "windowSize": {
+          "width": 512,
+          "height": 352
+        },
+        "appPosition": {
+          "x": 140,
+          "y": 160
+        },
+        "applicationFolderPosition": {
+          "x": 372,
+          "y": 160
+        }
       }
     }
   }

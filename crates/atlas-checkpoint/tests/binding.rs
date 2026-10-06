@@ -404,159 +404,89 @@ fn detection_reports_everything_the_popover_shows() {
     assert!(!detection.suggested_slug.is_empty());
 }
 
-// ── Promotion onto an existing Cloud Project ────────────────────────────────
-
-/// Connecting a Local Project to a Project the Organisation already has goes
-/// through `promote_to_cloud`, exactly like creating a new one: the binding
-/// flip and the `local` → `pending` row flip commit together, so the history
-/// the developer was shown in the disclosure is what the drain picks up.
+// Retire old cloud bindings without touching recorded work.
 #[test]
-fn connecting_a_local_project_to_an_existing_cloud_project_queues_its_history() {
+fn old_cloud_binding_becomes_local_and_keeps_its_session_and_blobs() {
     let dir = tempfile::tempdir().unwrap();
     init_repo(dir.path());
-    commit(dir.path(), "a.rs", "one", "initial");
-
+    commit(dir.path(), "initial.rs", "one", "initial");
     let mut store = store_in(dir.path());
     bind(&store, WORKSPACE, dir.path(), ProjectMode::Local).unwrap();
-
-    let mut capture = Capture::new(&mut store, ProjectMode::Local);
     let key = SessionKey {
         workspace_id: WORKSPACE.into(),
         source: Source::Acp,
-        native_session_id: "s1".into(),
+        native_session_id: "old-session".into(),
     };
-    let session = capture
-        .record_prompt(&key, "Add rate limiting", 1, None, None, None)
-        .unwrap();
-    capture
-        .record_turn(
-            &session,
-            TurnContent {
-                turn_seq: 1,
-                native_message_id: None,
-                role: Role::Assistant,
-                mode: Mode::Text,
-                body: "done".into(),
-                created_at: None,
-            },
-        )
-        .unwrap();
-    assert_eq!(
-        store.session(&session).unwrap().unwrap().sync_state,
-        SyncState::Local
-    );
-
-    // What `capture_connect` does once the server has bound the pick.
-    let moved = store
-        .promote_to_cloud(WORKSPACE, "org-1", "atlas", Some("remote-atlas"))
-        .unwrap();
-    assert!(
-        moved >= 2,
-        "the session and its messages were queued, got {moved}"
-    );
-
-    let binding = store.binding().unwrap().unwrap();
-    assert_eq!(binding.mode, ProjectMode::Cloud);
-    assert_eq!(binding.slug.as_deref(), Some("atlas"));
-    assert_eq!(binding.org_id.as_deref(), Some("org-1"));
-    assert_eq!(binding.remote_workspace_id.as_deref(), Some("remote-atlas"));
-
-    assert_eq!(
-        store.session(&session).unwrap().unwrap().sync_state,
-        SyncState::Pending
-    );
-    for message in store.messages_for_session(&session).unwrap() {
-        assert_eq!(message.sync_state, SyncState::Pending);
-    }
-    // Nothing is left stranded for the healer.
-    assert_eq!(store.heal_stranded_local_rows(WORKSPACE).unwrap(), 0);
-}
-
-/// Changing which Cloud Project a repository syncs to re-sends everything: the
-/// server keeps one object per Project and has no move, so rows the old one
-/// accepted (`sent`) and rows that failed against it both go back to `pending`
-/// with a fresh attempt count, in the same transaction as the binding flip.
-#[test]
-fn switching_cloud_project_requeues_every_row_for_the_new_destination() {
-    let dir = tempfile::tempdir().unwrap();
-    init_repo(dir.path());
-    commit(dir.path(), "a.rs", "one", "initial");
-
-    let mut store = store_in(dir.path());
-    bind(&store, WORKSPACE, dir.path(), ProjectMode::Local).unwrap();
+    let id = {
+        let mut capture = Capture::new(&mut store, ProjectMode::Local);
+        let id = capture
+            .record_prompt(
+                &key,
+                "Keep this conversation",
+                1,
+                Some("claude-acp"),
+                None,
+                None,
+            )
+            .unwrap();
+        capture
+            .record_turn(
+                &id,
+                TurnContent {
+                    turn_seq: 1,
+                    native_message_id: None,
+                    role: Role::Assistant,
+                    mode: Mode::Text,
+                    body: "A".repeat(atlas_checkpoint::SPILL_THRESHOLD_BYTES + 1),
+                    created_at: None,
+                },
+            )
+            .unwrap();
+        capture.finish_turn(&id, 1).unwrap();
+        id
+    };
+    commit(dir.path(), "initial.rs", "two", "agent change");
+    let sha = git(dir.path(), &["rev-parse", "HEAD"]);
     store
-        .promote_to_cloud(WORKSPACE, "org-1", "project1", Some("remote-1"))
+        .upsert_checkpoint(atlas_checkpoint::CheckpointInput {
+            session_id: &id,
+            commit_sha: sha.trim(),
+            patch_id: None,
+            branch: Some("main"),
+            git_author_name: Some("Local developer"),
+            git_author_email: None,
+            files_touched: &["initial.rs".to_string()],
+            insertions: 1,
+            deletions: 1,
+            sync_state: SyncState::Local,
+        })
         .unwrap();
-
-    let mut capture = Capture::new(&mut store, ProjectMode::Cloud);
-    let key = SessionKey {
-        workspace_id: WORKSPACE.into(),
-        source: Source::Acp,
-        native_session_id: "s1".into(),
-    };
-    let session = capture
-        .record_prompt(&key, "hello", 1, None, None, None)
-        .unwrap();
-    capture
-        .record_turn(
-            &session,
-            TurnContent {
-                turn_seq: 1,
-                native_message_id: None,
-                role: Role::Assistant,
-                mode: Mode::Text,
-                body: "done".into(),
-                created_at: None,
-            },
-        )
-        .unwrap();
-    // The old destination accepted the session; a message failed against it.
-    store.mark_sent(&session).unwrap();
-    let message_id = store.messages_for_session(&session).unwrap()[0].id.clone();
-    store.mark_failed(&message_id).unwrap();
-    assert_eq!(
-        store.session(&session).unwrap().unwrap().sync_state,
-        SyncState::Sent
-    );
-    assert_eq!(
-        store.messages_for_session(&session).unwrap()[0].sync_state,
-        SyncState::Failed
-    );
-
-    let moved = store
-        .switch_cloud_project(WORKSPACE, "org-1", "project2", "remote-2")
-        .unwrap();
-    assert_eq!(moved, 2);
-
+    let checkpoints = store.checkpoints_for_project(WORKSPACE).unwrap();
+    assert!(!checkpoints.is_empty());
+    let before = store.messages_for_session(&id).unwrap();
+    assert!(before.iter().any(|message| message.body_ref.is_some()));
+    drop(store);
+    let db = rusqlite::Connection::open(dir.path().join(".atlas/sessions.db")).unwrap();
+    db.execute("UPDATE binding SET mode='cloud', org_id='old-org', slug='old-slug', remote_workspace_id='old-remote', drain_state='auth_required', import_approved=0", []).unwrap();
+    drop(db);
+    let store = store_in(dir.path());
     let binding = store.binding().unwrap().unwrap();
-    assert_eq!(binding.mode, ProjectMode::Cloud);
-    assert_eq!(binding.slug.as_deref(), Some("project2"));
-    assert_eq!(binding.remote_workspace_id.as_deref(), Some("remote-2"));
+    assert_eq!(binding.mode, ProjectMode::Local);
+    assert_eq!(binding.org_id, None);
+    assert_eq!(binding.remote_workspace_id, None);
+    assert!(binding.enabled);
+    assert!(binding.import_approved);
+    assert_eq!(store.session(&id).unwrap().unwrap().id, id);
     assert_eq!(
-        store.session(&session).unwrap().unwrap().sync_state,
-        SyncState::Pending
+        store.checkpoints_for_project(WORKSPACE).unwrap().len(),
+        checkpoints.len()
     );
-    assert_eq!(
-        store.messages_for_session(&session).unwrap()[0].sync_state,
-        SyncState::Pending
-    );
-    // Nothing is left in a state the new destination will never see.
-    assert_eq!(
-        store
-            .row_count_in_state(WORKSPACE, SyncState::Sent)
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        store
-            .row_count_in_state(WORKSPACE, SyncState::Failed)
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        store
-            .row_count_in_state(WORKSPACE, SyncState::Local)
-            .unwrap(),
-        0
-    );
+    let after = store.messages_for_session(&id).unwrap();
+    assert_eq!(before.len(), after.len());
+    for (old, new) in before.iter().zip(after.iter()) {
+        assert_eq!(old.id, new.id);
+        assert_eq!(old.body, new.body);
+        assert_eq!(old.body_ref, new.body_ref);
+        assert!(!store.message_body(new).unwrap().is_empty());
+    }
 }

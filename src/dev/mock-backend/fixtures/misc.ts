@@ -26,14 +26,13 @@ import type {
   ThreadProject,
   ThreadRow,
 } from "@/features/chat/lib/history-api";
-import type { Entitlement } from "@/features/chat/stores/ai-grant-store";
+
 import type { PlanRecord } from "@/features/chat/lib/plans";
 import type { AppSettings } from "@/features/settings/lib/app-settings";
 import { DEFAULT_SETTINGS } from "@/features/settings/lib/app-settings";
 import type { UpdateOutcome } from "@/features/settings/lib/atlas-config-api";
 import type { ModelStatus, SelectResult } from "@/features/settings/lib/models-api";
-import type { UpdateStatus } from "@/features/updater/lib/updater-api";
-import type { NativeModelsRefresh } from "@/types/agents";
+
 import type { MockHandlers } from "../types";
 import { abs, MOCK_PROJECT, OTHER_PROJECTS } from "../project";
 
@@ -54,7 +53,7 @@ const THREADS: ThreadRow[] = [
   {
     threadId: "th-01",
     sessionId: "sess-01",
-    agentId: "atlas-agent",
+    agentId: "claude-acp",
     title: "Move the user reads onto /v2 and keep the retry helper",
     updatedAt: ago(5 * 60_000),
     createdAt: ago(3 * 3_600_000),
@@ -66,7 +65,7 @@ const THREADS: ThreadRow[] = [
     threadId: "th-02",
     // No session yet: the composer is open but nothing has been sent.
     sessionId: null,
-    agentId: "atlas-agent",
+    agentId: "claude-acp",
     title: "New conversation",
     updatedAt: ago(40 * 60_000),
     createdAt: ago(40 * 60_000),
@@ -100,7 +99,7 @@ const THREADS: ThreadRow[] = [
   {
     threadId: "th-05",
     sessionId: "sess-05",
-    agentId: "atlas-agent",
+    agentId: "claude-acp",
     title: "Spike: swap HashMap for BTreeMap in the cache",
     updatedAt: ago(9 * 86_400_000),
     createdAt: ago(9 * 86_400_000),
@@ -259,7 +258,7 @@ export const miscHandlers: MockHandlers = {
       key: { agent_id: thread.agentId, session_id: thread.sessionId ?? thread.threadId },
       // The agent could only continue, not replay — the state the UI has to
       // tell the user about, and the one nothing else here exercises.
-      resumedWithoutHistory: thread.agentId !== "atlas-agent",
+      resumedWithoutHistory: thread.agentId !== "claude-acp",
     };
   },
   threads_delete: ({ threadId }): null => {
@@ -322,13 +321,6 @@ export const miscHandlers: MockHandlers = {
   // ── updater ─────────────────────────────────────────────────────────────
   // An update IS available, because "you are up to date" hides the whole
   // release-notes / restart affordance.
-  update_check_now: (): UpdateStatus => ({
-    available: true,
-    version: "0.3.4",
-    currentVersion: "0.0.0-mock",
-  }),
-  update_apply: nothing,
-  update_ignore: nothing,
 
   // ── local model manager ─────────────────────────────────────────────────
   models_list: (): ModelStatus[] => models,
@@ -364,16 +356,6 @@ export const miscHandlers: MockHandlers = {
   // ── the native agent's entitlement ──────────────────────────────────────
   // `localOrg` is the honest answer for the fake project's local-only org,
   // and it is the one state that needs no gateway to be plausible.
-  native_agent_entitlement: (): Entitlement => ({ state: "localOrg" }),
-  native_agent_refresh_models: (): NativeModelsRefresh => ({
-    models: [
-      { id: "gpt-5", name: "GPT-5", description: "The default for new sessions." },
-      { id: "gpt-5-mini", name: "GPT-5 mini", description: null },
-    ],
-    defaultModel: "gpt-5",
-    changed: false,
-    reconnected: false,
-  }),
 
   // ── leftover agent verbs ────────────────────────────────────────────────
   // Every one of these sits behind a menu item in the agent picker or the
@@ -385,13 +367,13 @@ export const miscHandlers: MockHandlers = {
     agent_id: String(agentId),
     session_id: String(sessionId),
   }),
-  agents_fork_session: (): string | null => null,
+
   agents_rewind_last_turn: (): string | null => null,
   agents_set_config_option: nothing,
   agents_set_mode: nothing,
   agents_set_model: nothing,
   agents_respond_elicitation: nothing,
-  ui_action_respond: nothing,
+
   // agents_respond_permission lives in `fake-agent.ts` (`agentHandlers`) —
   // it needs to update the transcript, not just resolve.
   agents_logout: nothing,

@@ -13,10 +13,9 @@
 //! being a second opinion about it. That ladder is gone (ADR-0002), and
 //! with it `auto-acquire`, `managed-binary`, the `builtin` kind, and the
 //! `optional`/`disabled` pair that let a first-party agent be switched off.
-//! An agent is now in exactly one of three states: it is the native agent, it
-//! is in the installed map, or it is not runnable.
+//! An agent is either in the installed map or is not runnable.
 //!
-//! `source` is now one of `in-process`, `installed`, `npx`, `detected` (an
+//! `source` is one of `installed`, `npx`, `detected` (an
 //! install *affordance*, not a spawn rung — see below), and `unavailable`.
 //! `system-path`, `managed-binary`, `auto-acquire` and `uvx` are gone with the
 //! ladder and are never emitted.
@@ -38,8 +37,6 @@ use super::agent_host::AgentHost;
 
 /// How a spawn of this agent would launch it right now.
 mod source {
-    /// The native in-process agent — no subprocess at all.
-    pub const IN_PROCESS: &str = "in-process";
     /// Installed: the installed map has an entry, so it is runnable.
     pub const INSTALLED: &str = "installed";
     /// Installed and launched through `npx` — npm fetches it on first run.
@@ -160,7 +157,6 @@ fn build(host: &AgentHost) -> AgentCatalog {
         .into_iter()
         .map(|plugin| {
             let id = plugin.plugin_id;
-            let is_native = plugin.transcript == TranscriptKind::Native && !plugin.external;
             let market = market(&id);
             let capabilities = host.capabilities(&id);
             let agent_id = atlas_acp_thread::AgentId::new(id.as_str());
@@ -173,19 +169,12 @@ fn build(host: &AgentHost) -> AgentCatalog {
                 })
                 .unwrap_or_default();
 
-            let (source, resolved_path) = if is_native {
-                (source::IN_PROCESS, None)
-            } else {
-                match host.store().agent_source(&agent_id) {
-                    // An npx-distributed registry agent is installed but has no
-                    // resolved binary until npm fetches it; the frontend shows
-                    // that differently, so it keeps its own token.
-                    Some(ExternalAgentSource::Registry) if distribution_kind == "npx" => {
-                        (source::NPX, None)
-                    }
-                    Some(_) => (source::INSTALLED, None),
-                    None => (source::UNAVAILABLE, None),
+            let (source, resolved_path) = match host.store().agent_source(&agent_id) {
+                Some(ExternalAgentSource::Registry) if distribution_kind == "npx" => {
+                    (source::NPX, None)
                 }
+                Some(_) => (source::INSTALLED, None),
+                None => (source::UNAVAILABLE, None),
             };
 
             AgentCatalogEntry {
@@ -200,10 +189,10 @@ fn build(host: &AgentHost) -> AgentCatalog {
                     .and_then(|entry| entry.version.as_ref().map(std::string::ToString::to_string))
                     .or_else(|| market.as_ref().map(|agent| agent.version().to_string()))
                     .filter(|v| !v.is_empty()),
-                kind: if is_native { "native" } else { "external" }.to_string(),
+                kind: "external".to_string(),
                 source: source.to_string(),
                 resolved_path,
-                installed: !is_native,
+                installed: true,
                 supports_modes: plugin.supports_modes,
                 supports_models: plugin.supports_models,
                 transcript: transcript_token(plugin.transcript).to_string(),
@@ -229,11 +218,10 @@ fn build(host: &AgentHost) -> AgentCatalog {
                 website: market
                     .as_ref()
                     .and_then(|a| a.website().map(str::to_string)),
-                platform_supported: is_native
-                    || market
-                        .as_ref()
-                        .map(atlas_agent_store::RegistryAgent::supports_current_platform)
-                        .unwrap_or(true),
+                platform_supported: market
+                    .as_ref()
+                    .map(atlas_agent_store::RegistryAgent::supports_current_platform)
+                    .unwrap_or(true),
                 distribution_kind,
                 unverified: matches!(
                     market.as_ref(),
@@ -369,21 +357,15 @@ mod tests {
             .unwrap_or_else(|| panic!("{id} is in the catalog"))
     }
 
-    /// The acceptance criterion, end to end: a fresh profile offers exactly one
-    /// agent, an install makes a second one appear as runnable, and an uninstall
+    /// A fresh profile offers no built-in agent; an install makes an external
+    /// agent runnable, and an uninstall
     /// takes it away again.
     #[tokio::test]
     async fn install_then_uninstall_moves_an_agent_in_and_out_of_the_catalog() {
         let (host, dir) = fresh_host();
 
-        // Fresh profile: the native agent, and nothing else. No builtin table,
-        // no auto-acquire, nothing pre-seeded (ADR-0002).
         let fresh = build(&host);
-        assert_eq!(ids(&fresh), [atlas_native_agent::ATLAS_AGENT_ID]);
-        let native = entry(&fresh, atlas_native_agent::ATLAS_AGENT_ID);
-        assert_eq!(native.kind, "native");
-        assert_eq!(native.source, source::IN_PROCESS);
-        assert_eq!(native.transcript, "native");
+        assert!(ids(&fresh).is_empty());
 
         // Installing is writing one map entry.
         let mut settings = AllAgentServersSettings::default();
@@ -414,7 +396,7 @@ mod tests {
         host.store()
             .set_settings(AllAgentServersSettings::default())
             .await;
-        assert_eq!(ids(&build(&host)), [atlas_native_agent::ATLAS_AGENT_ID]);
+        assert!(ids(&build(&host)).is_empty());
         assert!(host.agent_for("some-agent").is_err());
 
         let _ = std::fs::remove_dir_all(&dir);

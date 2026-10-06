@@ -29,7 +29,7 @@ export function TimelineInbox({
 }: {
   /** The rows the nav is showing — filtered, so the suggestions agree with it. */
   sessions: BoardSession[];
-  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
+  onOpen: (id: string, projectPath: string) => void;
 }) {
   // Already newest-first from the store; no sort, just a window.
   const recent = sessions.slice(0, RECENT);
@@ -52,7 +52,7 @@ export function TimelineInbox({
                 <button
                   key={boardKey(session)}
                   type="button"
-                  onClick={() => onOpen(session.id, session.projectPath, session.remoteProjectId)}
+                  onClick={() => onOpen(session.id, session.projectPath)}
                   title={title ?? undefined}
                   className="flex h-10 cursor-pointer items-center gap-3 rounded-lg px-3 text-left transition-colors hover:bg-[var(--atlas-element-active)]"
                 >

@@ -46,14 +46,6 @@ const MediaViewer = lazy(() =>
 const SvgViewer = lazy(() =>
   import("@/features/svg/components/svg-viewer").then((m) => ({ default: m.SvgViewer })),
 );
-const CommsDraftTab = lazy(() =>
-  import("@/features/comms/components/comms-draft-tab").then((m) => ({
-    default: m.CommsDraftTab,
-  })),
-);
-const SpacesTab = lazy(() =>
-  import("@/features/spaces/components/spaces-tab").then((m) => ({ default: m.SpacesTab })),
-);
 const PdfViewer = lazy(() =>
   import("@/features/pdf/components/pdf-viewer").then((m) => ({ default: m.PdfViewer })),
 );
@@ -125,7 +117,6 @@ import {
   House,
   Gauge,
   Layers,
-  Frame,
   NotebookText,
 } from "lucide-react";
 import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
@@ -153,8 +144,6 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   unsupported: Code,
   usage: Gauge,
   artifacts: Layers,
-  "comms-draft": FileText,
-  spaces: Frame,
 };
 
 const GROUP_OF = (t: Tab) => t.groupId ?? "main";
@@ -185,7 +174,6 @@ export const PERSISTENT_TYPES_LIST = [
   "settings",
   // A Space is a live socket + a Y.Doc: remounting re-dials, replays the page
   // and lands re-fitted. Kept mounted so a tab switch is a tab switch.
-  "spaces",
 ] as const satisfies readonly TabType[];
 
 type PersistentTabType = (typeof PERSISTENT_TYPES_LIST)[number];
@@ -205,7 +193,6 @@ export const IDLE_EXPENSIVE_TYPES_LIST = [
   "browser",
   "knowledge-graph",
   "pdf",
-  "spaces",
 ] as const satisfies readonly PersistentTabType[];
 
 const IDLE_EXPENSIVE_TYPES: ReadonlySet<TabType> = new Set(IDLE_EXPENSIVE_TYPES_LIST);
@@ -805,11 +792,6 @@ function PersistentPanel({
       return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
     case "settings":
       return <SettingsPanel initialSection={tab.data.section as string | undefined} />;
-    case "spaces":
-      return <SpacesTab convId={tab.data.convId as string} />;
-    // Chat is normally handled by the caller, which needs its own
-    // `visibility:hidden` wrapper rather than `display:none`. Listed anyway so
-    // the exhaustiveness check below is real and not a hole.
     case "chat":
       return <ChatPanel tabId={tab.id} />;
     case "terminal":
@@ -995,12 +977,6 @@ function TabContent({ tab }: { tab: Tab }) {
           commit={(tab.data.commit as string | null | undefined) ?? null}
         />
       );
-    case "comms-draft":
-      return (
-        <CommsDraftTab convId={tab.data.convId as string} draftId={tab.data.draftId as string} />
-      );
-    case "spaces":
-      return <SpacesTab convId={tab.data.convId as string} />;
     case "unsupported":
       return <UnsupportedView filePath={tab.data.filePath as string} />;
     default:
@@ -1027,7 +1003,7 @@ function PlaceholderContent({ tab }: { tab: Tab }) {
 
 const NEW_TAB_OPTIONS: Array<{ type: TabType; label: string; icon: React.ElementType }> = [
   { type: "chat", label: "Agents", icon: AtlasIcon },
-  { type: "canvas", label: "Spaces", icon: Map },
+  { type: "canvas", label: "Canvas", icon: Map },
   { type: "terminal", label: "Terminal", icon: Terminal },
   { type: "diff", label: "Git Diff", icon: GitCompare },
   { type: "browser", label: "Browser", icon: Globe },

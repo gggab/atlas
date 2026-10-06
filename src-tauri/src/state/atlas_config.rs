@@ -22,12 +22,10 @@
 //! own; [`ConfigManager::reset`] is the sole authorized "recreate defaults"
 //! path, and it backs up whatever was there first.
 //!
-//! Scope (see the issue #64 design record): only the preferences that used to
-//! live in `AppState.settings` move here. Telemetry identity (`device.json`),
-//! the self-hosted PostHog override (`telemetry.json`), and BYOK (the user's
-//! shell profile) are deliberately untouched — their separation from
-//! coarse-write settings state already fixed a real bug (see
-//! `crate::telemetry::device`) or was never Atlas-owned to begin with.
+//! Scope: local preferences formerly stored in `AppState.settings`.
+//! External CLI credentials and existing optional BYOK credentials remain
+//! owned by their vendor CLI or shell environment. Retired Atlas cloud,
+//! telemetry and native-agent keys are removed when loading and patching.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -284,19 +282,6 @@ pub struct AppSettings {
     /// on the frontend (⌘+/⌘-/⌘0); persisted so it survives relaunch.
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
-    /// Anonymous product telemetry (PostHog). Default **ON** (opt-out, like
-    /// VS Code / Zed) — privacy-preserving metadata only; the user can turn it
-    /// off anytime in Settings → General. Gates both the Rust emitter and the
-    /// frontend `posthog-js` crash reporter. Still inert unless a key resolves.
-    /// See `crate::telemetry`.
-    #[serde(default = "default_true")]
-    pub share_telemetry: bool,
-    /// Attribute telemetry to the signed-in Atlas account (PostHog `$identify`),
-    /// rather than keeping it on the anonymous per-device person. Default **ON**,
-    /// and irrelevant while signed out or while `share_telemetry` is off — both
-    /// gate this. See `crate::telemetry`.
-    #[serde(default = "default_true")]
-    pub link_telemetry_to_account: bool,
     /// Selected on-device **embedding** model id (== its dir name under
     /// `app_data/models/`). Drives `memory_graph::model_dir` and every embedding
     /// consumer via the shared provider. See `crate::commands::models`.
@@ -352,16 +337,6 @@ pub struct AppSettings {
     /// Default OFF. See `crate::keep_awake`.
     #[serde(default)]
     pub keep_awake_while_running: bool,
-    /// Auto-update master switch. See `crate::commands::updater`.
-    #[serde(default = "default_true")]
-    pub auto_update: bool,
-    /// Let the Atlas Agent's engine sync OpenAI's curated plugin catalogue
-    /// (github.com/openai/plugins) from GitHub when it starts. Off by default:
-    /// it is a network fetch at every launch, and it was failing with HTTP
-    /// 429. Reaches the in-process engine as `ATLAS_CURATED_PLUGIN_SYNC` —
-    /// see `commands::atlas_config::apply_curated_plugin_sync_gate`.
-    #[serde(default)]
-    pub curated_plugin_sync: bool,
     /// Mirror the active project's convention files (`CLAUDE.md`,
     /// `.claude/rules/`) into a marked block of its `AGENTS.md`, kept current
     /// as they change, for any agent that reads `AGENTS.md`. Off by default:
@@ -369,27 +344,10 @@ pub struct AppSettings {
     /// back out. See `commands::instruction_sync`.
     #[serde(default)]
     pub instruction_sync: bool,
-    /// A version the user chose to "Ignore" in the update prompt. `None` =
-    /// nothing ignored. Absent from the TOML file rather than written as a
-    /// sentinel empty string — TOML has no native null, and an absent key is
-    /// the idiomatic way to express "unset".
-    #[serde(default)]
-    pub updater_ignored_version: Option<String>,
     /// Chat composer send gesture. Default ON: Enter sends, Shift+Enter
     /// inserts a newline. Cmd/Ctrl+Enter always sends regardless.
     #[serde(default = "default_true")]
     pub enter_to_send: bool,
-    /// Let Atlas Agent act on the window through the UI tool server
-    /// (ADR-0012). Off: sessions are not offered the server and every call in
-    /// a running one is refused. Default ON.
-    #[serde(default = "default_true")]
-    pub agent_ui_navigation: bool,
-    /// Let Atlas Agent act in the organisation the session's Project is bound
-    /// to, through the organisation tool server (ADR-0014). Off: sessions are
-    /// not offered the server and every call in a running one is refused.
-    /// Default ON.
-    #[serde(default = "default_true")]
-    pub agent_org_access: bool,
     /// "Command finished": a successful command longer than
     /// `terminal_notify_min_duration_ms` notifies. (Once the terminal master
     /// switch; `notifications_enabled` is the master now.)
@@ -432,12 +390,6 @@ pub struct AppSettings {
     /// Sound for warnings.
     #[serde(default)]
     pub notify_warning_sound: bool,
-    /// OS banner for team notifications (Chat DMs and @mentions).
-    #[serde(default = "default_true")]
-    pub notify_team_native: bool,
-    /// Sound for team notifications.
-    #[serde(default = "default_true")]
-    pub notify_team_sound: bool,
     /// Show Allow once / Deny on permission banners.
     #[serde(default = "default_true")]
     pub notify_permission_actions: bool,
@@ -490,8 +442,6 @@ impl Default for AppSettings {
             enable_atlas_logs: true,
             show_hidden_files: true,
             ui_scale: default_ui_scale(),
-            share_telemetry: true,
-            link_telemetry_to_account: true,
             embedding_model_id: default_embedding_model(),
             theme: default_theme(),
             theme_mode: ThemeMode::default(),
@@ -506,13 +456,8 @@ impl Default for AppSettings {
             git_blame_inline: true,
             git_auto_fetch: true,
             keep_awake_while_running: false,
-            auto_update: true,
-            curated_plugin_sync: false,
             instruction_sync: false,
-            updater_ignored_version: None,
             enter_to_send: true,
-            agent_ui_navigation: true,
-            agent_org_access: true,
             terminal_notifications: true,
             terminal_notify_min_duration_ms: default_terminal_notify_min_duration_ms(),
             terminal_notify_on_failure: true,
@@ -526,8 +471,6 @@ impl Default for AppSettings {
             notify_outcome_sound: true,
             notify_warning_native: false,
             notify_warning_sound: false,
-            notify_team_native: true,
-            notify_team_sound: true,
             notify_permission_actions: true,
             notifications_migrated: false,
             notify_disabled_kinds: Vec::new(),
@@ -594,18 +537,6 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "uiScale",
         "# Interface zoom, where 1.0 is 100%. Also driven by Cmd +/-/0.\n\
          # Must be a number between 0.5 and 2.0. (default: 1.0)",
-    ),
-    (
-        "shareTelemetry",
-        "# Anonymous product telemetry. Opt-OUT: on by default, coarse metadata\n\
-         # only, never file contents or prompts. See TELEMETRY.md.\n\
-         # (default: true)",
-    ),
-    (
-        "linkTelemetryToAccount",
-        "# Attribute telemetry to your signed-in Atlas account instead of the\n\
-         # anonymous per-device id. Irrelevant while signed out, or while\n\
-         # shareTelemetry is false — both gate it. (default: true)",
     ),
     (
         "embeddingModelId",
@@ -679,17 +610,6 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # Windows. (default: false)",
     ),
     (
-        "autoUpdate",
-        "# Check for a newer signed Atlas release on startup and prompt when one\n\
-         # is available. (default: true)",
-    ),
-    (
-        "curatedPluginSync",
-        "# Let the Atlas Agent's engine fetch OpenAI's curated plugin catalogue\n\
-         # (github.com/openai/plugins) when it starts — a network request at\n\
-         # every launch. Applies the next time the agent starts. (default: false)",
-    ),
-    (
         "instructionSync",
         "# Mirror CLAUDE.md and .claude/rules/ into a marked block of the active\n\
          # project's AGENTS.md, kept current as they change, for any agent that\n\
@@ -697,32 +617,10 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # is never changed. Off: the block is taken back out. (default: false)",
     ),
     (
-        "updaterIgnoredVersion",
-        "# updaterIgnoredVersion: a release you chose to skip in the update\n\
-         # prompt. Absent unless one was ignored — TOML has no null, so \"unset\"\n\
-         # means the key simply isn't here. Delete the line to clear it; never\n\
-         # write an empty string.",
-    ),
-    (
         "enterToSend",
         "# Chat composer send gesture. true = Enter sends and Shift+Enter\n\
          # inserts a newline; false = only Cmd/Ctrl+Enter sends. Cmd/Ctrl+Enter\n\
          # sends either way. (default: true)",
-    ),
-    (
-        "agentUiNavigation",
-        "# Let Atlas Agent act on the window: open files at a line, switch tabs\n\
-         # and panels, fill in a chat message, type a command for you to run.\n\
-         # It never switches projects, sends for you or presses Enter. Off: its\n\
-         # UI tools are withdrawn and every call is refused. (default: true)",
-    ),
-    (
-        "agentOrgAccess",
-        "# Let Atlas Agent act in your organisation, as you: read the recorded\n\
-         # sessions, comments, members and conversations of the organisation a\n\
-         # cloud-bound Project belongs to. Anything that reaches another person\n\
-         # asks you first. Off: its organisation tools are withdrawn and every\n\
-         # call is refused. (default: true)",
     ),
     (
         "terminalNotifications",
@@ -785,15 +683,6 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     (
         "notifyWarningSound",
         "# Sound for warnings. (default: false)",
-    ),
-    (
-        "notifyTeamNative",
-        "# OS banner for Chat direct messages and @mentions. Shown only when you\n\
-         # are away. (default: true)",
-    ),
-    (
-        "notifyTeamSound",
-        "# Sound for Chat notifications. (default: true)",
     ),
     (
         "notifyPermissionActions",
@@ -1063,26 +952,6 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-// ---------------------------------------------------------------------------
-// Patch (partial update from the UI, the self-configure skill's writes go
-// straight to disk and are picked up by the watcher instead of this path)
-// ---------------------------------------------------------------------------
-
-/// Deserializes a JSON field into `Option<Option<T>>`: key absent stays
-/// `None` (untouched, via `#[serde(default)]` on the field), key present
-/// (even as `null`) becomes `Some(inner)`. A plain `Option<T>` can't tell
-/// "don't touch this field" apart from "clear it" — both arrive as an absent
-/// key vs. `null` on the wire, but `#[serde(default)]` alone collapses both
-/// to `None`. Only used for `updater_ignored_version`, the one field where
-/// clearing (`Some(None)`) is a real, distinct action from leaving it alone.
-fn deserialize_double_option<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: Deserialize<'de>,
-{
-    Ok(Some(Option::deserialize(deserializer)?))
-}
-
 /// A partial settings update — every field optional so a UI/skill edit can
 /// touch exactly the key it means to change, leaving everything else (and
 /// its comments/formatting) alone.
@@ -1093,8 +962,6 @@ pub struct SettingsPatch {
     pub enable_atlas_logs: Option<bool>,
     pub show_hidden_files: Option<bool>,
     pub ui_scale: Option<f32>,
-    pub share_telemetry: Option<bool>,
-    pub link_telemetry_to_account: Option<bool>,
     pub embedding_model_id: Option<String>,
     pub theme: Option<String>,
     pub theme_mode: Option<ThemeMode>,
@@ -1107,14 +974,8 @@ pub struct SettingsPatch {
     pub git_blame_inline: Option<bool>,
     pub git_auto_fetch: Option<bool>,
     pub keep_awake_while_running: Option<bool>,
-    pub auto_update: Option<bool>,
-    pub curated_plugin_sync: Option<bool>,
     pub instruction_sync: Option<bool>,
-    #[serde(default, deserialize_with = "deserialize_double_option")]
-    pub updater_ignored_version: Option<Option<String>>,
     pub enter_to_send: Option<bool>,
-    pub agent_ui_navigation: Option<bool>,
-    pub agent_org_access: Option<bool>,
     pub terminal_notifications: Option<bool>,
     pub terminal_notify_min_duration_ms: Option<u32>,
     pub terminal_notify_on_failure: Option<bool>,
@@ -1128,8 +989,6 @@ pub struct SettingsPatch {
     pub notify_outcome_sound: Option<bool>,
     pub notify_warning_native: Option<bool>,
     pub notify_warning_sound: Option<bool>,
-    pub notify_team_native: Option<bool>,
-    pub notify_team_sound: Option<bool>,
     pub notify_permission_actions: Option<bool>,
     pub notifications_migrated: Option<bool>,
     pub notify_disabled_kinds: Option<Vec<String>>,
@@ -1150,12 +1009,6 @@ impl SettingsPatch {
         }
         if let Some(v) = self.ui_scale {
             settings.ui_scale = v;
-        }
-        if let Some(v) = self.share_telemetry {
-            settings.share_telemetry = v;
-        }
-        if let Some(v) = self.link_telemetry_to_account {
-            settings.link_telemetry_to_account = v;
         }
         if let Some(v) = &self.embedding_model_id {
             settings.embedding_model_id = v.clone();
@@ -1193,26 +1046,11 @@ impl SettingsPatch {
         if let Some(v) = self.keep_awake_while_running {
             settings.keep_awake_while_running = v;
         }
-        if let Some(v) = self.auto_update {
-            settings.auto_update = v;
-        }
-        if let Some(v) = self.curated_plugin_sync {
-            settings.curated_plugin_sync = v;
-        }
         if let Some(v) = self.instruction_sync {
             settings.instruction_sync = v;
         }
-        if let Some(v) = &self.updater_ignored_version {
-            settings.updater_ignored_version = v.clone();
-        }
         if let Some(v) = self.enter_to_send {
             settings.enter_to_send = v;
-        }
-        if let Some(v) = self.agent_ui_navigation {
-            settings.agent_ui_navigation = v;
-        }
-        if let Some(v) = self.agent_org_access {
-            settings.agent_org_access = v;
         }
         if let Some(v) = self.terminal_notifications {
             settings.terminal_notifications = v;
@@ -1253,12 +1091,6 @@ impl SettingsPatch {
         if let Some(v) = self.notify_warning_sound {
             settings.notify_warning_sound = v;
         }
-        if let Some(v) = self.notify_team_native {
-            settings.notify_team_native = v;
-        }
-        if let Some(v) = self.notify_team_sound {
-            settings.notify_team_sound = v;
-        }
         if let Some(v) = self.notify_permission_actions {
             settings.notify_permission_actions = v;
         }
@@ -1287,6 +1119,19 @@ impl SettingsPatch {
             .as_table_mut()
             .expect("just ensured settings is a table");
 
+        for key in [
+            "shareTelemetry",
+            "linkTelemetryToAccount",
+            "autoUpdate",
+            "curatedPluginSync",
+            "updaterIgnoredVersion",
+            "agentUiNavigation",
+            "agentOrgAccess",
+            "notifyTeamNative",
+            "notifyTeamSound",
+        ] {
+            table.remove(key);
+        }
         macro_rules! set_bool {
             ($field:ident, $key:literal) => {
                 if let Some(v) = self.$field {
@@ -1297,18 +1142,12 @@ impl SettingsPatch {
         set_bool!(auto_add_atlas_gitignore, "autoAddAtlasGitignore");
         set_bool!(enable_atlas_logs, "enableAtlasLogs");
         set_bool!(show_hidden_files, "showHiddenFiles");
-        set_bool!(share_telemetry, "shareTelemetry");
-        set_bool!(link_telemetry_to_account, "linkTelemetryToAccount");
         set_bool!(git_blame_inline, "gitBlameInline");
         set_bool!(git_auto_fetch, "gitAutoFetch");
         set_bool!(keep_awake_while_running, "keepAwakeWhileRunning");
-        set_bool!(auto_update, "autoUpdate");
-        set_bool!(curated_plugin_sync, "curatedPluginSync");
         set_bool!(instruction_sync, "instructionSync");
         set_bool!(remember_before_switch, "rememberBeforeSwitch");
         set_bool!(enter_to_send, "enterToSend");
-        set_bool!(agent_ui_navigation, "agentUiNavigation");
-        set_bool!(agent_org_access, "agentOrgAccess");
         set_bool!(terminal_notifications, "terminalNotifications");
         set_bool!(terminal_notify_on_failure, "terminalNotifyOnFailure");
         set_bool!(terminal_notify_on_attention, "terminalNotifyOnAttention");
@@ -1321,8 +1160,6 @@ impl SettingsPatch {
         set_bool!(notify_outcome_sound, "notifyOutcomeSound");
         set_bool!(notify_warning_native, "notifyWarningNative");
         set_bool!(notify_warning_sound, "notifyWarningSound");
-        set_bool!(notify_team_native, "notifyTeamNative");
-        set_bool!(notify_team_sound, "notifyTeamSound");
         set_bool!(notify_permission_actions, "notifyPermissionActions");
         set_bool!(notifications_migrated, "notificationsMigrated");
         set_bool!(notify_kinds_migrated, "notifyKindsMigrated");
@@ -1380,14 +1217,6 @@ impl SettingsPatch {
             };
             table["agentSwitchBehavior"] = toml_edit::value(s);
         }
-        if let Some(inner) = &self.updater_ignored_version {
-            match inner {
-                Some(v) => table["updaterIgnoredVersion"] = toml_edit::value(v.as_str()),
-                None => {
-                    table.remove("updaterIgnoredVersion");
-                }
-            }
-        }
     }
 }
 
@@ -1429,16 +1258,10 @@ pub fn settings_from_legacy_json(raw: Option<&serde_json::Value>) -> AppSettings
     take_bool!(auto_add_atlas_gitignore, "autoAddAtlasGitignore");
     take_bool!(enable_atlas_logs, "enableAtlasLogs");
     take_bool!(show_hidden_files, "showHiddenFiles");
-    take_bool!(share_telemetry, "shareTelemetry");
-    take_bool!(link_telemetry_to_account, "linkTelemetryToAccount");
     take_bool!(git_blame_inline, "gitBlameInline");
     take_bool!(git_auto_fetch, "gitAutoFetch");
     take_bool!(keep_awake_while_running, "keepAwakeWhileRunning");
-    take_bool!(auto_update, "autoUpdate");
-    take_bool!(curated_plugin_sync, "curatedPluginSync");
     take_bool!(enter_to_send, "enterToSend");
-    take_bool!(agent_ui_navigation, "agentUiNavigation");
-    take_bool!(agent_org_access, "agentOrgAccess");
 
     if let Some(v) = raw.get("uiScale").and_then(serde_json::Value::as_f64) {
         let v = v as f32;
@@ -1461,12 +1284,7 @@ pub fn settings_from_legacy_json(raw: Option<&serde_json::Value>) -> AppSettings
     let (theme, theme_overrides) = migrate_legacy_theme(old_atlas, old_editor);
     settings.theme = theme;
     settings.theme_overrides = theme_overrides;
-    if let Some(v) = raw
-        .get("updaterIgnoredVersion")
-        .and_then(serde_json::Value::as_str)
-    {
-        settings.updater_ignored_version = Some(v.to_string());
-    }
+
     settings.adaptive_suggestions =
         adaptive_suggestions_from_legacy(raw.get("adaptiveSuggestions"));
 
@@ -1737,6 +1555,24 @@ impl ConfigManager {
             toml::from_str(&text).map_err(|e| ConfigError::Parse(e.to_string()))?;
         if file.schema_version > CONFIG_SCHEMA_VERSION {
             return Err(ConfigError::UnsupportedVersion(file.schema_version));
+        }
+        if let Some(table) = document
+            .get_mut("settings")
+            .and_then(|item| item.as_table_mut())
+        {
+            for key in [
+                "shareTelemetry",
+                "linkTelemetryToAccount",
+                "autoUpdate",
+                "curatedPluginSync",
+                "updaterIgnoredVersion",
+                "agentUiNavigation",
+                "agentOrgAccess",
+                "notifyTeamNative",
+                "notifyTeamSound",
+            ] {
+                table.remove(key);
+            }
         }
         migrate_theme_fields(&mut document, &mut file.settings);
         validate(&file.settings).map_err(ConfigError::Invalid)?;
@@ -2113,7 +1949,7 @@ pub fn read(app: &AppHandle) -> AppSettings {
 }
 
 /// Apply a patch from Rust-internal code — e.g. the Local Model Manager
-/// persisting a model switch, or the updater persisting an ignored version.
+/// persisting a model switch.
 /// Always applies (no optimistic `expected_generation` check, so this never
 /// returns `Conflict`): these callers only ever race the filesystem, never a
 /// second in-app editor, matching the pre-#64 last-write-wins semantics
@@ -2123,9 +1959,7 @@ pub fn read(app: &AppHandle) -> AppSettings {
 /// `AppSettings` so the caller can hand both to
 /// `commands::atlas_config::notify_settings_changed` — without that, an
 /// internal write bumps `ConfigManager`'s generation on disk but the
-/// frontend's mirrored `configGeneration` goes stale, and the live telemetry
-/// gate (`TelemetryClient::enabled`) never re-syncs to a changed
-/// `shareTelemetry`.
+/// frontend's mirrored `configGeneration` goes stale.
 pub fn update(app: &AppHandle, patch: SettingsPatch) -> Result<ConfigSnapshot, ConfigError> {
     let handle = app.state::<AtlasConfigHandle>();
     let mut guard = handle.lock();
@@ -2326,48 +2160,6 @@ mod tests {
         assert!(validate(&AppSettings::default()).is_ok());
     }
 
-    /// ADR-0012: on unless the user switched it off, and a file that predates
-    /// the key reads as on.
-    #[test]
-    fn agent_ui_navigation_is_on_by_default_and_read_from_the_file() {
-        assert!(AppSettings::default().agent_ui_navigation);
-        let (_dir, path) = tmp_config_path();
-        let mgr = ConfigManager::from_raw(
-            path,
-            "schemaVersion = 1\n\n[settings]\nenterToSend = false\n",
-        )
-        .unwrap();
-        assert!(mgr.effective().agent_ui_navigation);
-        let (_dir, path) = tmp_config_path();
-        let mgr = ConfigManager::from_raw(
-            path,
-            "schemaVersion = 1\n\n[settings]\nagentUiNavigation = false\n",
-        )
-        .unwrap();
-        assert!(!mgr.effective().agent_ui_navigation);
-    }
-
-    /// ADR-0014: on unless the user switched it off, and a file that predates
-    /// the key reads as on.
-    #[test]
-    fn agent_org_access_is_on_by_default_and_read_from_the_file() {
-        assert!(AppSettings::default().agent_org_access);
-        let (_dir, path) = tmp_config_path();
-        let mgr = ConfigManager::from_raw(
-            path,
-            "schemaVersion = 1\n\n[settings]\nenterToSend = false\n",
-        )
-        .unwrap();
-        assert!(mgr.effective().agent_org_access);
-        let (_dir, path) = tmp_config_path();
-        let mgr = ConfigManager::from_raw(
-            path,
-            "schemaVersion = 1\n\n[settings]\nagentOrgAccess = false\n",
-        )
-        .unwrap();
-        assert!(!mgr.effective().agent_org_access);
-    }
-
     #[test]
     fn missing_keys_fall_back_to_defaults() {
         let (_dir, path) = tmp_config_path();
@@ -2377,7 +2169,6 @@ mod tests {
         // Every other field is absent from the file — must be the compiled default.
         assert_eq!(mgr.effective().theme, default_theme());
         assert_eq!(mgr.effective().ui_scale, default_ui_scale());
-        assert!(mgr.effective().auto_update);
     }
 
     #[test]
@@ -2573,7 +2364,6 @@ someFutureKey = \"left alone\"
         assert_eq!(settings.theme, "rose-pine");
         assert_eq!(settings.ui_scale, 1.5);
         // Untouched fields keep their compiled defaults.
-        assert!(settings.auto_update);
     }
 
     #[test]
@@ -2727,8 +2517,6 @@ someFutureKey = \"left alone\"
             enable_atlas_logs: Some(!defaults.enable_atlas_logs),
             show_hidden_files: Some(!defaults.show_hidden_files),
             ui_scale: Some(1.5),
-            share_telemetry: Some(!defaults.share_telemetry),
-            link_telemetry_to_account: Some(!defaults.link_telemetry_to_account),
             embedding_model_id: Some("another-model".to_string()),
             theme: Some("dracula".to_string()),
             theme_mode: Some(ThemeMode::Light),
@@ -2748,13 +2536,8 @@ someFutureKey = \"left alone\"
             git_blame_inline: Some(!defaults.git_blame_inline),
             git_auto_fetch: Some(!defaults.git_auto_fetch),
             keep_awake_while_running: Some(!defaults.keep_awake_while_running),
-            auto_update: Some(!defaults.auto_update),
-            curated_plugin_sync: Some(!defaults.curated_plugin_sync),
             instruction_sync: Some(!defaults.instruction_sync),
-            updater_ignored_version: Some(Some("9.9.9".to_string())),
             enter_to_send: Some(!defaults.enter_to_send),
-            agent_ui_navigation: Some(!defaults.agent_ui_navigation),
-            agent_org_access: Some(!defaults.agent_org_access),
             terminal_notifications: Some(!defaults.terminal_notifications),
             terminal_notify_min_duration_ms: Some(defaults.terminal_notify_min_duration_ms + 1),
             terminal_notify_on_failure: Some(!defaults.terminal_notify_on_failure),
@@ -2768,8 +2551,6 @@ someFutureKey = \"left alone\"
             notify_outcome_sound: Some(!defaults.notify_outcome_sound),
             notify_warning_native: Some(!defaults.notify_warning_native),
             notify_warning_sound: Some(!defaults.notify_warning_sound),
-            notify_team_native: Some(!defaults.notify_team_native),
-            notify_team_sound: Some(!defaults.notify_team_sound),
             notify_permission_actions: Some(!defaults.notify_permission_actions),
             notifications_migrated: Some(!defaults.notifications_migrated),
             notify_disabled_kinds: Some(vec![
@@ -3081,13 +2862,13 @@ red = "#ee0000"
     fn a_broken_config_falls_back_to_the_legacy_settings_not_compiled_defaults() {
         let (_dir, path) = tmp_config_path();
         fs::write(&path, "this is not { valid toml").unwrap();
-        let legacy = serde_json::json!({ "shareTelemetry": false, "uiScale": 1.25 });
+        let legacy = serde_json::json!({ "enterToSend": false, "uiScale": 1.25 });
 
         let outcome = bootstrap_at(path, false, Some(legacy));
 
         assert!(!outcome.mark_migrated);
         assert!(
-            !outcome.manager.effective().share_telemetry,
+            !outcome.manager.effective().enter_to_send,
             "the user's opt-out must survive"
         );
         assert_eq!(outcome.manager.effective().ui_scale, 1.25);
@@ -3103,12 +2884,12 @@ red = "#ee0000"
     fn a_broken_config_after_migration_does_not_resurrect_legacy_settings() {
         let (_dir, path) = tmp_config_path();
         fs::write(&path, "this is not { valid toml").unwrap();
-        let legacy = serde_json::json!({ "shareTelemetry": false });
+        let legacy = serde_json::json!({ "enterToSend": false });
 
         let outcome = bootstrap_at(path, true, Some(legacy));
 
         assert!(
-            outcome.manager.effective().share_telemetry,
+            outcome.manager.effective().enter_to_send,
             "a post-migration boot must not read state.json.settings again"
         );
     }
@@ -3297,27 +3078,6 @@ red = "#ee0000"
         assert!(SELF_CONFIGURE_SKILL.contains(CONFIG_FILE_NAME));
     }
 
-    /// A key absent from the generated output (`updaterIgnoredVersion` when
-    /// unset — TOML has no null) must still get its comment into the file,
-    /// carried down onto the next key that IS present. Otherwise the one key
-    /// whose *absence* is meaningful is the one nothing explains.
-    #[test]
-    fn a_key_that_serializes_to_nothing_still_gets_documented() {
-        let rendered = document_for(&AppSettings::default()).to_string();
-        assert!(
-            !rendered.contains("updaterIgnoredVersion ="),
-            "unset means the key is absent, not written as a sentinel"
-        );
-        assert!(
-            rendered.contains("# updaterIgnoredVersion:"),
-            "its comment must survive even though the key didn't"
-        );
-        // Sitting immediately above the key that follows it in field order.
-        let comment_at = rendered.find("# updaterIgnoredVersion:").unwrap();
-        let next_key_at = rendered.find("enterToSend =").unwrap();
-        assert!(comment_at < next_key_at);
-    }
-
     /// The annotated file must still be a valid, loadable config — comments
     /// are decoration, not a second schema.
     #[test]
@@ -3336,5 +3096,23 @@ red = "#ee0000"
             mgr.unknown_keys().is_empty(),
             "comments must not read as unknown keys"
         );
+    }
+    #[test]
+    fn retired_cloud_preferences_are_removed_without_changing_local_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let raw = "schemaVersion = 1\n[settings]\nshareTelemetry = true\nautoUpdate = true\nagentOrgAccess = true\nnotifyTeamNative = true\nenterToSend = false\nsomeFutureKey = 42\n";
+        let manager = ConfigManager::from_raw(path, raw).unwrap();
+        assert!(!manager.effective().enter_to_send);
+        for key in [
+            "shareTelemetry",
+            "autoUpdate",
+            "agentOrgAccess",
+            "notifyTeamNative",
+        ] {
+            assert!(!manager.last_raw.contains(key));
+        }
+        assert!(manager.last_raw.contains("someFutureKey = 42"));
+        assert_eq!(manager.unknown_keys(), &["someFutureKey".to_string()]);
     }
 }

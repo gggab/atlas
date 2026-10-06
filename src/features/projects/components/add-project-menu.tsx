@@ -7,12 +7,11 @@
  * it in `project-sidebar.tsx` would have made `org-switcher.tsx` import from
  * the very module that renders `<OrgSwitcher/>` — a cycle.
  */
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Menu as DropdownMenu } from "@base-ui/react/menu";
 import { Folder, FolderOpen, Plus, Search, Trash2 } from "lucide-react";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { recentsForOrg } from "@/features/app/lib/recent-projects";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+
 import { useProjectStore } from "../stores/project-store";
 import { pickAndAddProject } from "../lib/pick-project";
 import { Hint } from "@/ui/tooltip";
@@ -20,13 +19,9 @@ import { Hint } from "@/ui/tooltip";
 export function AddProjectMenu() {
   const { addProject } = useProjectStore.use.actions();
   const allRecents = useAppStore.use.recentProjects();
-  const activeOrgId = useOrgStore.use.activeOrganisationId();
-  const projects = useProjectStore.use.projects();
+
   // Scoped to the active org — see `recentsForOrg`.
-  const recentProjects = useMemo(
-    () => recentsForOrg(allRecents, projects, activeOrgId),
-    [allRecents, projects, activeOrgId],
-  );
+  const recentProjects = allRecents;
   const { clearRecents } = useAppStore.use.actions();
   const [query, setQuery] = useState("");
   const filtered = recentProjects.filter(

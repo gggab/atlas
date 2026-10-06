@@ -38,18 +38,14 @@ import {
   FolderGit2,
   GitBranch,
   Hash,
-  Layers,
   MessageSquare,
-  MessageSquareQuote,
-  MessagesSquare,
   Scale,
   SquareSlash,
-  User,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { shortPath } from "@/lib/paths";
-import { timeAgo } from "@/lib/time-ago";
+
 import { Kbd } from "@/ui/kbd";
 
 import {
@@ -66,7 +62,7 @@ import {
 } from "@/features/chat/lib/mentions";
 import { SKILLS_CHANGED_EVENT } from "@/features/skills/lib/skills-events";
 import { useRecentFilesStore, type RecentFile } from "@/features/chat/stores/recent-files-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
+
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
 import { activeProjectId } from "@/features/projects/lib/active-project";
 
@@ -158,7 +154,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
     // Project mentions are scoped to the active org (see `searchProjects`).
     // Subscribe so switching orgs re-runs the search and the list reflects the
     // new org's projects even while the picker stays mounted.
-    const activeOrganisationId = useOrgStore.use.activeOrganisationId();
+
     const [scope, setScope] = useState<MentionKind | null>(initialScope ?? null);
     /** When scope === "past_message" and no `pastSession` is locked, the
      *  picker shows a sessions list (level 1). Once `pastSession` is set,
@@ -235,18 +231,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
       }
 
       return () => controller.abort();
-    }, [
-      open,
-      query,
-      scope,
-      pastSession,
-      projectPath,
-      agentId,
-      tabId,
-      excludeIds,
-      indexNonce,
-      activeOrganisationId,
-    ]);
+    }, [open, query, scope, pastSession, projectPath, agentId, tabId, excludeIds, indexNonce]);
 
     // Reset the keyboard cursor to the top ONLY when the user changes what
     // they're looking at (query/scope/session) — NOT when results merely
@@ -430,7 +415,7 @@ export const MentionPicker = forwardRef<MentionPickerHandle, MentionPickerProps>
         for (const cat of MENTION_CATEGORIES) {
           // Comments belong to a chat's recorded session; a surface with no
           // chat tab (the notes editor) has none to offer.
-          if (cat.kind === "comment" && !tabId) continue;
+
           out.push({ type: "category", cat });
         }
       }
@@ -891,14 +876,6 @@ function CategoryIcon({ kind }: { kind: MentionKind }) {
     // Organisation kinds reuse the icons their surfaces already use: the
     // commit avatar's person, the comms panel's conversations, the Timeline
     // tab's layers — so a recorded session never looks like a past session.
-    case "member":
-      return <User size={size} />;
-    case "conversation":
-      return <MessagesSquare size={size} />;
-    case "recorded_session":
-      return <Layers size={size} />;
-    case "comment":
-      return <MessageSquareQuote size={size} />;
   }
 }
 
@@ -936,25 +913,6 @@ function secondaryLabel(m: MentionData): string {
       return m.sessionTitle;
     case "past_session":
       return "session transcript";
-    case "member":
-      return m.email;
-    case "conversation":
-      return m.conversationKind === "channel"
-        ? "channel"
-        : m.conversationKind === "group_dm"
-          ? "group DM"
-          : "direct message";
-    case "recorded_session":
-      return "recorded session · Timeline";
-    case "comment":
-      return [
-        m.parentId ? "reply" : "comment",
-        `on ${m.anchorLabel}`,
-        timeAgo(m.createdAt, { suffix: true }),
-        m.resolved ? "resolved" : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
   }
 }
 
@@ -980,11 +938,7 @@ function emptyStateCopy(args: {
       ? `No user messages matching "${args.query}".`
       : "No user messages in this session.";
   }
-  if (args.scope === "comment") {
-    return args.query
-      ? `No comments matching "${args.query}".`
-      : "No comments on this session yet — comments appear once it is in the cloud.";
-  }
+
   if (args.scope) {
     const label = MENTION_CATEGORIES.find((c) => c.kind === args.scope)?.label ?? args.scope;
     return args.query
@@ -1018,13 +972,5 @@ function mentionTitle(m: MentionData): string {
       return m.content;
     case "past_session":
       return m.sessionTitle;
-    case "member":
-      return `${m.displayName} <${m.email}>`;
-    case "conversation":
-      return m.displayName;
-    case "recorded_session":
-      return `Recorded session ${m.sessionId}`;
-    case "comment":
-      return `${m.authorName}: ${m.body}`;
   }
 }

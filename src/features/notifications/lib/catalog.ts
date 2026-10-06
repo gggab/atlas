@@ -6,7 +6,7 @@
  *
  * Each entry names:
  *  - its urgency `tier` — `needs-you` (blocked on the user), `outcome` (work
- *    finished or failed), `warning` (something degraded), `team` (Chat);
+ *    finished or failed), `warning` (something degraded);
  *  - the `channels` it may use (each still gated by environment and prefs);
  *  - its `sound` (a system sound for the OS banner; the in-app chime when the
  *    banner is not shown);
@@ -16,10 +16,10 @@
  *
  * Pure — no store, Tauri or DOM imports.
  */
-export type NotificationTier = "needs-you" | "outcome" | "warning" | "team";
+export type NotificationTier = "needs-you" | "outcome" | "warning";
 
 /** Which subsystem raised it — drives the center's icon and click routing. */
-export type NotificationSource = "agent" | "terminal" | "app" | "chat";
+export type NotificationSource = "agent" | "terminal" | "app";
 
 export type NotificationChannel = "center" | "toast" | "native" | "badge" | "sound";
 
@@ -54,8 +54,7 @@ export type NotificationSettingsSection = (typeof NOTIFICATION_SETTINGS_SECTIONS
 export const isNotificationSettingsSection = (s: unknown): s is NotificationSettingsSection =>
   (NOTIFICATION_SETTINGS_SECTIONS as readonly unknown[]).includes(s);
 
-/** What a notification is about — where "Open" jumps, and the owner used to
- *  filter by organisation. */
+/** What a local notification is about and where "Open" jumps. */
 export type NotificationTarget =
   | {
       type: "terminal";
@@ -74,14 +73,10 @@ export type NotificationTarget =
       orgId?: string;
     }
   // App-level targets own no tab: they open a sign-in surface.
-  /** Atlas itself is signed out — opens the connect dialog. */
-  | { type: "atlas-sign-in" }
+
   /** One agent needs credentials — opens that agent's sign-in dialog. */
   | { type: "agent-sign-in"; agentType: string }
-  /** A Chat conversation (DM, group DM or channel) — opens it in the Chat panel. */
-  | { type: "chat-conversation"; convId: string; orgId?: string }
-  /** An update is staged — opens the "Restart to update" prompt. */
-  | { type: "app-update" }
+
   /** A Settings section (the model download's and agent update's homes). */
   | { type: "settings"; section: NotificationSettingsSection }
   /** `config.toml` itself — opens it in the OS editor. */
@@ -105,14 +100,10 @@ export const targetGroupKey = (t: NotificationTarget): string => {
       return `terminal:${t.terminalId}`;
     case "session":
       return `session:${t.sessionId ?? t.tabId}`;
-    case "atlas-sign-in":
-      return "atlas-sign-in";
+
     case "agent-sign-in":
       return `agent-sign-in:${t.agentType}`;
-    case "chat-conversation":
-      return `chat:${t.convId}`;
-    case "app-update":
-      return "app-update";
+
     case "settings":
       return `settings:${t.section}`;
     case "git-panel":
@@ -231,40 +222,11 @@ export const NOTIFICATION_CATALOG = {
     toast: { variant: "error", durationMs: ATTENTION_TOAST_MS },
     groupKey: targetGroupKey,
   },
-  "atlas-signed-out": {
-    label: "Atlas signed out",
-    locked: true,
-    tier: "needs-you",
-    source: "app",
-    channels: ALL_CHANNELS,
-    whenLooking: "record",
-    sound: { native: "Ping" },
-    toast: { variant: "error", durationMs: ATTENTION_TOAST_MS },
-    groupKey: targetGroupKey,
-  },
+
   // Chat (ATL-387): a DM / group DM message, or an @mention in a channel.
   // Nothing to say while the conversation is on screen and being looked at.
   // Muting does not exist in the Chat model, so there is nothing to honour yet.
-  "chat-dm": {
-    label: "Direct messages",
-    tier: "team",
-    source: "chat",
-    channels: ALL_CHANNELS,
-    whenLooking: "drop",
-    sound: { native: "Ping" },
-    toast: { variant: "default", durationMs: ATTENTION_TOAST_MS },
-    groupKey: targetGroupKey,
-  },
-  "chat-mention": {
-    label: "Mentions",
-    tier: "team",
-    source: "chat",
-    channels: ALL_CHANNELS,
-    whenLooking: "drop",
-    sound: { native: "Ping" },
-    toast: { variant: "default", durationMs: ATTENTION_TOAST_MS },
-    groupKey: targetGroupKey,
-  },
+
   // Degradation warnings (ATL-385): quiet by design — no sound, and the OS
   // banner is off in the default warning-tier switches.
   "agent-context-warning": {
@@ -301,16 +263,7 @@ export const NOTIFICATION_CATALOG = {
   // Outcome-tier app events (ATL-384): downloads and git remote operations.
   // The update prompt opens by itself on a live "ready", so the toast is the
   // way back to it (with Restart) once dismissed; no sound — nothing is urgent.
-  "app-update-ready": {
-    label: "Update ready",
-    tier: "outcome",
-    source: "app",
-    channels: ALL_CHANNELS,
-    whenLooking: "record",
-    sound: null,
-    toast: { variant: "default", durationMs: ATTENTION_TOAST_MS },
-    groupKey: targetGroupKey,
-  },
+
   "model-download-done": {
     label: "Model downloaded",
     tier: "outcome",

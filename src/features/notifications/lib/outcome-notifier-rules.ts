@@ -24,23 +24,6 @@ export const GIT_SUCCESS_MIN_MS = 10_000;
 const ERROR_MAX = 160;
 
 /** The update prompt shows once per version; `last` is what was announced before. */
-export const shouldNotifyUpdate = (last: string | null, version: string): boolean =>
-  !!version && last !== version;
-
-export function decideUpdateReady(
-  version: string,
-  env: NotificationEnv,
-  prefs: NotificationPrefs,
-): NotificationDecision | null {
-  const event: NotificationEvent = {
-    kind: "app-update-ready",
-    title: version ? `Atlas ${version} is ready` : "An Atlas update is ready",
-    body: "Restart to finish updating.",
-    target: { type: "app-update" },
-    dedupeKey: `update:${version}`,
-  };
-  return decideNotification(event, env, prefs);
-}
 
 export interface ModelDownloadResult {
   id: string;

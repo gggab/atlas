@@ -158,13 +158,7 @@ export const ACTIONS = [
     when: "global",
     defaults: ["cmd+shift+b"],
   },
-  {
-    id: "panels.teamChat",
-    title: "Toggle team chat",
-    category: "Panels",
-    when: "global",
-    defaults: ["cmd+shift+c"],
-  },
+
   {
     id: "panels.terminal",
     title: "Toggle terminal",

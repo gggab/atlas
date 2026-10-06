@@ -16,8 +16,6 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::commands::org_server::OrgLink;
-
 /// Cap how much body content a single mention can dump into the
 /// context block. Tuned for chat agents: ~32 KB is enough for a
 /// medium source file.
@@ -123,66 +121,6 @@ pub enum MentionSpec {
         #[serde(default)]
         inline_body: Option<String>,
     },
-    /// A member of the chat's organisation, referenced with `@member:<name>`.
-    /// Rides as an organisation link carrying the user id
-    /// (`atlas-org://member/<user id>`), which the org tools take wherever
-    /// they take a member — so "send it to @Grace" needs no name resolution.
-    /// No body: the id is the payload.
-    Member {
-        /// The member's user id (never the membership id).
-        id: String,
-        display_name: String,
-    },
-    /// A channel, DM or group DM, referenced with `@conversation:<name>`;
-    /// rides as `atlas-org://conversation/<id>`.
-    Conversation {
-        id: String,
-        display_name: String,
-    },
-    /// A **recorded session** on the Workspace's board (the Timeline),
-    /// referenced with `@recorded-session:<title>`; rides as
-    /// `atlas-org://recorded-session/<Workspace id>/<session id>`.
-    ///
-    /// Not a [`MentionSpec::PastSession`]: that is a local transcript, read
-    /// from this disk and inlined; this is the organisation's record, which
-    /// the org tools read by id. The two never share a tag, a short form, a
-    /// dedupe key or a link.
-    RecordedSession {
-        /// The session id — the same on the board and on the server.
-        id: String,
-        display_name: String,
-        /// The server's Workspace id the session is recorded in.
-        workspace_id: String,
-    },
-    /// A **comment** on a recorded session, referenced with
-    /// `@comment:<author: excerpt>` — linked by the user so the agent attends
-    /// to it. Rides as `atlas-org://comment/<Workspace id>/<session id>/<comment
-    /// id>`, which the comment tools take as their `comment`, AND as a small
-    /// context block quoting it: the user pointed at these words, so the agent
-    /// should not need a tool call to learn what they say.
-    Comment {
-        /// The comment id.
-        id: String,
-        display_name: String,
-        /// The server Workspace (Project) id the session is recorded in.
-        workspace_id: String,
-        /// The recorded session the comment is on.
-        session_id: String,
-        /// Who wrote it, as the roster names them.
-        #[serde(default)]
-        author_name: Option<String>,
-        /// The comment's text as the user saw it when linking it.
-        #[serde(default)]
-        body: Option<String>,
-        /// What it hangs off — "the session", "a prompt", "a Bash call".
-        #[serde(default)]
-        anchor_label: Option<String>,
-        /// Set when it is a reply; `id` of the thread's first comment.
-        #[serde(default)]
-        parent_id: Option<String>,
-        #[serde(default)]
-        resolved: bool,
-    },
 }
 
 impl MentionSpec {
@@ -198,11 +136,7 @@ impl MentionSpec {
             | MentionSpec::Paper { id, .. }
             | MentionSpec::Branch { id, .. }
             | MentionSpec::PastMessage { id, .. }
-            | MentionSpec::PastSession { id, .. }
-            | MentionSpec::Member { id, .. }
-            | MentionSpec::Conversation { id, .. }
-            | MentionSpec::RecordedSession { id, .. }
-            | MentionSpec::Comment { id, .. } => id,
+            | MentionSpec::PastSession { id, .. } => id,
         }
     }
 
@@ -235,14 +169,6 @@ impl MentionSpec {
             MentionSpec::PastSession { display_name, .. } => {
                 format!("@session:{}", v(display_name))
             }
-            MentionSpec::Member { display_name, .. } => format!("@member:{}", v(display_name)),
-            MentionSpec::Conversation { display_name, .. } => {
-                format!("@conversation:{}", v(display_name))
-            }
-            MentionSpec::RecordedSession { display_name, .. } => {
-                format!("@recorded-session:{}", v(display_name))
-            }
-            MentionSpec::Comment { display_name, .. } => format!("@comment:{}", v(display_name)),
         }
     }
 }
@@ -318,39 +244,9 @@ fn mention_path(m: &MentionSpec) -> Option<&str> {
     }
 }
 
-/// The organisation link a mention rides as, when it is an organisation
-/// mention ([`OrgLink`], the one definition the org tools also parse).
-fn mention_org_link(m: &MentionSpec) -> Option<OrgLink> {
-    match m {
-        MentionSpec::Member { id, .. } => Some(OrgLink::Member {
-            user_id: id.clone(),
-        }),
-        MentionSpec::Conversation { id, .. } => Some(OrgLink::Conversation { id: id.clone() }),
-        MentionSpec::RecordedSession {
-            id, workspace_id, ..
-        } => Some(OrgLink::RecordedSession {
-            workspace_id: workspace_id.clone(),
-            session_id: id.clone(),
-        }),
-        MentionSpec::Comment {
-            id,
-            workspace_id,
-            session_id,
-            ..
-        } => Some(OrgLink::Comment {
-            workspace_id: workspace_id.clone(),
-            session_id: session_id.clone(),
-            comment_id: id.clone(),
-        }),
-        _ => None,
-    }
-}
-
 /// The URI a mention rides as, when it has one.
 fn mention_uri(m: &MentionSpec) -> Option<String> {
-    mention_path(m)
-        .map(file_uri)
-        .or_else(|| mention_org_link(m).map(|link| link.uri()))
+    mention_path(m).map(file_uri)
 }
 
 #[tauri::command]
@@ -567,79 +463,7 @@ fn render_block(m: &MentionSpec) -> Option<String> {
             ))
         }
         MentionSpec::Branch { .. } => None,
-        // Organisation mentions carry ids only: the link is the whole
-        // payload, and the org tools read what it names on demand.
-        MentionSpec::Member { .. }
-        | MentionSpec::Conversation { .. }
-        | MentionSpec::RecordedSession { .. } => None,
-        MentionSpec::Comment {
-            id,
-            session_id,
-            author_name,
-            body,
-            anchor_label,
-            parent_id,
-            resolved,
-            ..
-        } => Some(render_comment_block(
-            &m.short_form(),
-            id,
-            session_id,
-            author_name.as_deref(),
-            body.as_deref(),
-            anchor_label.as_deref(),
-            parent_id.as_deref(),
-            *resolved,
-        )),
     }
-}
-
-/// The block a linked comment contributes: who said what, on what, and that
-/// the user wants it attended to. The link beside it is how the agent acts on
-/// the thread (read its replies, reply, resolve) through the comment tools.
-#[allow(clippy::too_many_arguments)]
-fn render_comment_block(
-    short_form: &str,
-    comment_id: &str,
-    session_id: &str,
-    author: Option<&str>,
-    body: Option<&str>,
-    anchor: Option<&str>,
-    parent_id: Option<&str>,
-    resolved: bool,
-) -> String {
-    let author = author
-        .filter(|a| !a.trim().is_empty())
-        .unwrap_or("A teammate");
-    let kind = if parent_id.is_some() {
-        "reply"
-    } else {
-        "comment"
-    };
-    let on = anchor
-        .filter(|a| !a.trim().is_empty())
-        .map(|a| format!(" on {a}"))
-        .unwrap_or_default();
-    let state = if resolved { " (thread resolved)" } else { "" };
-    let quoted = body
-        .map(str::trim)
-        .filter(|b| !b.is_empty())
-        .map(|b| {
-            clip_body(b)
-                .lines()
-                .map(|line| format!("> {line}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_else(|| "> (comment text unavailable)".to_string());
-    format!(
-        "## {short_form}\n\n\
-         The user linked this {kind} from recorded session `{session_id}` and wants you to \
-         pay attention to it. **{author}** wrote{on}{state}:\n\n{quoted}\n\n\
-         Its id is `{comment_id}`; the organisation comment tools (`org_comments`, \
-         `org_comment_reply`, `org_comment_resolve`) accept that id or its \
-         `atlas-org://comment/…` link if you need the rest of the thread or to act on it."
-    )
 }
 
 /// Read a component markdown file (`command`/`agent`/`rule`) and return just
@@ -827,224 +651,6 @@ mod resource_link_tests {
         ] {
             assert_eq!(file_uri(path), format!("file://{path}"), "{path}");
         }
-    }
-}
-
-#[cfg(test)]
-mod org_mention_tests {
-    use super::*;
-
-    fn spec(value: serde_json::Value) -> MentionSpec {
-        serde_json::from_value(value).expect("the frontend's mention shape")
-    }
-
-    fn member() -> serde_json::Value {
-        serde_json::json!({ "kind": "member", "id": "u-grace", "displayName": "Grace Hopper", "email": "grace@acme.dev" })
-    }
-
-    fn conversation() -> serde_json::Value {
-        serde_json::json!({ "kind": "conversation", "id": "c-general", "displayName": "general", "conversationKind": "channel" })
-    }
-
-    fn recorded() -> serde_json::Value {
-        serde_json::json!({
-            "kind": "recorded_session",
-            "id": "rs-1",
-            "displayName": "Fix the theme importer",
-            "sessionId": "rs-1",
-            "workspaceId": "ws-atlas",
-        })
-    }
-
-    fn links(composed: &ComposedPrompt) -> Vec<(String, String)> {
-        composed
-            .resource_links
-            .iter()
-            .map(|l| (l.uri.clone(), l.name.clone()))
-            .collect()
-    }
-
-    fn comment() -> serde_json::Value {
-        serde_json::json!({
-            "kind": "comment",
-            "id": "cm-7",
-            "displayName": "Grace: this retry loop never backs off",
-            "workspaceId": "ws-atlas",
-            "sessionId": "rs-1",
-            "authorName": "Grace Hopper",
-            "body": "this retry loop never backs off\nsee line 40",
-            "anchorLabel": "a Bash call",
-            "parentId": null,
-            "resolved": false,
-        })
-    }
-
-    /// A linked comment rides as a link the comment tools read AND quotes its
-    /// words, so the agent sees what the user pointed at without a tool call.
-    #[tokio::test]
-    async fn a_linked_comment_rides_as_a_link_and_quotes_what_it_says() {
-        let composed = compose_prompt("look at this".into(), vec![spec(comment())])
-            .await
-            .unwrap();
-        assert_eq!(
-            links(&composed),
-            [(
-                "atlas-org://comment/ws-atlas/rs-1/cm-7".to_string(),
-                "@comment:\"Grace: this retry loop never backs off\"".to_string(),
-            )],
-        );
-        assert_eq!(
-            OrgLink::parse(&composed.resource_links[0].uri),
-            Some(OrgLink::Comment {
-                workspace_id: "ws-atlas".into(),
-                session_id: "rs-1".into(),
-                comment_id: "cm-7".into(),
-            }),
-        );
-        let prose = &composed.prose;
-        assert!(
-            prose.starts_with("look at this\n\n---\n# Atlas context"),
-            "{prose}"
-        );
-        assert!(
-            prose.contains("**Grace Hopper** wrote on a Bash call:"),
-            "{prose}"
-        );
-        assert!(
-            prose.contains("> this retry loop never backs off\n> see line 40"),
-            "{prose}"
-        );
-        assert!(prose.contains("`cm-7`"), "{prose}");
-    }
-
-    #[test]
-    fn a_linked_reply_says_so_and_a_resolved_thread_is_marked() {
-        let block = render_comment_block(
-            "@comment:x",
-            "cm-8",
-            "rs-1",
-            None,
-            None,
-            None,
-            Some("cm-7"),
-            true,
-        );
-        assert!(block.contains("linked this reply"), "{block}");
-        assert!(
-            block.contains("**A teammate** wrote (thread resolved):"),
-            "{block}"
-        );
-        assert!(block.contains("> (comment text unavailable)"), "{block}");
-    }
-
-    #[tokio::test]
-    async fn organisation_mentions_ride_as_links_carrying_their_ids_with_a_short_label() {
-        let composed = compose_prompt(
-            "send it to them".into(),
-            vec![spec(member()), spec(conversation()), spec(recorded())],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            links(&composed),
-            [
-                (
-                    "atlas-org://member/u-grace".to_string(),
-                    "@member:\"Grace Hopper\"".to_string()
-                ),
-                (
-                    "atlas-org://conversation/c-general".to_string(),
-                    "@conversation:general".to_string()
-                ),
-                (
-                    "atlas-org://recorded-session/ws-atlas/rs-1".to_string(),
-                    "@recorded-session:\"Fix the theme importer\"".to_string(),
-                ),
-            ],
-        );
-        assert_eq!(
-            composed.prose, "send it to them",
-            "ids only: nothing is inlined"
-        );
-    }
-
-    /// The links compose_prompt writes are the links the org tools read.
-    #[tokio::test]
-    async fn every_link_it_writes_parses_back_to_the_id_it_carries() {
-        let composed = compose_prompt(
-            String::new(),
-            vec![spec(member()), spec(conversation()), spec(recorded())],
-        )
-        .await
-        .unwrap();
-        let parsed: Vec<Option<OrgLink>> = composed
-            .resource_links
-            .iter()
-            .map(|l| OrgLink::parse(&l.uri))
-            .collect();
-        assert_eq!(
-            parsed,
-            [
-                Some(OrgLink::Member {
-                    user_id: "u-grace".into()
-                }),
-                Some(OrgLink::Conversation {
-                    id: "c-general".into()
-                }),
-                Some(OrgLink::RecordedSession {
-                    workspace_id: "ws-atlas".into(),
-                    session_id: "rs-1".into()
-                }),
-            ],
-        );
-    }
-
-    /// A recorded session and a local past session are different things, even
-    /// with the same id: the past session is inlined as a transcript and gets
-    /// no link; the recorded session is a link and inlines nothing.
-    #[tokio::test]
-    async fn a_recorded_session_and_a_past_session_are_never_conflated() {
-        let past = spec(serde_json::json!({
-            "kind": "past_session",
-            "id": "rs-1",
-            "displayName": "Fix the theme importer",
-            "sessionTitle": "Fix the theme importer",
-            "inlineBody": "### User\nfix it",
-        }));
-        let composed = compose_prompt("compare".into(), vec![spec(recorded()), past])
-            .await
-            .unwrap();
-        assert_eq!(
-            links(&composed),
-            [(
-                "atlas-org://recorded-session/ws-atlas/rs-1".to_string(),
-                "@recorded-session:\"Fix the theme importer\"".to_string(),
-            )],
-            "only the recorded session is a link",
-        );
-        assert!(
-            composed
-                .prose
-                .contains("## @session:\"Fix the theme importer\""),
-            "{}",
-            composed.prose
-        );
-        assert!(
-            composed.prose.contains("fix it"),
-            "the past session's transcript is still inlined"
-        );
-        assert!(
-            !composed.prose.contains("@recorded-session"),
-            "the recorded session inlines nothing"
-        );
-    }
-
-    #[tokio::test]
-    async fn the_same_member_twice_is_one_link() {
-        let composed = compose_prompt(String::new(), vec![spec(member()), spec(member())])
-            .await
-            .unwrap();
-        assert_eq!(composed.resource_links.len(), 1);
     }
 }
 

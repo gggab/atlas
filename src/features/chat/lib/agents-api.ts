@@ -12,7 +12,6 @@ import type { AgentCatalog, CatalogChangeReason } from "@/types/agent-catalog";
 import type {
   AgentStreamEvent,
   ImageAttachment,
-  NativeModelsRefresh,
   SessionKey,
   SessionInit,
   SessionMessage,
@@ -169,7 +168,6 @@ export const agents = {
       content,
     }),
   /** Branch a session from its current state (P3.4). Null when unsupported. */
-  forkSession: (key: SessionKey) => invoke<string | null>("agents_fork_session", { key }),
   /** Rewind the last exchange, resolving to the prompt that started it — or
    *  `null` when there is nothing to rewind, or the agent is an ACP one (no
    *  rewind verb exists in ACP's session capabilities). The caller re-sends
@@ -188,13 +186,6 @@ export const agents = {
   setMode: (key: SessionKey, modeId: string) => invoke<void>("agents_set_mode", { key, modeId }),
   setModel: (key: SessionKey, modelId: string) =>
     invoke<void>("agents_set_model", { key, modelId }),
-  /** Re-fetch the native agent's model list from the gateway (ADR-0007). The
-   *  picker's Refresh. May restart the native connection — see the result's
-   *  `reconnected`. */
-  refreshNativeModels: () => invoke<NativeModelsRefresh>("native_agent_refresh_models"),
-  setEffort: (key: SessionKey, effort: string) =>
-    invoke<void>("agents_set_effort", { key, effort }),
-
   respondPermission: (
     agentId: AgentId,
     sessionId: AcpSessionId,

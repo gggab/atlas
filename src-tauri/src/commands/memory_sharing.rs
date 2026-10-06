@@ -4,10 +4,10 @@
 //! `plans.rs` / `canvas.rs` convention):
 //!   - `.atlas/memory-sharing.json`     → `{ "enabled": bool }` (default true).
 //!     Gates everything: whether a session is handed the memory tool server,
-//!     whether its deltas are captured, whether the extractor runs.
+//!     whether its deltas are captured.
 //!   - `.atlas/memory-summarizer.json`  → [`SummarizerPref`], the model that
-//!     summarises the recent-session handoff `memory_briefing` serves, and
-//!     that routes the extractor.
+//!     summarises the recent-session handoff `memory_briefing` serves,
+//!     served through MCP.
 //!
 //! [`MemorySharingState`] is the write-through cache of the toggle, so the
 //! send path and the server's gate never read a file per call.
@@ -31,10 +31,8 @@ const DEFAULT_ENABLED: bool = true;
 /// default), `"provider"` (BYOK one-shot summary), or `"local"` (Phase 5 —
 /// shown in the UI but currently falls back to raw).
 ///
-/// The same preference picks the extractor's model
-/// (`super::memory_extract::route_for`): `provider` → this BYOK provider and
-/// model; `local` → no extraction (reserved); anything else (`raw`, the
-/// default, or `gateway`) → the Atlas gateway when signed in.
+/// This preference is only for the optional existing BYOK handoff summary.
+/// Automatic memory extraction and Atlas gateway calls are removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SummarizerPref {

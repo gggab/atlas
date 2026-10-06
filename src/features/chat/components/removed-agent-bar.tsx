@@ -1,6 +1,6 @@
 import { ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { NATIVE_AGENT_ID, pluginIdForAgent } from "@/types/agent";
+import { pluginIdForAgent } from "@/types/agent";
 import { agentMeta, catalogEntry } from "@/features/agents/lib/agent-meta";
 import { useAgentRegistryStore } from "@/features/agents/stores/agent-registry-store";
 import { useChatStore } from "../stores/chat-store";
@@ -26,9 +26,7 @@ export function RemovedAgentBar({ tabId }: { tabId: string }) {
   // first-party branding while still being uninstallable.
   const pluginId = pluginIdForAgent(agentType);
   const removed =
-    pluginId !== pluginIdForAgent(NATIVE_AGENT_ID) &&
-    useAgentRegistryStore.getState().catalog.length > 0 &&
-    !catalogEntry(pluginId)?.installed;
+    useAgentRegistryStore.getState().catalog.length > 0 && !catalogEntry(pluginId)?.installed;
   if (!removed) return null;
 
   return (

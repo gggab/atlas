@@ -31,15 +31,13 @@ export interface AppNotification {
   tabId?: string;
   /** Terminal source: the layout terminal id inside `tabId`. */
   terminalId?: string;
-  /** Owning project and organisation. Items are kept for every org and
-   *  FILTERED by the active one at render (`visibleItems`); an untagged item
-   *  is visible everywhere. */
+  /** Owning project; orgId is retained only as historical attribution. */
   projectId?: string;
   orgId?: string;
   /** The originating agent (agent kinds) — resolved to its icon by the
    *  registry-aware agent glyph. Absent on items from before it was stored. */
   agentType?: string;
-  /** App-level target (a sign-in surface, a Chat conversation) for items that
+  /** App-level target (vendor sign-in or local settings) for items that
    *  own no tab. */
   target?: Exclude<NotificationTarget, TabTarget>;
   read: boolean;
@@ -50,26 +48,17 @@ export type NewNotification = Omit<AppNotification, "id" | "timestamp" | "read">
 
 const MAX_ITEMS = 200;
 
-/** The active organisation's items. Untagged items (agent items before they
- *  carried an org) show everywhere. */
-export function visibleItems(items: AppNotification[], orgId: string | null): AppNotification[] {
-  if (!orgId) return items;
-  return items.filter((i) => !i.orgId || i.orgId === orgId);
-}
-
 export function hasUnread(
   items: AppNotification[],
-  orgId: string | null,
   pred: (i: AppNotification) => boolean = () => true,
 ): boolean {
-  return items.some((i) => !i.read && (!orgId || !i.orgId || i.orgId === orgId) && pred(i));
+  return items.some((i) => !i.read && pred(i));
 }
 
 const ERROR_KINDS: ReadonlySet<NotificationKind> = new Set([
   "agent-failed",
   "agent-disconnected",
   "terminal-failed",
-  "atlas-signed-out",
   "agent-sign-in",
   "model-download-failed",
   "git-op-failed",
@@ -94,16 +83,15 @@ interface NotificationsState {
     markKindRead: (kind: NotificationKind, match?: (i: AppNotification) => boolean) => void;
     /** Mark every unread item the predicate accepts as read. */
     markReadWhere: (match: (i: AppNotification) => boolean) => void;
-    /** Opening marks the VISIBLE items read — pass the active org so a look at
-     *  org A's panel does not clear org B's unread state. */
-    open: (orgId?: string | null) => void;
+    /** Opening marks the local notification list read. */
+    open: () => void;
     close: () => void;
-    toggle: (orgId?: string | null) => void;
+    toggle: () => void;
   };
 }
 
-const markVisibleRead = (items: AppNotification[], orgId?: string | null) =>
-  items.map((i) => (i.read || (orgId && i.orgId && i.orgId !== orgId) ? i : { ...i, read: true }));
+const markVisibleRead = (items: AppNotification[]) =>
+  items.map((i) => (i.read ? i : { ...i, read: true }));
 
 /** Keep only well-formed items of kinds that still exist — a persisted list
  *  outlives the code that wrote it. */
@@ -131,10 +119,7 @@ function isAppTarget(t: unknown): t is NonNullable<AppNotification["target"]> {
   if (!t || typeof t !== "object") return false;
   const r = t as Record<string, unknown>;
   return (
-    r.type === "atlas-sign-in" ||
     (r.type === "agent-sign-in" && typeof r.agentType === "string" && !!r.agentType) ||
-    (r.type === "chat-conversation" && typeof r.convId === "string" && !!r.convId) ||
-    r.type === "app-update" ||
     (r.type === "settings" && isNotificationSettingsSection(r.section)) ||
     r.type === "config-file" ||
     (r.type === "git-panel" && typeof r.projectId === "string" && !!r.projectId)
@@ -181,14 +166,13 @@ export const useNotificationsStore = createSelectors(
             set((s) => ({
               items: s.items.map((i) => (!i.read && match(i) ? { ...i, read: true } : i)),
             })),
-          open: (orgId) =>
-            set((s) => ({ panelOpen: true, items: markVisibleRead(s.items, orgId) })),
+          open: () => set((s) => ({ panelOpen: true, items: markVisibleRead(s.items) })),
           close: () => set({ panelOpen: false }),
-          toggle: (orgId) =>
+          toggle: () =>
             set((s) =>
               s.panelOpen
                 ? { panelOpen: false }
-                : { panelOpen: true, items: markVisibleRead(s.items, orgId) },
+                : { panelOpen: true, items: markVisibleRead(s.items) },
             ),
         },
       }),

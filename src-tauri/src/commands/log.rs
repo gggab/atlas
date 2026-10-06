@@ -1,62 +1,68 @@
-//! The activity log's on-disk half.
-//!
-//! Two files, and the split matters. A **project** log lives inside the project
-//! (`<project>/.atlas/logs.jsonl`), so it is already scoped to exactly one
-//! Organisation by construction — a project belongs to one. The **pinned** log
-//! is the one that was global: a single `~/.atlas/log/pinned.jsonl` mixing every
-//! org's kept entries into one list, which is what made the console a global
-//! surface in an app whose every other surface is per-org.
-//!
-//! It is now `~/.atlas/log/orgs/<org>/pinned.jsonl`, with the legacy file
-//! adopted by the first org that asks for it (see [`pinned_path`]) so nothing
-//! anyone pinned before this change is lost.
-
+//! Local activity logs. Project streams stay in `.atlas/logs.jsonl`.
+//! Pins from former organisation folders are copied into the local pin file once;
+//! original files are retained so migration never discards historical data.
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// Directory holding one org's log files.
-fn org_log_dir(org: &str) -> Result<PathBuf, String> {
+fn pinned_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    let root = atlas_profile::dir_in(&home).join("log");
-    // An org id is a UUID we minted, but it arrives from the renderer — so
-    // treat it as untrusted and refuse anything that could climb out of the log
-    // directory rather than trusting the caller.
-    if org.is_empty() || org.contains(['/', '\\']) || org.contains("..") {
-        return Err("invalid organisation id".into());
-    }
-    Ok(root.join("orgs").join(org))
+    local_pinned_path(&atlas_profile::dir_in(&home).join("log"))
 }
 
-/// Where the pre-org global pinned log lived.
-fn legacy_pinned_path() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or_else(|| "no home dir".to_string())?;
-    Ok(atlas_profile::dir_in(&home)
-        .join("log")
-        .join("pinned.jsonl"))
-}
-
-/// This org's pinned log, adopting the legacy global file if it has not been
-/// claimed yet.
-///
-/// The adoption is a **move**, not a copy, and it is first-come: whichever org
-/// is active the first time the console opens after upgrading inherits the old
-/// pins. Copying into every org instead would duplicate each entry N times,
-/// and dropping them would silently discard the one thing in this feature the
-/// user explicitly asked to keep.
-fn pinned_path(org: &str) -> Result<PathBuf, String> {
-    let dir = org_log_dir(org)?;
-    let path = dir.join("pinned.jsonl");
-    if !path.exists() {
-        if let Ok(legacy) = legacy_pinned_path() {
-            if legacy.exists() {
-                fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-                // A failed rename is not fatal — the caller just starts empty.
-                let _ = fs::rename(&legacy, &path);
+fn local_pinned_path(root: &Path) -> Result<PathBuf, String> {
+    let target = root.join("pinned.jsonl");
+    let marker = root.join("local-pins-migrated");
+    if !marker.exists() {
+        let mut body = if target.exists() {
+            fs::read_to_string(&target).map_err(|e| e.to_string())?
+        } else {
+            String::new()
+        };
+        let orgs = root.join("orgs");
+        if orgs.exists() {
+            let mut paths = Vec::new();
+            for entry in fs::read_dir(&orgs).map_err(|e| e.to_string())? {
+                let entry = entry.map_err(|e| e.to_string())?;
+                // Only real directories below the legacy log root; never follow symlinks.
+                if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+                    let path = entry.path().join("pinned.jsonl");
+                    if path.is_file() {
+                        paths.push(path);
+                    }
+                }
+            }
+            paths.sort();
+            let mut ids = std::collections::HashSet::new();
+            for line in body.lines() {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+                    if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
+                        ids.insert(id.to_owned());
+                    }
+                }
+            }
+            for path in paths {
+                for line in fs::read_to_string(path).map_err(|e| e.to_string())?.lines() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).map_err(|e| e.to_string())?;
+                    if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
+                        if !ids.insert(id.to_owned()) {
+                            continue;
+                        }
+                    }
+                    if !body.is_empty() && !body.ends_with('\n') {
+                        body.push('\n');
+                    }
+                    body.push_str(line);
+                    body.push('\n');
+                }
             }
         }
+        fs::create_dir_all(root).map_err(|e| e.to_string())?;
+        fs::write(&target, body).map_err(|e| e.to_string())?;
+        fs::write(marker, "1").map_err(|e| e.to_string())?;
     }
-    Ok(path)
+    Ok(target)
 }
 
 fn ensure_dir(path: &PathBuf) -> Result<(), String> {
@@ -66,11 +72,11 @@ fn ensure_dir(path: &PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-/// One Organisation's pinned entries. Empty for an org that has pinned nothing.
+/// Local pinned entries.
 #[tauri::command]
-pub async fn load_pinned_log(org: String) -> Result<String, String> {
+pub async fn load_pinned_log() -> Result<String, String> {
     tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let path = pinned_path(&org)?;
+        let path = pinned_path()?;
         if !path.exists() {
             return Ok(String::new());
         }
@@ -81,9 +87,9 @@ pub async fn load_pinned_log(org: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn append_pinned_log(org: String, entry_json: String) -> Result<(), String> {
+pub async fn append_pinned_log(entry_json: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let path = pinned_path(&org)?;
+        let path = pinned_path()?;
         ensure_dir(&path)?;
         let mut f = fs::OpenOptions::new()
             .create(true)
@@ -99,12 +105,11 @@ pub async fn append_pinned_log(org: String, entry_json: String) -> Result<(), St
     .map_err(|e| e.to_string())?
 }
 
-/// Clear **this org's** pins only. Another Organisation's kept entries are a
-/// different file and are not touched.
+/// Clear the local pin list.
 #[tauri::command]
-pub async fn clear_pinned_log(org: String) -> Result<(), String> {
+pub async fn clear_pinned_log() -> Result<(), String> {
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let path = pinned_path(&org)?;
+        let path = pinned_path()?;
         if path.exists() {
             fs::write(&path, "").map_err(|e| e.to_string())?;
         }
@@ -115,9 +120,9 @@ pub async fn clear_pinned_log(org: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn rewrite_pinned_log(org: String, entries_json: String) -> Result<(), String> {
+pub async fn rewrite_pinned_log(entries_json: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let path = pinned_path(&org)?;
+        let path = pinned_path()?;
         ensure_dir(&path)?;
         // Caller passes the full body (each line one entry, newline separated).
         fs::write(&path, &entries_json).map_err(|e| e.to_string())?;
@@ -201,4 +206,47 @@ pub async fn clear_project_log(project: String) -> Result<(), String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn local_pins_merge_legacy_folders_once_and_keep_originals() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for org in ["a", "b"] {
+            fs::create_dir_all(root.join("orgs").join(org)).unwrap();
+        }
+        fs::write(root.join("pinned.jsonl"), "{\"id\":\"local\"}\n").unwrap();
+        let old = root.join("orgs/a/pinned.jsonl");
+        fs::write(&old, "{\"id\":\"shared\"}\n").unwrap();
+        fs::write(
+            root.join("orgs/b/pinned.jsonl"),
+            "{\"id\":\"shared\"}\n{\"id\":\"other\"}\n",
+        )
+        .unwrap();
+        let path = local_pinned_path(root).unwrap();
+        let merged = fs::read_to_string(&path).unwrap();
+        assert_eq!(merged.lines().count(), 3);
+        assert!(old.exists());
+        assert_eq!(
+            fs::read_to_string(local_pinned_path(root).unwrap()).unwrap(),
+            merged
+        );
+    }
+    #[test]
+    fn malformed_legacy_pin_keeps_both_original_and_local_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("orgs/a")).unwrap();
+        fs::write(root.join("pinned.jsonl"), "{\"id\":\"local\"}\n").unwrap();
+        fs::write(root.join("orgs/a/pinned.jsonl"), "not-json\n").unwrap();
+        assert!(local_pinned_path(root).is_err());
+        assert_eq!(
+            fs::read_to_string(root.join("pinned.jsonl")).unwrap(),
+            "{\"id\":\"local\"}\n"
+        );
+        assert!(!root.join("local-pins-migrated").exists());
+    }
 }

@@ -21,23 +21,8 @@ import { isRememberTurn } from "./remember";
 import { ensureFileIndex } from "@/features/file-picker/lib/file-picker-api";
 import { activeProjectId } from "@/features/projects/lib/active-project";
 import { useProjectStore } from "@/features/projects/stores/project-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 import { skills } from "@/features/skills/lib/skills-api";
-import {
-  searchOrgMentions,
-  type MentionComment,
-  type MentionConversation,
-  type MentionMember,
-  type MentionRecordedSession,
-  type OrgMentionKind,
-} from "./org-mentions";
 
-export type {
-  MentionComment,
-  MentionConversation,
-  MentionMember,
-  MentionRecordedSession,
-} from "./org-mentions";
 import type { PackComponentKind } from "@/features/skills/lib/types";
 // NOTE: skills are no longer a mention kind — inlining a skill body into the
 // prompt was retired (see docs/adr/0001-slash-tokens-pass-through-skills-are-not-inlined.md).
@@ -73,17 +58,7 @@ export type MentionKind =
   | "workspace"
   | "branch"
   | "past_message"
-  | "past_session"
-  // The organisation's, not this disk's (issue 122): each rides as an
-  // `atlas-org://` resource link carrying its id — see `org-mentions.ts`.
-  // `recorded_session` is the Timeline's record and is never a
-  // `past_session` (a local transcript, inlined).
-  | "member"
-  | "conversation"
-  | "recorded_session"
-  // A comment on the chat's own recorded session, linked so the agent attends
-  // to it (`comment-mentions.ts`). Rides as `atlas-org://comment/…` + a quote.
-  | "comment";
+  | "past_session";
 
 export interface MentionFile {
   kind: "file";
@@ -202,10 +177,7 @@ export type MentionData =
   | MentionBranch
   | MentionPastMessage
   | MentionPastSession
-  | MentionMember
-  | MentionConversation
-  | MentionRecordedSession
-  | MentionComment;
+  | MentionPastSession;
 
 // ── Catalog ──────────────────────────────────────────────────────────────────
 
@@ -239,38 +211,7 @@ export const MENTION_CATEGORIES: readonly MentionCategory[] = [
   { kind: "branch", label: "Branches", aliases: ["branch", "b/"], weight: 0.6 },
   { kind: "past_message", label: "Past Messages", aliases: ["msg", "message", "m/"], weight: 0.55 },
   { kind: "past_session", label: "Past Sessions", aliases: ["session", "sess/"], weight: 0.5 },
-  { kind: "member", label: "Members", aliases: ["member", "people", "u/"], weight: 0.7 },
-  {
-    kind: "conversation",
-    label: "Conversations",
-    aliases: ["conversation", "channel", "dm", "chat/"],
-    weight: 0.65,
-  },
-  {
-    kind: "recorded_session",
-    label: "Recorded Sessions",
-    aliases: ["recorded", "timeline", "r/"],
-    weight: 0.5,
-  },
-  { kind: "comment", label: "Comments", aliases: ["comment", "cm/"], weight: 0.75 },
 ];
-
-/** The organisation kinds (issue 122), sourced JS-side by `searchOrgMentions`. */
-const ORG_MENTION_KINDS: readonly MentionKind[] = [
-  "member",
-  "conversation",
-  "recorded_session",
-  "comment",
-];
-
-function isOrgKind(kind: MentionKind | null): kind is OrgMentionKind {
-  return kind !== null && ORG_MENTION_KINDS.includes(kind);
-}
-
-/** How many of each organisation kind the unscoped `@` blends in; a locked
- *  scope shows up to `ORG_SCOPED_LIMIT`. */
-const ORG_BLEND_LIMIT = 5;
-const ORG_SCOPED_LIMIT = 30;
 
 export function categoryForKind(kind: MentionKind): MentionCategory {
   const c = MENTION_CATEGORIES.find((x) => x.kind === kind);
@@ -422,14 +363,6 @@ export function toShortForm(m: MentionData): string {
       return `@msg:${m.timestamp ?? m.id}`;
     case "past_session":
       return `@session:${shortFormValue(m.displayName)}`;
-    case "member":
-      return `@member:${shortFormValue(m.displayName)}`;
-    case "conversation":
-      return `@conversation:${shortFormValue(m.displayName)}`;
-    case "recorded_session":
-      return `@recorded-session:${shortFormValue(m.displayName)}`;
-    case "comment":
-      return `@comment:${shortFormValue(m.displayName)}`;
   }
 }
 
@@ -475,17 +408,6 @@ export async function searchMentions(
   if (scope === "component") {
     return searchPackComponents(stripCategoryAlias(query, "component"), ctx);
   }
-  // Organisation kinds: the chat's Project's organisation, from the renderer's
-  // own stores and the Timeline board (`org-mentions.ts`).
-  if (isOrgKind(scope)) {
-    return searchOrgMentions(
-      stripCategoryAlias(query, scope),
-      scope,
-      ctx.projectPath,
-      ORG_SCOPED_LIMIT,
-      ctx.tabId,
-    );
-  }
   // Projects live in a JS store — resolve them JS-side, so an agent in one
   // project can be handed another project's path via @workspace.
   if (scope === "workspace") {
@@ -510,18 +432,13 @@ export async function searchMentions(
     // small lists; they're appended after the Rust results and the picker
     // groups the flat list into per-kind sections for display.
     if (scope === null) {
-      const [results, org] = await Promise.all([
-        invoke<MentionData[]>("mention_search", {
-          query: stripped,
-          scope,
-          projectPath: ctx.projectPath,
-          workspaceId: activeProjectId(),
-        }),
-        searchOrgMentions(stripped, null, ctx.projectPath, ORG_BLEND_LIMIT, ctx.tabId).catch(
-          () => [],
-        ),
-      ]);
-      return [...results, ...searchProjects(stripped, ctx), ...org];
+      const results = await invoke<MentionData[]>("mention_search", {
+        query: stripped,
+        scope,
+        projectPath: ctx.projectPath,
+        workspaceId: activeProjectId(),
+      });
+      return [...results, ...searchProjects(stripped, ctx)];
     }
     return await invoke<MentionData[]>("mention_search", {
       query: stripped,
@@ -542,11 +459,8 @@ export async function searchMentions(
 function searchProjects(query: string, ctx: MentionContext): MentionProject[] {
   const q = query.trim().toLowerCase();
   const { projects } = useProjectStore.getState();
-  const { organisations, activeOrganisationId } = useOrgStore.getState();
-  const orgName = organisations.find((o) => o.id === activeOrganisationId)?.name ?? null;
   const currentPath = ctx.projectPath;
   return projects
-    .filter((w) => !w.orgId || w.orgId === activeOrganisationId) // active org
     .filter((w) => w.path !== currentPath) // never mention the current project
     .filter((w) => !q || w.name.toLowerCase().includes(q) || w.path.toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -555,7 +469,7 @@ function searchProjects(query: string, ctx: MentionContext): MentionProject[] {
       id: w.id,
       displayName: w.name,
       absPath: w.path,
-      orgName,
+      orgName: null,
     }));
 }
 

@@ -223,7 +223,6 @@ describe("theme subscription contract", () => {
       ],
       "src/features/editor/themes/build-cm-theme.ts": [
         "src/features/editor/components/editor-panel.tsx",
-        "src/features/comms/components/draft-editor.tsx",
       ],
     };
     for (const [builder, owners] of Object.entries(owns)) {

@@ -8,12 +8,6 @@ import {
   type Project,
   type ProjectGroup,
 } from "@/features/projects/stores/project-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
-import {
-  fromOrganisationWire,
-  toOrganisationWire,
-  type OrganisationWire,
-} from "@/features/organisations/types";
 import { registerFlush } from "@/features/projects/lib/flush-registry";
 import { persistHashOf } from "@/features/projects/lib/project-snapshot";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -55,11 +49,6 @@ export interface AppStateWire {
   workspaces?: Project[];
   groups?: ProjectGroup[];
   activeWorkspaceId?: string | null;
-  /** The Organisation layer above projects (v3). `OrganisationWire`, not
-   *  `Organisation`: the per-org active project is a frozen storage key too
-   *  (`activeWorkspaceId`), so it is translated on the way in. */
-  organisations?: OrganisationWire[];
-  activeOrganisationId?: string | null;
   /** Sourced from `config.toml`, not `state.json` (issue #64) — folded into
    *  this same bootstrap response for one round trip, but written back
    *  through `update_atlas_settings`, never `save_app_state`. Handed straight
@@ -108,9 +97,7 @@ interface AppStatePatchWire {
   groups: ProjectGroup[];
   activeWorkspaceId: string | null;
   /** Storage keys again, one level down: each org's last-active project rides
-   *  as `activeWorkspaceId`. See `OrganisationWire`. */
-  organisations: OrganisationWire[];
-  activeOrganisationId: string | null;
+   *  as `activeWorkspaceId`. This is a historical storage key. */
 }
 
 // Debounced persistence: the Rust `save_app_state` command takes the
@@ -123,15 +110,12 @@ interface AppStatePatchWire {
 function buildAppStatePayload(): AppStatePatchWire {
   const app = useAppStore.getState();
   const ws = useProjectStore.getState();
-  const org = useOrgStore.getState();
   return {
     currentProject: null,
     recentProjects: app.recentProjects,
     workspaces: ws.projects,
     groups: ws.groups,
     activeWorkspaceId: ws.activeProjectId,
-    organisations: org.organisations.map(toOrganisationWire),
-    activeOrganisationId: org.activeOrganisationId,
   };
 }
 
@@ -328,17 +312,10 @@ export const useAppStore = createSelectors(
           return;
         }
         const { name, path } = project;
-        // Tag the entry with the org it was opened under. Read lazily, like
-        // `requireActiveOrgId` does, to avoid an import-time cycle with the
-        // org store.
-        const orgId =
-          useOrgStore.getState().activeOrganisationId ??
-          useOrgStore.getState().organisations[0]?.id ??
-          null;
         set((s) => ({
           currentProject: { name, path },
           recentProjects: [
-            { name, path, lastOpened: new Date().toISOString(), orgId },
+            { name, path, lastOpened: new Date().toISOString() },
             ...s.recentProjects.filter((r) => r.path !== path),
           ].slice(0, 20),
         }));
@@ -394,19 +371,6 @@ export const useAppStore = createSelectors(
           hydrated: true,
         });
 
-        // Hand the Organisation layer to the org store FIRST — the project
-        // sidebar filters by the active org, and new projects tag themselves
-        // with it. (Rust `migrate()` guarantees a default "Personal" org + an
-        // `activeOrganisationId` on any pre-v3 state, so this is always set.)
-        useOrgStore.getState().actions.hydrate({
-          organisations: (payload.organisations ?? []).map(fromOrganisationWire),
-          activeOrganisationId: payload.activeOrganisationId ?? null,
-        });
-
-        // Hand the multi-project fields to the project store. We hydrate
-        // with `activeProjectId: null` and then `switchTo` the persisted id
-        // below, so the switch is a genuine null→id transition that actually
-        // runs the loaders (a same-id switch is a no-op by design).
         const projects = payload.workspaces ?? [];
         const groups = payload.groups ?? [];
         const activeProjectId = payload.activeWorkspaceId ?? null;

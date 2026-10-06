@@ -25,7 +25,7 @@ export interface ReadClause {
   sessionId?: string;
   tabId?: string;
   terminalId?: string;
-  convId?: string;
+
   agentType?: string;
   /** A center item whose target is this project's git panel. */
   projectId?: string;
@@ -50,9 +50,7 @@ export function matchesClause(i: AppNotification, c: ReadClause): boolean {
   if (c.sessionId !== undefined && i.sessionId !== c.sessionId) return false;
   if (c.tabId !== undefined && i.tabId !== c.tabId) return false;
   if (c.terminalId !== undefined && i.terminalId !== c.terminalId) return false;
-  if (c.convId !== undefined) {
-    if (i.target?.type !== "chat-conversation" || i.target.convId !== c.convId) return false;
-  }
+
   if (c.agentType !== undefined) {
     if (i.target?.type !== "agent-sign-in" || i.target.agentType !== c.agentType) return false;
   }
@@ -91,8 +89,7 @@ export type OpenedSource =
    *  (the agent session id, falling back to the tab id). */
   | { type: "session"; tabId: string; sessionIds: string[] }
   /** The terminals visible in a terminal tab. */
-  | { type: "terminal"; tabId: string; terminalIds: string[] }
-  | { type: "chat-conversation"; convId: string };
+  | { type: "terminal"; tabId: string; terminalIds: string[] };
 
 /** The user is looking at the source: its delivered banners are stale and its
  *  center items are seen. Toasts are left alone — they time out on their own. */
@@ -120,13 +117,6 @@ export function planOpened(src: OpenedSource, caps: NativeCapabilities): ClearPl
           : [],
         markRead: src.terminalIds.map((terminalId) => ({ terminalId })),
       };
-    case "chat-conversation":
-      return {
-        toastIds: [],
-        tags: [],
-        groups: caps.removal ? [targetGroupKey(src)] : [],
-        markRead: [{ convId: src.convId }],
-      };
   }
 }
 
@@ -144,8 +134,6 @@ export function sourceKey(s: OpenedSource): string {
       return `session:${s.tabId}`;
     case "terminal":
       return `terminal:${s.tabId}:${[...s.terminalIds].sort().join(",")}`;
-    case "chat-conversation":
-      return `chat:${s.convId}`;
   }
 }
 

@@ -24,14 +24,10 @@
 
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUp, Check, ChevronDown, ChevronRight, Laptop } from "lucide-react";
+import { ArrowUp, ChevronDown, ChevronRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import { useOrgDirectory } from "@/features/organisations/lib/use-org-directory";
-
-import { authorOf, type AuthorDirectory } from "../lib/author-directory";
 import { boardKey } from "../lib/board-key";
 import { groupSessions, sessionState, sessionTitle, type GroupPeriod } from "../lib/board";
 import type { BoardSession } from "../types";
@@ -49,7 +45,7 @@ interface Props {
   /** How coarsely rows are grouped — the header's Day / Week / Month. */
   period: GroupPeriod;
   /** The project is passed back because each one has its own store. */
-  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
+  onOpen: (id: string, projectPath: string) => void;
 }
 
 /** Fold a run of identical imported titles at this length or above. */
@@ -160,7 +156,7 @@ let scrollTopCache = 0;
 export function TimelineSidebar({ sessions, loading, filtered, openKey, period, onOpen }: Props) {
   // One subscription for the whole nav. Five hundred rows each resolving their
   // own author would re-render the list every time the roster revalidated.
-  const directory = useOrgDirectory();
+
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const days = useMemo(() => groupSessions(sessions, period), [sessions, period]);
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -337,7 +333,7 @@ export function TimelineSidebar({ sessions, loading, filtered, openKey, period, 
                     session={row.session}
                     lane={row.lane}
                     selected={row.key === openKey}
-                    directory={directory}
+
                     onOpen={onOpen}
                   />
                 )}
@@ -540,7 +536,7 @@ const SessionRow = memo(function SessionRow({
   session,
   lane,
   selected,
-  directory,
+
   onOpen,
 }: {
   session: BoardSession;
@@ -548,8 +544,8 @@ const SessionRow = memo(function SessionRow({
   lane: 1 | 2;
   selected: boolean;
   /** Stable across renders, so `memo` on this row still pays for itself. */
-  directory: AuthorDirectory;
-  onOpen: (id: string, projectPath: string, remoteProjectId: string | null) => void;
+
+  onOpen: (id: string, projectPath: string) => void;
 }) {
   const state = sessionState(session);
   const title = sessionTitle(session.title);
@@ -558,7 +554,7 @@ const SessionRow = memo(function SessionRow({
       type="button"
       data-session-id={session.id}
       data-selected={selected || undefined}
-      onClick={() => onOpen(session.id, session.projectPath, session.remoteProjectId)}
+      onClick={() => onOpen(session.id, session.projectPath)}
       title={session.attentionReason ?? title ?? undefined}
       className={cn(ROW_STACKED, selected && ROW_SELECTED)}
       style={{ paddingLeft: laneX(lane) + LABEL_GAP }}
@@ -594,7 +590,7 @@ const SessionRow = memo(function SessionRow({
       >
         {title ?? "Untitled session"}
       </FadingTitle>
-      <SessionMeta session={session} directory={directory} />
+      <SessionMeta session={session} />
     </button>
   );
 });
@@ -607,41 +603,10 @@ const SessionRow = memo(function SessionRow({
  * that flickered with the outbox queue would read as a fault every time capture
  * ran ahead of the network, which is always.
  */
-const SessionMeta = memo(function SessionMeta({
-  session,
-  directory,
-}: {
-  session: BoardSession;
-  directory: AuthorDirectory;
-}) {
-  const Icon = session.synced ? Check : Laptop;
-  const author = authorOf(session.authorId, directory);
+const SessionMeta = memo(function SessionMeta({ session }: { session: BoardSession }) {
   return (
-    <span className="flex w-full min-w-0 items-center gap-1.5 text-2xs leading-tight text-[var(--muted-foreground)]">
-      <Icon
-        size={9}
-        className={cn(
-          "shrink-0",
-          session.synced
-            ? "text-[var(--atlas-status-success-foreground)]"
-            : "text-[var(--atlas-text-disabled)]",
-        )}
-        aria-label={session.synced ? "Shared with your Organisation" : "This machine only"}
-      />
-      {/* The Project first, because it is what a reader scanning the day is
-       *  grouping by. It is the part that gives way when the pane is narrow. */}
-      <span className="min-w-0 truncate">{session.projectName}</span>
-      {/* Whose work it is, pinned right by `ml-auto` rather than by letting the
-       *  Project grow into the gap: a Project name short enough not to truncate
-       *  would otherwise drag the byline left and leave the column ragged all
-       *  the way down the list. Never truncated and never dropped — a half-name
-       *  reads as the wrong person, which is worse than no byline at all. */}
-      <span className="ml-auto flex shrink-0 items-center gap-1 pl-1">
-        {author.avatar && <AccountAvatar user={author.avatar} size={10} />}
-        <span className={cn(author.isSelf && "text-[var(--atlas-text-disabled)]")}>
-          {author.label}
-        </span>
-      </span>
+    <span className="flex w-full min-w-0 text-2xs text-[var(--muted-foreground)]">
+      <span className="truncate">{session.projectName}</span>
     </span>
   );
 });

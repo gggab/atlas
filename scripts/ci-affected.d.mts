@@ -8,7 +8,6 @@
 export interface CrateEntry {
   crate: string;
   clippy?: boolean;
-  sandbox?: boolean;
   "release-build"?: boolean;
   cross?: boolean;
 }
@@ -38,7 +37,6 @@ export interface Plan {
   /** Affected package names, or `null` when everything runs. */
   affected: string[] | null;
   app: boolean;
-  engineDialect: boolean;
   crates: CrateEntry[];
 }
 
@@ -54,10 +52,9 @@ export function affectedPackages(
   files: string[],
   workspace: Workspace,
 ): { all: string | null; packages: Set<string> };
-export function dialectPackages(ciYml: string): string[];
 export function plan(
   files: string[] | null,
-  ctx: { workspace: Workspace; crates: CrateEntry[]; dialect: string[] },
+  ctx: { workspace: Workspace; crates: CrateEntry[] },
   allReason?: string,
 ): Plan;
 export function readCrateMatrix(root?: string): CrateEntry[];

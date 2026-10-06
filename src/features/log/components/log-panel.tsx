@@ -35,7 +35,6 @@ import { copyText } from "@/lib/clipboard";
 import { timeAgo } from "@/lib/time-ago";
 import { useLogStore, type LogEntry, type LogSource } from "../stores/log-store";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 
 const SOURCES: LogSource[] = [
   "atlas",
@@ -127,7 +126,6 @@ export function LogPanel() {
     useLogStore.use.actions();
 
   const currentProject = useAppStore.use.currentProject();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
 
   const [search, setSearch] = useState("");
   const [activeSources, setActiveSources] = useState<Set<LogSource>>(() => new Set(SOURCES));
@@ -143,7 +141,7 @@ export function LogPanel() {
   // firing it on every org change is free.
   useEffect(() => {
     void loadPinned();
-  }, [activeOrganisationId, ready, loadPinned]);
+  }, [ready, loadPinned]);
 
   // Restore (and scope) the activity log for the current project from disk.
   useEffect(() => {

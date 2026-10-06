@@ -167,8 +167,6 @@ jobs:
 
       - name: Build frontend & Tauri Linux packages (deb, rpm, AppImage)
         env:
-          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
         run: |
           bun run build:app:linux -- --bundles appimage
 

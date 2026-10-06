@@ -1017,33 +1017,6 @@ let registry: AcpRegistryEntry[] = [
 
 let catalog: AgentCatalogEntry[] = [
   {
-    id: "atlas-agent",
-    agentType: "atlas-agent",
-    name: "Atlas Agent",
-    description: "Atlas's own agent, running in-process — no subprocess, no install.",
-    version: "0.0.0-mock",
-    kind: "native",
-    source: "in-process",
-    resolvedPath: null,
-    installed: false,
-    supportsModes: true,
-    supportsModels: true,
-    transcript: "native",
-    login: null,
-    authKinds: ["env_var"],
-    supportsLogout: false,
-    supportsFork: false,
-    supportsRewind: true,
-    iconDataUrl: null,
-    helpUrl: null,
-    repository: null,
-    website: null,
-    platformSupported: true,
-    distributionKind: "",
-    unverified: false,
-    unsupportedReason: null,
-  },
-  {
     // Installed and already connected once, so its advertised capabilities are
     // known — `authKinds` and `supportsLogout` are empty/false until then.
     id: "claude-acp",

@@ -18,7 +18,6 @@ export const SETTINGS_SECTIONS = [
   "skills",
   "agents",
   "models",
-  "updates",
   "keybindings",
   "about",
 ] as const;

@@ -13,7 +13,6 @@ import {
   Settings,
   PanelLeft,
   PanelRight,
-  MessageSquare,
   PanelTop,
   Map,
   Sidebar,
@@ -58,7 +57,6 @@ export function CommandPalette({
     addTab,
     toggleLeftPanel,
     toggleRightPanel,
-    toggleRightChatPanel,
     toggleChatSidebar,
     toggleTabBar,
     toggleZenMode,
@@ -137,7 +135,7 @@ export function CommandPalette({
         label: "New Spaces",
         icon: Map,
         category: "Open",
-        action: () => openTab("canvas", "Spaces"),
+        action: () => openTab("canvas", "Canvas"),
       },
       {
         id: "new-terminal",
@@ -223,14 +221,7 @@ export function CommandPalette({
         category: "Layout",
         action: toggleRightPanel,
       },
-      {
-        id: "toggle-right-chat",
-        label: "Toggle Team Chat Panel",
-        actionId: "panels.teamChat",
-        icon: MessageSquare,
-        category: "Layout",
-        action: toggleRightChatPanel,
-      },
+
       {
         id: "toggle-chat-sidebar",
         label: "Toggle Chat Sidebar",
@@ -342,7 +333,6 @@ export function CommandPalette({
       addTab,
       toggleLeftPanel,
       toggleRightPanel,
-      toggleRightChatPanel,
       toggleChatSidebar,
       toggleTabBar,
       toggleZenMode,

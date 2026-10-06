@@ -27,11 +27,9 @@ export interface CaptureHealth {
   summary: string;
   issues: HealthIssue[];
   flaggedSessions: number;
-  failedRows: number;
-  pendingRows: number;
 }
 
-export type ProjectMode = "local" | "cloud";
+export type ProjectMode = "local";
 
 /**
  * `ok`, or `not_authorized` once the server rejected this identity. Terminal
@@ -86,62 +84,3 @@ export interface ImportPreview {
   totalBytes: number;
   isBulkDisclosure: boolean;
 }
-
-/** Who inside the Organisation may read a Project — mirrors `Visibility`. */
-export type Visibility = "org" | "restricted";
-
-/** A Project as the Organisation knows it — mirrors `RemoteWorkspace`. */
-export interface RemoteWorkspace {
-  id: string;
-  slug: string;
-  rootCommitSha: string | null;
-  gitUrl: string | null;
-  /** Absent on a Project registered before the server carried a display name. */
-  name: string | null;
-  visibility: Visibility;
-}
-
-/** What Connect offers — mirrors `commands::capture::ConnectOptions`. */
-export interface ConnectOptions {
-  /** Storage/wire key: the server calls these Workspaces. Atlas calls them
-   *  projects. */
-  workspaces: RemoteWorkspace[];
-  /** `null` when nothing matched, or when several did. */
-  preselected: string | null;
-  /** Shown, never blocking. */
-  warning: string | null;
-}
-
-/**
- * The answer to a connect attempt — mirrors `commands::capture::ConnectResult`.
- *
- * `matched: false` with candidates is the server declining to guess between
- * Projects that share a root commit. That is a question for the developer, not
- * a failure.
- */
-export interface ConnectResult {
-  binding: Binding | null;
-  candidates: RemoteWorkspace[];
-  matched: boolean;
-  /** Locally captured Sessions now queued for sync — non-zero only when a
-   *  Local Project was connected to an existing Cloud Project. */
-  moved: number;
-}
-
-/** A Connect-tab pick, carried to the disclosure step before anything is sent. */
-export interface ConnectPick {
-  orgId: string;
-  slug: string;
-  workspaceId: string;
-}
-
-/** What a promotion is about to publish — mirrors `PromotionPreview`. */
-export interface PromotionPreview {
-  sessionCount: number;
-  earliest: string | null;
-  latest: string | null;
-  secretsRedacted: number;
-}
-
-/** The `capture_slug_available` answer. `unknown` means the network blinked. */
-export type SlugAvailability = "available" | "taken" | "unknown";

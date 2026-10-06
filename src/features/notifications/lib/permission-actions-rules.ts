@@ -19,7 +19,6 @@
 import type { PermissionDecision, ToolCallRef } from "@/types/acp";
 import { extractPlanMarkdown } from "@/features/chat/lib/plans";
 import { extractQuestions } from "@/features/chat/lib/questions";
-import { isOutwardCall } from "@/features/org-actions/lib/outward-approval";
 import { offerableActions, type NativeCapabilities } from "./native-capabilities";
 import type { SystemNotificationAction } from "./notifier-api";
 
@@ -55,7 +54,7 @@ function onceOption(options: readonly OptionLike[], which: "allow" | "deny"): st
 export function bannerAnswerable(toolCall: unknown): boolean {
   if (typeof toolCall !== "object" || toolCall === null) return true;
   const tc = toolCall as ToolCallRef;
-  return !extractPlanMarkdown(tc) && !extractQuestions(tc) && !isOutwardCall(tc);
+  return !extractPlanMarkdown(tc) && !extractQuestions(tc);
 }
 
 export interface PermissionActionInput {

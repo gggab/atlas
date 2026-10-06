@@ -82,10 +82,7 @@ function session(over: Partial<BoardSession> & { id: string }): BoardSession {
     attentionReason: null,
     projectPath: "/tmp/atlas",
     projectName: "atlas",
-    synced: false,
     origin: "local",
-    remoteProjectId: null,
-    authorId: null,
     ...over,
   } as BoardSession;
 }
@@ -120,18 +117,16 @@ describe("TimelineSidebar", () => {
     expect(screen.queryByText("claude-opus-5")).toBeNull();
   });
 
-  it("says which Project a row came from, and whether it is shared", () => {
+  it("says which Project a row came from, and its local project name", () => {
     render(
       <TimelineSidebar
         sessions={[
           session({ id: "a", title: "Local work", projectName: "scratch" }),
           session({
             id: "b",
-            title: "Shared work",
+            title: "Other work",
             projectName: "atlas",
-            synced: true,
-            origin: "both",
-            remoteProjectId: "rw_1",
+            origin: "local",
           }),
         ]}
         loading={false}
@@ -145,38 +140,6 @@ describe("TimelineSidebar", () => {
     expect(screen.getByText("atlas")).toBeTruthy();
     // The icon carries the state, so it is what the assertion reads — a
     // synced row must be distinguishable without opening it.
-    expect(screen.getByLabelText("This machine only")).toBeTruthy();
-    expect(screen.getByLabelText("Shared with your Organisation")).toBeTruthy();
-  });
-
-  it("says whose work each row is, and never prints a raw id", () => {
-    // An opaque author key in the byline is noise — it is what the row used to
-    // show. With no directory loaded a colleague is still *named*, just not by
-    // name; your own work says "You" whether or not it has been pushed.
-    render(
-      <TimelineSidebar
-        sessions={[
-          session({ id: "a", title: "Mine", synced: true, origin: "both" }),
-          session({
-            id: "b",
-            title: "Theirs",
-            projectPath: "",
-            projectName: "acme-infra",
-            synced: true,
-            origin: "remote",
-            authorId: "user_grace",
-          }),
-        ]}
-        loading={false}
-        filtered={false}
-        openKey={null}
-        period="day"
-        onOpen={() => {}}
-      />,
-    );
-    expect(screen.getByText("You")).toBeTruthy();
-    expect(screen.getByText("A member")).toBeTruthy();
-    expect(screen.queryByText("user_grace")).toBeNull();
   });
 
   it("highlights the open session and opens on click", () => {
@@ -186,7 +149,7 @@ describe("TimelineSidebar", () => {
         sessions={[session({ id: "a", title: "Alpha" }), session({ id: "b", title: "Beta" })]}
         loading={false}
         filtered={false}
-        openKey={boardKey({ id: "b", projectPath: "/tmp/atlas", remoteProjectId: null })}
+        openKey={boardKey({ id: "b", projectPath: "/tmp/atlas" })}
         period="day"
         onOpen={onOpen}
       />,
@@ -197,19 +160,18 @@ describe("TimelineSidebar", () => {
     fireEvent.click(screen.getByText("Alpha"));
     // The server Project id rides along: it is what the detail pane needs to
     // load comments and subscribe, and a remote-only row has no path to use.
-    expect(onOpen).toHaveBeenCalledWith("a", "/tmp/atlas", null);
+    expect(onOpen).toHaveBeenCalledWith("a", "/tmp/atlas");
   });
 
   it("shows one Session held by two Projects as two rows and selects only the open one", () => {
     // A Project whose sync moved leaves its copy in the old Project; the same
     // Session id is then on the board once per Project.
     const onOpen = vi.fn();
-    const inA = session({ id: "s", title: "In A", projectPath: "", remoteProjectId: "ws_a" });
+    const inA = session({ id: "s", title: "In A", projectPath: "/tmp/a" });
     const inB = session({
       id: "s",
       title: "In B",
       projectPath: "/tmp/atlas",
-      remoteProjectId: "ws_b",
     });
     render(
       <TimelineSidebar
@@ -224,7 +186,7 @@ describe("TimelineSidebar", () => {
     expect(screen.getByText("In A").closest("button")!.getAttribute("data-selected")).toBe("true");
     expect(screen.getByText("In B").closest("button")!.getAttribute("data-selected")).toBeNull();
     fireEvent.click(screen.getByText("In B"));
-    expect(onOpen).toHaveBeenCalledWith("s", "/tmp/atlas", "ws_b");
+    expect(onOpen).toHaveBeenCalledWith("s", "/tmp/atlas");
   });
 
   it("folds three identical imported titles into one row that expands", () => {

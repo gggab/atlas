@@ -5,20 +5,17 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Check, Filter, RefreshCw, Search, X } from "lucide-react";
 
-import { toast } from "sonner";
-
 import { copyText } from "@/lib/clipboard";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
-import { useActiveOrgProjects } from "@/features/projects/lib/org-scope";
+
+import { useLocalProjects } from "@/features/projects/lib/project-scope";
 import { BranchLine, GitDot, NumStatPill } from "@/features/projects/components/git-summary";
 import { useProjectGitStore } from "@/features/projects/stores/project-git-store";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/ui/tooltip";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 
-import { useSessionComments } from "../lib/use-session-comments";
 import { useArtifactsStore, type OpenSession } from "../stores/artifacts-store";
 import type { BoardPage, BoardSession, SessionDetail as Detail } from "../types";
 import {
@@ -34,13 +31,13 @@ import {
   type GroupPeriod,
 } from "../lib/board";
 import { boardKey } from "../lib/board-key";
-import { clearDetailCache, readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
+import { readCachedDetail, writeCachedDetail } from "../lib/detail-cache";
 import { readSessionDetail } from "../lib/read-session-detail";
 import { DockButton, DOCK_ACTIVE, DOCK_TRIGGER, HeaderDock } from "./header-dock";
 import { CheckpointsPicker } from "./checkpoints-picker";
 import { ExportButton } from "./export-button";
 import { SessionChatPanel } from "./session-chat-panel";
-import { SessionCommentsPanel } from "./session-comments-panel";
+
 import { SessionDetail } from "./session-detail";
 import { TimelineInbox } from "./timeline-inbox";
 import { TimelineResults } from "./timeline-results";
@@ -92,7 +89,6 @@ const CHAT_WIDTH = 420;
  * carries code blocks and diagrams, a comment carries a sentence or two. At the
  * chat's width the rows were mostly empty and the transcript paid for it.
  */
-const COMMENTS_WIDTH = 294;
 
 /**
  * The card's inset from the tab's edges, in px.
@@ -191,7 +187,6 @@ function openKeyOf(open: OpenSession): string {
   return boardKey({
     id: open.sessionId,
     projectPath: open.projectPath,
-    remoteProjectId: open.remoteProjectId ?? null,
   });
 }
 
@@ -216,8 +211,8 @@ export function ArtifactsPanel() {
   // Every project in the active Organisation, not just the open one: the board
   // answers "what has been happening in our code", which does not stop at the
   // folder that happens to be focused.
-  const projects = useActiveOrgProjects();
-  const activeOrganisationId = useOrgStore.use.activeOrganisationId();
+  const projects = useLocalProjects();
+
   // A stable key, so the read effect does not re-fire on unrelated project
   // mutations (a rename, a pin) that leave the set of paths unchanged.
   const projectPaths = useMemo(() => projects.map((w) => w.path).sort(), [projects]);
@@ -249,12 +244,11 @@ export function ArtifactsPanel() {
   // what hides every comment affordance rather than showing empty threads. The
   // hook resolves the Organisation's roster itself, so the account no longer
   // has to be plumbed through here.
-  const comments = useSessionComments(open?.remoteProjectId ?? null, open?.sessionId ?? null);
+
   // Stable identity for the memo'd board rows — an inline arrow here would
   // re-render all ~500 of them on every panel render.
   const onOpenRow = useCallback(
-    (sessionId: string, projectPath: string, remoteProjectId?: string | null) =>
-      openSession({ sessionId, projectPath, remoteProjectId: remoteProjectId ?? null }),
+    (sessionId: string, projectPath: string) => openSession({ sessionId, projectPath }),
     [openSession],
   );
   /** True once the first board read has landed. */
@@ -292,7 +286,7 @@ export function ArtifactsPanel() {
    * captured yet" for the moment before the remote rows arrived. The local-only
    * case never had this, because its first read is the whole answer.
    */
-  const [cloudPending, setCloudPending] = useState(false);
+
   /**
    * Which Organisation we have already told the user about.
    *
@@ -302,38 +296,6 @@ export function ArtifactsPanel() {
    * Cleared on an org switch and on a successful read, so a later failure is
    * reported again.
    */
-  const cloudFailureToldFor = useRef<string | null>(null);
-
-  const retryCloud = useCallback(() => {
-    void invoke<boolean>("artifacts_cloud_refresh")
-      .then((ok) => {
-        if (ok) toast.success("Cloud sessions loaded.");
-        // A failed retry re-arms the notice rather than raising a second one
-        // on top of the first — `refresh` below will report it again.
-        else cloudFailureToldFor.current = null;
-      })
-      .catch(() => {
-        cloudFailureToldFor.current = null;
-      })
-      .finally(() => void refreshRef.current?.());
-  }, []);
-
-  const reportCloudFailure = useCallback(
-    (failed: boolean, orgId: string | null) => {
-      if (!failed) {
-        cloudFailureToldFor.current = null;
-        return;
-      }
-      if (cloudFailureToldFor.current === orgId) return;
-      cloudFailureToldFor.current = orgId;
-      toast.error("Couldn't load this Organisation's shared sessions.", {
-        id: "timeline-cloud-failed",
-        description: "Showing the sessions recorded on this machine.",
-        action: { label: "Retry", onClick: retryCloud },
-      });
-    },
-    [retryCloud],
-  );
 
   /** `refresh` is defined below and the retry needs it; a ref keeps the two
    *  from having to be declared in dependency order. */
@@ -348,7 +310,7 @@ export function ArtifactsPanel() {
    * transcript — opening them together would leave the record narrower than the
    * thing being discussed.
    */
-  const [sidePanel, setSidePanel] = useState<"chat" | "comments" | null>(null);
+  const [sidePanel, setSidePanel] = useState<"chat" | null>(null);
   /**
    * The open panel's width, held through the close animation.
    *
@@ -357,7 +319,7 @@ export function ArtifactsPanel() {
    * own — the slide-out would jump before it moved.
    */
   const lastPanelWidth = useRef(CHAT_WIDTH);
-  if (sidePanel) lastPanelWidth.current = sidePanel === "chat" ? CHAT_WIDTH : COMMENTS_WIDTH;
+  if (sidePanel) lastPanelWidth.current = CHAT_WIDTH;
   const panelWidth = lastPanelWidth.current;
 
   /** True while the divider is being dragged — keeps it lit past the pointer. */
@@ -402,23 +364,6 @@ export function ArtifactsPanel() {
   // Keyed on a ref rather than firing on mount, because a Session opened from
   // outside — the git panel's history, a Checkpoint — is set *before* this
   // panel mounts, and clearing on the first run would close it again.
-  const lastOrg = useRef(activeOrganisationId);
-  useEffect(() => {
-    if (lastOrg.current === activeOrganisationId) return;
-    lastOrg.current = activeOrganisationId;
-    clearDetailCache();
-    openSession(null);
-    setError(null);
-    // Back to the loading state rather than the previous tenant's rows. The
-    // refresh below repopulates; leaving them up means one Organisation's work
-    // is briefly on screen under another's name.
-    setSessions([]);
-    setLoaded(false);
-    setCloudPending(true);
-    // A new tenant gets its own notice if it also fails.
-    cloudFailureToldFor.current = null;
-    toast.dismiss("timeline-cloud-failed");
-  }, [activeOrganisationId, openSession]);
 
   // A filter naming a project that is no longer open would hide everything with
   // no way back, so it is dropped rather than left dangling.
@@ -439,8 +384,7 @@ export function ArtifactsPanel() {
       });
       if (seq !== listSeq.current) return; // a newer read owns the state now
       const rows = page.sessions;
-      setCloudPending(page.cloudPending);
-      reportCloudFailure(page.cloudFailed, activeOrganisationId);
+
       // Same-data bailout, the list-side sibling of `sameDetail`: the poll and
       // the capture/git events re-read even when nothing changed, and an
       // unconditional setSessions handed a fresh array identity to the memo'd
@@ -456,7 +400,7 @@ export function ArtifactsPanel() {
     }
     // `projectsKey` stands in for `projectPaths`: same content, stable identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectsKey, projectFilter, reportCloudFailure, activeOrganisationId]);
+  }, [projectsKey, projectFilter, undefined, undefined]);
 
   // The retry needs `refresh` and is declared above it — see `refreshRef`.
   refreshRef.current = refresh;
@@ -767,7 +711,7 @@ export function ArtifactsPanel() {
                   sessionId={open.sessionId}
                   title={detail?.summary.title ?? null}
                   projectPath={open.projectPath}
-                  remoteProjectId={open.remoteProjectId ?? null}
+
                   onBack={() => openSession(null)}
                 />
               </>
@@ -845,7 +789,7 @@ export function ArtifactsPanel() {
                 // list visibly rewrote itself a moment later. An Organisation
                 // with no cloud half is never pending, so it still paints as
                 // soon as the store answers.
-                loading={!loaded || cloudPending}
+                loading={!loaded}
                 filtered={activeFacetCount(selection) > 0 || projectFilter !== null}
                 openKey={open ? openKeyOf(open) : null}
                 period={period}
@@ -877,24 +821,16 @@ export function ArtifactsPanel() {
                     <SessionDetail
                       detail={detail}
                       projectPath={open.projectPath}
-                      comments={comments}
+
                       entriesPending={entriesPending}
                       // Only when there is no local copy. A synced Session of
                       // your own is on both sides, and the local blob read is
                       // faster and works offline.
-                      remote={
-                        !open.projectPath && open.remoteProjectId
-                          ? { projectId: open.remoteProjectId, sessionId: open.sessionId }
-                          : null
-                      }
+
                       focusCommitSha={open.commitSha}
                       chatOpen={sidePanel === "chat"}
                       onToggleChat={() =>
                         setSidePanel((current) => (current === "chat" ? null : "chat"))
-                      }
-                      commentsOpen={sidePanel === "comments"}
-                      onToggleComments={() =>
-                        setSidePanel((current) => (current === "comments" ? null : "comments"))
                       }
                     />
                   </div>
@@ -916,18 +852,11 @@ export function ArtifactsPanel() {
                           onClose={() => setSidePanel(null)}
                         />
                       )}
-                      {sidePanel === "comments" && comments && (
-                        <SessionCommentsPanel
-                          detail={detail}
-                          comments={comments}
-                          onClose={() => setSidePanel(null)}
-                        />
-                      )}
                     </div>
                   </aside>
                 </div>
               )
-            ) : !loaded || cloudPending ? (
+            ) : !loaded ? (
               // The first board read. Without this the pane falls through to
               // the "recent Sessions" inbox with nothing in it, which reads as
               // an Organisation with no work rather than one still loading.
@@ -1024,14 +953,14 @@ function Breadcrumb({
   sessionId,
   title,
   projectPath,
-  remoteProjectId,
+
   onBack,
 }: {
   sessionId: string;
   title: string | null;
   projectPath: string;
   /** Set when the Session is on the server, which is what makes it linkable. */
-  remoteProjectId: string | null;
+
   onBack: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -1065,19 +994,13 @@ function Breadcrumb({
           // id is useless to anyone else, which is exactly why it stops being
           // the answer the moment there is a URL.
           void (async () => {
-            const url = remoteProjectId
-              ? await invoke<string | null>("artifacts_cloud_session_url", {
-                  projectId: remoteProjectId,
-                  sessionId,
-                }).catch(() => null)
-              : null;
-            await copyText(url ?? sessionId);
+            await copyText(sessionId);
           })();
           setCopied(true);
           if (flash.current) clearTimeout(flash.current);
           flash.current = setTimeout(() => setCopied(false), 1200);
         }}
-        title={remoteProjectId ? "Copy a link to this Session" : `Copy ${sessionId}`}
+        title={`Copy ${sessionId}`}
         className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 text-[var(--secondary-foreground)] transition-colors hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]"
       >
         {copied ? "copied" : label}

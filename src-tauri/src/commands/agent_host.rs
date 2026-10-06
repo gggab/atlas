@@ -7,7 +7,7 @@
 //!
 //! 1. **Identity.** The frontend has always addressed an agent by a per-spawn
 //!    `AgentId` (a uuid) and a session by `SessionKey { agent_id, session_id }`.
-//!    The ported manager keys connections by [`Agent`] (`Native` or a stable
+//!    The ported manager keys connections by [`Agent`] (a stable
 //!    string id) and sessions by `acp::SessionId`. This module holds the map
 //!    between the two, so the whole TS surface keeps working unchanged.
 //! 2. **History.** Every conversation's metadata row in the app-owned
@@ -22,12 +22,10 @@
 //! # No default agents
 //!
 //! There is no builtin table, no auto-acquire, and no spawn ladder (research
-//! ADR-0002). The native agent is always present because it is
-//! in-process; every other agent exists only because the installed map says so.
+//! ADR-0002). Every agent exists only because the installed map says so.
 //! [`AgentHost::agent_for`] is the whole of that policy, and it is four lines.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -40,15 +38,13 @@ use atlas_acp_thread::{
 use atlas_agent_delta::{project, DeltaProjector, DeltaSink, ThreadObserver};
 use atlas_agent_manager::{Agent, AgentConnectionEntry, AgentManager, ResumeMode};
 use atlas_agent_servers::{
-    AcpConnectionDefaults, AgentServer, ConnectOptions, SessionMcpOffer, SessionMcpRequest,
-    SessionMcpServers,
+    AcpConnectionDefaults, ConnectOptions, SessionMcpOffer, SessionMcpRequest, SessionMcpServers,
 };
 use atlas_agent_store::{AgentRegistryStore, AgentServerStore, ExternalAgentSource};
 use atlas_agent_transcript::TranscriptKind;
 use atlas_agent_wire::{
     classify_message, AgentId, ErrorClass, Message, PlanEntry, SessionStatus, Usage,
 };
-use atlas_native_agent::ATLAS_AGENT_ID;
 use atlas_thread_metadata::{
     affects_thread_metadata, collect_all_sessions, importable_threads, PathList, ThreadFilter,
     ThreadId, ThreadMetadata, ThreadMetadataStore, ThreadRecorder, ThreadSnapshot,
@@ -81,21 +77,6 @@ pub struct SessionModeInfo {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
-}
-
-/// What the picker's Refresh got back (ADR-0007).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NativeModelsRefresh {
-    /// The list, as the picker shows it.
-    pub models: Vec<SessionModeInfo>,
-    /// The first entitled row: what a new session starts on.
-    pub default_model: String,
-    /// Anything the user can see changed.
-    pub changed: bool,
-    /// The native connection was dropped so the engine picks up the new
-    /// rows. Open native sessions were told, and rebind on their next send.
-    pub reconnected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -312,7 +293,6 @@ pub struct AgentHost {
     /// Atlas's config directory — what the native engine's home is derived
     /// from. Kept so the model-catalogue refresh can find the cache the
     /// connection reads (ADR-0007) without a connection being open.
-    config_dir: PathBuf,
     agents: Mutex<HashMap<AgentId, AgentRecord>>,
     /// One uuid per plugin id, for the life of the process. The frontend spawns
     /// per tab and expects a stable handle back; the ported manager keeps one
@@ -358,57 +338,12 @@ struct RequestElicitations {
     answered_by: Mutex<HashMap<Uuid, (ThreadAgentId, ElicitationEntryId)>>,
 }
 
-/// Builds the native agent.
-///
-/// There is no longer a switch here. It existed so the previous native path could keep
-/// shipping while the ported engine was proved (#45); that path is deleted
-/// (#54), so this constructs the one implementation there is.
-///
-/// `ATLAS_AGENT_ENGINE=dev` still points it at a provider read from the
-/// environment — Phase 2's tracer bullet, kept for working on the engine
-/// without an Atlas account. It stays an explicit opt-in rather than a
-/// fallback: a build that silently sent turns to whatever
-/// `ATLAS_ENGINE_BASE_URL` happened to hold would be a traffic redirect nobody
-/// asked for.
-fn select_native_agent(config_dir: &Path) -> Arc<dyn atlas_agent_servers::AgentServer> {
-    use atlas_native_agent::engine::{EngineAgentServer, EngineSettings};
-
-    let cwd = std::env::current_dir().unwrap_or_else(|_| config_dir.to_path_buf());
-    let settings = if std::env::var("ATLAS_AGENT_ENGINE").as_deref() == Ok("dev") {
-        tracing::warn!("native agent: DEV provider (ATLAS_AGENT_ENGINE=dev)");
-        EngineSettings::from_env(config_dir, cwd)
-    } else {
-        EngineSettings::gateway(config_dir, cwd)
-    };
-    // No model in this line: none is named in code (ADR-0007). The
-    // connection logs the catalogue it resolved when it connects.
-    tracing::info!(
-        provider = %settings.provider.base_url,
-        home = %settings.home.path().display(),
-        "native agent: Atlas Agent",
-    );
-    Arc::new(EngineAgentServer::new(settings))
-}
-
 impl AgentHost {
     pub fn new(
         sink: Arc<dyn DeltaSink>,
         config_dir: PathBuf,
         store: Arc<AgentServerStore>,
         registry: Arc<AgentRegistryStore>,
-    ) -> Arc<Self> {
-        let native = select_native_agent(&config_dir);
-        Self::with_native(sink, config_dir, store, registry, native)
-    }
-
-    /// [`AgentHost::new`] with the native agent supplied by the caller — the
-    /// seam tests use to stand in a scripted agent.
-    pub(crate) fn with_native(
-        sink: Arc<dyn DeltaSink>,
-        config_dir: PathBuf,
-        store: Arc<AgentServerStore>,
-        registry: Arc<AgentRegistryStore>,
-        native: Arc<dyn AgentServer>,
     ) -> Arc<Self> {
         let projector = DeltaProjector::new(sink);
         let history = match ThreadMetadataStore::open(atlas_thread_metadata::db_path(&config_dir)) {
@@ -447,13 +382,12 @@ impl AgentHost {
             client_name: "atlas",
             client_version: env!("CARGO_PKG_VERSION").to_string(),
         };
-        let manager = AgentManager::new(store.clone(), native, options);
+        let manager = AgentManager::new(store.clone(), options);
         let host = Arc::new(Self {
             manager,
             projector,
             store,
             registry,
-            config_dir,
             agents: Mutex::new(HashMap::new()),
             by_plugin: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
@@ -591,13 +525,10 @@ impl AgentHost {
 
     /// Which agent a plugin id names, if Atlas can run it at all.
     ///
-    /// This is the whole of the no-default-agents rule: the native agent is
-    /// always available because it is in-process, and any other id must appear
+    /// This is the whole of the no-default-agents rule:
+    /// every runnable id must appear
     /// in the installed map. Nothing is downloaded, discovered or guessed here.
     pub fn agent_for(&self, plugin_id: &str) -> Result<Agent> {
-        if plugin_id == ATLAS_AGENT_ID {
-            return Ok(Agent::Native);
-        }
         let id = atlas_acp_thread::AgentId::new(plugin_id);
         if self.store.entry(&id).is_none() {
             return Err(HostError::new(
@@ -610,7 +541,6 @@ impl AgentHost {
 
     fn plugin_id_of(agent: &Agent) -> String {
         match agent {
-            Agent::Native => ATLAS_AGENT_ID.to_string(),
             Agent::Custom { id } => id.as_str().to_string(),
         }
     }
@@ -642,7 +572,7 @@ impl AgentHost {
     }
 
     /// The plugin this agent handle was spawned from. On the delta hot path
-    /// (analytics), so it stays a single map lookup.
+    /// (event attribution), so it stays a single map lookup.
     pub fn plugin_id_for_agent(&self, agent_id: AgentId) -> Option<String> {
         lock(&self.agents)
             .get(&agent_id)
@@ -650,12 +580,6 @@ impl AgentHost {
     }
 
     pub fn display_name(&self, plugin_id: &str) -> String {
-        if plugin_id == ATLAS_AGENT_ID {
-            // `ATLAS_AGENT_ID` is a storage key every recorded thread resolves
-            // through; the product name is what the user sees, and this is the
-            // only place the two meet.
-            return "Atlas Agent".to_string();
-        }
         self.store
             .agent_display_name(&atlas_acp_thread::AgentId::new(plugin_id))
             .unwrap_or_else(|| plugin_id.to_string())
@@ -663,15 +587,14 @@ impl AgentHost {
 
     // ---- the agent catalog ----------------------------------------------
 
-    /// Every agent Atlas can run: the native one, plus the installed map.
+    /// Every external agent in the installed map.
     pub fn list_plugins(&self) -> Vec<PluginSpec> {
-        let mut out = vec![self.plugin_spec(&Agent::Native)];
-        out.extend(
-            self.store
-                .external_agents()
-                .into_iter()
-                .map(|id| self.plugin_spec(&Agent::Custom { id })),
-        );
+        let out = self
+            .store
+            .external_agents()
+            .into_iter()
+            .map(|id| self.plugin_spec(&Agent::Custom { id }))
+            .collect();
         out
     }
 
@@ -684,10 +607,9 @@ impl AgentHost {
         // empty for an agent that offers neither. These flags are the pre-session
         // hint only: the native agent always has both, and a connected external
         // agent is worth asking. Nothing in the UI gates on them today.
-        let supports_modes = agent.is_native() || connection.is_some();
-        let supports_models = agent.is_native() || connection.is_some();
+        let supports_modes = connection.is_some();
+        let supports_models = connection.is_some();
         let command = match agent {
-            Agent::Native => String::new(),
             Agent::Custom { id } => match self.store.agent_source(id) {
                 Some(ExternalAgentSource::Registry) => "registry".to_string(),
                 _ => String::new(),
@@ -699,7 +621,7 @@ impl AgentHost {
             command,
             supports_modes,
             supports_models,
-            external: !agent.is_native(),
+            external: true,
             plugin_id,
         }
     }
@@ -745,18 +667,7 @@ impl AgentHost {
             supports_logout: connection.supports_logout(),
             supports_load_session: connection.supports_load_session(),
             supports_session_list: connection.session_list().is_some(),
-            // ACP has no fork, but the native engine does (`thread/fork`) —
-            // the capability is "is this the native connection", exactly the
-            // downcast `fork_session` performs.
-            supports_fork: connection
-                .clone()
-                .downcast::<atlas_native_agent::EngineConnection>()
-                .is_some(),
-            // Asked of the connection, not inferred from its concrete type.
-            // `supports_fork` above still downcasts, and that is exactly the
-            // identity check ADR-0002 rules out — a second one would entrench
-            // it. Any connection that answers true here is offered the
-            // affordance, native or not.
+            supports_fork: false,
             supports_rewind: connection.supports_rewind(),
         }
     }
@@ -862,159 +773,6 @@ impl AgentHost {
         }
         self.kill_agent(plugin_id, &agent);
         Ok(())
-    }
-
-    /// Drop the native agent's connection, if one is open.
-    ///
-    /// Sign-out calls this (#62): the engine's token cache lives on the
-    /// connection and serves the access JWT until the JWT's own `exp` — the
-    /// JWT verifies statelessly against JWKS, so revoking the session token
-    /// does not invalidate it, and an open connection would keep making
-    /// authenticated, org-billed gateway calls for up to ~9 minutes after
-    /// the user signed out. Dropping the connection is what actually stops
-    /// them: the cache dies with it, and so does any in-flight turn. The
-    /// next spawn reconnects and mints fresh — or fails, honestly, now that
-    /// there is nothing to mint with.
-    pub fn drop_native_connection(&self) {
-        self.forget_request_elicitations(&ThreadAgentId::new(ATLAS_AGENT_ID));
-        self.manager.drop_connection(&Agent::Native);
-        self.forget_sessions_of(&Agent::Native);
-    }
-
-    /// Re-fetch the native agent's model catalogue from the gateway
-    /// (ADR-0007): the picker's Refresh.
-    ///
-    /// The fetcher is the app's — the gateway, over the registered token and
-    /// org sources. [`Self::refresh_native_models_with`] is the same routine
-    /// with the fetcher supplied, so a test can drive it against a fake.
-    pub async fn refresh_native_models(&self) -> Result<NativeModelsRefresh> {
-        use atlas_native_agent::engine::config::GATEWAY_BASE_URL;
-        use atlas_native_agent::engine::GatewayCatalogueFetcher;
-        let fetcher = GatewayCatalogueFetcher::registered(GATEWAY_BASE_URL);
-        self.refresh_native_models_with(&fetcher).await
-    }
-
-    /// See [`Self::refresh_native_models`].
-    ///
-    /// Three outcomes, decided by comparing what the gateway now says with
-    /// what the live engine loaded at connect:
-    ///
-    /// - **No live engine**: the cache is rewritten and the next spawn reads
-    ///   it. Nothing to reconcile.
-    /// - **Same fingerprint** (same slugs and context windows): labels swap
-    ///   into the live connection. No teardown.
-    /// - **Different fingerprint**: the engine loaded rows it will not reload,
-    ///   and a slug it does not know gets invented metadata the gateway
-    ///   `400`s. So the connection is dropped, exactly as sign-out drops it,
-    ///   and every open native session is told so; the next spawn reconnects
-    ///   on the fresh cache without a network round trip. A running turn
-    ///   blocks this — the cache is already written, so nothing is lost by
-    ///   asking the user to stop first.
-    pub async fn refresh_native_models_with(
-        &self,
-        fetcher: &dyn atlas_native_agent::engine::CatalogueFetcher,
-    ) -> Result<NativeModelsRefresh> {
-        use atlas_native_agent::engine::catalog_cache::{project, refresh_now};
-        use atlas_native_agent::engine::{EngineConnection, EngineHome, SystemClock};
-
-        let home = EngineHome::under_config_dir(&self.config_dir);
-        let cache = refresh_now(home.path(), fetcher, &SystemClock)
-            .await
-            .map_err(|err| HostError::classified(format!("could not refresh models: {err}")))?;
-        let Some(projected) = project(&cache) else {
-            // Written anyway: the next connect will refuse on the same
-            // grounds, honestly, rather than run on the previous list.
-            return Err(HostError::new(
-                "the gateway lists no models this organisation may use",
-                ErrorClass::Fatal,
-            ));
-        };
-        let models: Vec<SessionModeInfo> = projected
-            .picker
-            .iter()
-            .map(|model| SessionModeInfo {
-                id: model.id.as_str().to_string(),
-                name: model.name.to_string(),
-                description: model.description.as_deref().map(str::to_string),
-            })
-            .collect();
-        let default_model = projected.default_model.clone();
-
-        let live = self
-            .manager
-            .connected(&Agent::Native)
-            .and_then(<dyn AgentConnection>::downcast::<EngineConnection>);
-        let Some(live) = live else {
-            return Ok(NativeModelsRefresh {
-                models,
-                default_model,
-                changed: true,
-                reconnected: false,
-            });
-        };
-
-        let before = live.catalogue_snapshot();
-        if before.fingerprint == projected.fingerprint {
-            let next = atlas_native_agent::engine::connection::LiveCatalogue {
-                picker: projected.picker,
-                default_model: projected.default_model,
-                fingerprint: projected.fingerprint,
-                fetched_at: cache.fetched_at,
-                stale: false,
-            };
-            live.replace_catalogue_metadata(next)
-                .map_err(HostError::from)?;
-            let before_labels: Vec<(String, Option<String>)> = before
-                .picker
-                .iter()
-                .map(|m| {
-                    (
-                        m.name.to_string(),
-                        m.description.as_deref().map(str::to_string),
-                    )
-                })
-                .collect();
-            let after_labels: Vec<(String, Option<String>)> = models
-                .iter()
-                .map(|m| (m.name.clone(), m.description.clone()))
-                .collect();
-            let changed = before_labels != after_labels;
-            return Ok(NativeModelsRefresh {
-                models,
-                default_model,
-                changed,
-                reconnected: false,
-            });
-        }
-
-        let native_sessions: Vec<String> = lock(&self.sessions)
-            .iter()
-            .filter(|(_, record)| record.agent == Agent::Native)
-            .map(|(id, _)| id.clone())
-            .collect();
-        let running = native_sessions.iter().any(|id| {
-            self.thread(id)
-                .is_ok_and(|handle| lock_thread(&handle).is_generating())
-        });
-        if running {
-            return Err(HostError::new(
-                "A turn is running. Stop it, then refresh models again — the new list applies at the next restart.",
-                ErrorClass::Fatal,
-            ));
-        }
-        for id in &native_sessions {
-            self.projector.note_agent_disconnected(
-                &acp::SessionId::new(id.as_str()),
-                "the model list changed; restart to continue",
-            );
-        }
-        self.drop_native_connection();
-        Ok(NativeModelsRefresh {
-            models,
-            default_model,
-            changed: true,
-            reconnected: true,
-        })
     }
 
     pub async fn new_session(
@@ -1484,43 +1242,6 @@ impl AgentHost {
         Ok(())
     }
 
-    /// Reasoning effort — a native-agent-only knob, as in Zed.
-    ///
-    /// Accepted by the engine, and **inert against the Atlas gateway**: the
-    /// gateway's forwarded allowlist carries no reasoning parameter, so the
-    /// authored catalogue advertises no effort levels and the picker offers
-    /// none. Kept because the engine still honours it on any other provider.
-    pub fn set_effort(&self, key: &SessionKey, effort: String) -> Result<()> {
-        let session_id = acp::SessionId::new(key.session_id.as_str());
-        let native = self.native_connection(&key.session_id)?;
-        let control = native.session_effort(&session_id).ok_or_else(|| {
-            HostError::new("this session has no effort control", ErrorClass::Fatal)
-        })?;
-        control
-            .set_effort(Some(effort))
-            .map_err(|e| HostError::classified(e.to_string()))
-    }
-
-    // Tool-output compression is gone (#54). It was a knob on the old native
-    // runtime's RTK tool-output compressor, and the engine has no counterpart —
-    // a named casualty (D8). The command and its toggle went with it, rather
-    // than leaving a control that silently does nothing.
-
-    /// Branch a session into a new thread. `None` for agents that cannot —
-    /// the frontend's `supportsFork` hides the affordance for those, so this
-    /// answer is a belt over braces, not a user-facing error.
-    pub async fn fork_session(&self, key: &SessionKey) -> Result<Option<String>> {
-        let Ok(native) = self.native_connection(&key.session_id) else {
-            return Ok(None);
-        };
-        let session_id = acp::SessionId::new(key.session_id.as_str());
-        let forked = native
-            .fork_thread(&session_id)
-            .await
-            .map_err(|e| HostError::classified(e.to_string()))?;
-        Ok(Some(forked))
-    }
-
     /// Drop the last exchange and return the prompt that started it.
     ///
     /// The rewind half of a retry. `None` means "not retryable here" — either
@@ -1544,21 +1265,6 @@ impl AgentHost {
             .run()
             .await
             .map_err(|e| HostError::classified(e.to_string()))
-    }
-
-    fn native_connection(
-        &self,
-        session_id: &str,
-    ) -> Result<Arc<atlas_native_agent::EngineConnection>> {
-        let connection = lock_thread(&self.thread(session_id)?).connection().clone();
-        connection
-            .downcast::<atlas_native_agent::EngineConnection>()
-            .ok_or_else(|| {
-                HostError::new(
-                    "this control is only available on the native agent",
-                    ErrorClass::Fatal,
-                )
-            })
     }
 
     // ---- permissions and elicitations ------------------------------------
@@ -2476,7 +2182,8 @@ pub fn icon_data_url(agent: &atlas_agent_store::RegistryAgent) -> Option<String>
 /// transcripts agents write for themselves, and knowing where those are is
 /// per-agent knowledge no protocol advertises.
 pub fn transcript_kind_for(plugin_id: &str) -> TranscriptKind {
-    if plugin_id == ATLAS_AGENT_ID {
+    // Historical records still resolve their original transcript format.
+    if plugin_id == "atlas-agent" {
         return TranscriptKind::Native;
     }
     TranscriptKind::None
@@ -2876,17 +2583,18 @@ mod auth_method_wire_tests {
 
 #[cfg(test)]
 mod tests {
-    use super::test_support::{fresh_host, fresh_host_with_native};
+    use super::test_support::{fresh_host, fresh_host_with_external};
     use super::*;
+    const TEST_AGENT_ID: &str = "test-agent";
     use atlas_acp_thread::{AcpThread, AcpThreadHandle, AgentConnection};
-    use atlas_agent_servers::AgentServerDelegate;
+    use atlas_agent_servers::{AgentServer, AgentServerDelegate};
     use futures::future::BoxFuture;
     use futures::FutureExt;
 
-    /// A native agent that reopens every session under one fixed id of its
+    /// A scripted ACP agent that reopens every session under one fixed id of its
     /// own choosing — the shape of the engine's fresh-thread fallback for a
     /// row whose stored id it does not know.
-    struct RebindingNative {
+    struct RebindingAgent {
         fresh_id: &'static str,
     }
 
@@ -2926,13 +2634,13 @@ mod tests {
         }
     }
 
-    impl AgentConnection for RebindingNative {
+    impl AgentConnection for RebindingAgent {
         fn agent_id(&self) -> atlas_acp_thread::AgentId {
-            atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            atlas_acp_thread::AgentId::new(TEST_AGENT_ID)
         }
 
         fn telemetry_id(&self) -> Arc<str> {
-            ATLAS_AGENT_ID.into()
+            TEST_AGENT_ID.into()
         }
 
         fn new_session(
@@ -2991,7 +2699,7 @@ mod tests {
         }
     }
 
-    impl RebindingNative {
+    impl RebindingAgent {
         fn thread(
             self: &Arc<Self>,
             session_id: acp::SessionId,
@@ -3007,9 +2715,9 @@ mod tests {
         }
     }
 
-    impl AgentServer for RebindingNative {
+    impl AgentServer for RebindingAgent {
         fn agent_id(&self) -> atlas_acp_thread::AgentId {
-            atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            atlas_acp_thread::AgentId::new(TEST_AGENT_ID)
         }
 
         fn connect(
@@ -3017,7 +2725,7 @@ mod tests {
             _delegate: AgentServerDelegate,
             _options: ConnectOptions,
         ) -> BoxFuture<'static, anyhow::Result<Arc<dyn AgentConnection>>> {
-            let connection = Arc::new(RebindingNative {
+            let connection = Arc::new(RebindingAgent {
                 fresh_id: self.fresh_id,
             });
             async move { Ok(connection as Arc<dyn AgentConnection>) }.boxed()
@@ -3028,15 +2736,15 @@ mod tests {
         }
     }
 
-    /// A native agent whose threads report to the host the way a real
+    /// A scripted ACP agent whose threads report to the host the way a real
     /// connection's do — through the `thread_events` sink it was handed at
     /// connect — so an event on the thread reaches the host's observer.
-    struct LiveNative {
+    struct LiveAgent {
         session_id: &'static str,
         events: std::sync::Mutex<Option<atlas_agent_servers::ThreadEventSink>>,
     }
 
-    impl LiveNative {
+    impl LiveAgent {
         fn new(session_id: &'static str) -> Arc<Self> {
             Arc::new(Self {
                 session_id,
@@ -3045,13 +2753,13 @@ mod tests {
         }
     }
 
-    impl AgentConnection for LiveNative {
+    impl AgentConnection for LiveAgent {
         fn agent_id(&self) -> atlas_acp_thread::AgentId {
-            atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            atlas_acp_thread::AgentId::new(TEST_AGENT_ID)
         }
 
         fn telemetry_id(&self) -> Arc<str> {
-            ATLAS_AGENT_ID.into()
+            TEST_AGENT_ID.into()
         }
 
         fn new_session(
@@ -3100,9 +2808,9 @@ mod tests {
         }
     }
 
-    impl AgentServer for LiveNative {
+    impl AgentServer for LiveAgent {
         fn agent_id(&self) -> atlas_acp_thread::AgentId {
-            atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID)
+            atlas_acp_thread::AgentId::new(TEST_AGENT_ID)
         }
 
         fn connect(
@@ -3110,7 +2818,7 @@ mod tests {
             _delegate: AgentServerDelegate,
             options: ConnectOptions,
         ) -> BoxFuture<'static, anyhow::Result<Arc<dyn AgentConnection>>> {
-            let connection = Arc::new(LiveNative {
+            let connection = Arc::new(LiveAgent {
                 session_id: self.session_id,
                 events: std::sync::Mutex::new(Some(options.thread_events)),
             });
@@ -3124,7 +2832,7 @@ mod tests {
 
     /// A host recording session lifecycle into shared memory, a project
     /// directory, and the scope's store to read the sessions table back from.
-    fn recording_host(
+    async fn recording_host(
         native: Arc<dyn AgentServer>,
     ) -> (
         Arc<AgentHost>,
@@ -3132,7 +2840,7 @@ mod tests {
         PathBuf,
         Arc<atlas_memory::record::RecordStore>,
     ) {
-        let (host, dir) = fresh_host_with_native(native);
+        let (host, dir) = fresh_host_with_external(native).await;
         let tick = Arc::new(std::sync::atomic::AtomicI64::new(0));
         let memory =
             crate::commands::shared_memory::SharedMemoryStore::with_clock(Arc::new(move || {
@@ -3146,12 +2854,12 @@ mod tests {
     }
 
     /// Issue #81: opening a session records its start and owning agent, and
-    /// dropping it (a tab closed) records its end. The native agent is an
+    /// dropping it (a tab closed) records its end. The ACP agent is an
     /// agent like any other here, recorded under its stored id.
     #[tokio::test]
     async fn a_dropped_session_leaves_its_start_end_and_agent() {
-        let (host, dir, project, record) = recording_host(LiveNative::new("s-drop"));
-        let agent_id = host.spawn(ATLAS_AGENT_ID).await.expect("spawn").agent_id;
+        let (host, dir, project, record) = recording_host(LiveAgent::new("s-drop")).await;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.expect("spawn").agent_id;
         host.new_session(agent_id, project.clone(), Vec::new())
             .await
             .expect("a session opens");
@@ -3165,7 +2873,7 @@ mod tests {
             record.sessions().unwrap(),
             vec![atlas_memory::record::SessionRow {
                 session_id: "s-drop".into(),
-                agent: ATLAS_AGENT_ID.into(),
+                agent: TEST_AGENT_ID.into(),
                 started_at: Some(100),
                 ended_at: Some(200),
             }],
@@ -3177,8 +2885,8 @@ mod tests {
     /// connection announces the exit on every live thread as a load error.
     #[tokio::test]
     async fn an_agent_process_exit_ends_its_session() {
-        let (host, dir, project, record) = recording_host(LiveNative::new("s-exit"));
-        let agent_id = host.spawn(ATLAS_AGENT_ID).await.expect("spawn").agent_id;
+        let (host, dir, project, record) = recording_host(LiveAgent::new("s-exit")).await;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.expect("spawn").agent_id;
         host.new_session(agent_id, project.clone(), Vec::new())
             .await
             .expect("a session opens");
@@ -3196,7 +2904,7 @@ mod tests {
         }
 
         let row = &record.sessions().unwrap()[0];
-        assert_eq!(row.agent, ATLAS_AGENT_ID);
+        assert_eq!(row.agent, TEST_AGENT_ID);
         assert_eq!((row.started_at, row.ended_at), (Some(100), Some(200)));
 
         // The tab closing afterwards does not end it a second time.
@@ -3215,8 +2923,8 @@ mod tests {
     /// session it had open.
     #[tokio::test]
     async fn killing_an_agent_ends_its_sessions() {
-        let (host, dir, project, record) = recording_host(LiveNative::new("s-kill"));
-        let agent_id = host.spawn(ATLAS_AGENT_ID).await.expect("spawn").agent_id;
+        let (host, dir, project, record) = recording_host(LiveAgent::new("s-kill")).await;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.expect("spawn").agent_id;
         host.new_session(agent_id, project.clone(), Vec::new())
             .await
             .expect("a session opens");
@@ -3233,13 +2941,13 @@ mod tests {
     /// told capture `None` on every turn and the Timeline row showed no
     /// model, while the agent knew its model the whole time.
     #[tokio::test]
-    async fn a_new_native_session_knows_its_model_before_any_pick() {
-        let native = Arc::new(RebindingNative {
+    async fn a_new_external_session_knows_its_model_before_any_pick() {
+        let native = Arc::new(RebindingAgent {
             fresh_id: "s-model",
         });
-        let (host, dir) = fresh_host_with_native(native);
+        let (host, dir) = fresh_host_with_external(native).await;
 
-        let agent_id = host.spawn(ATLAS_AGENT_ID).await.expect("spawn").agent_id;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.expect("spawn").agent_id;
         let init = host
             .new_session(agent_id, PathBuf::from("/tmp/atlas"), Vec::new())
             .await
@@ -3255,180 +2963,19 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Issue #62: sign-out drops the native connection — the engine's token
-    /// cache lives on it, and the JWT it holds outlives the revoked session
-    /// token. This pins the host half: after the drop nothing is running, so
-    /// the next spawn builds a fresh connection (and with it a fresh, empty
-    /// cache) instead of reusing the credentialled one.
-    #[tokio::test]
-    async fn dropping_the_native_connection_leaves_nothing_running() {
-        let native = Arc::new(RebindingNative { fresh_id: "s-1" });
-        let (host, dir) = fresh_host_with_native(native);
-
-        host.spawn(ATLAS_AGENT_ID)
-            .await
-            .expect("native agent spawns");
-        // The Connecting→Connected flip runs on a spawned task; on the test's
-        // current-thread runtime it needs the yield before `connected` sees it.
-        tokio::task::yield_now().await;
-        assert!(
-            host.manager().connected(&Agent::Native).is_some(),
-            "a connection is open",
-        );
-
-        host.drop_native_connection();
-        assert!(
-            host.manager().connected(&Agent::Native).is_none(),
-            "sign-out leaves nothing running",
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// A scripted gateway for the model-list refresh (ADR-0007).
-    struct FakeCatalogue {
-        rows: Vec<(&'static str, bool)>,
-        error: Option<atlas_native_agent::engine::FetchError>,
-    }
-
-    impl atlas_native_agent::engine::CatalogueFetcher for FakeCatalogue {
-        fn fetch(
-            &self,
-        ) -> futures::future::BoxFuture<
-            '_,
-            std::result::Result<
-                atlas_native_agent::engine::catalog_cache::GatewayCatalogue,
-                atlas_native_agent::engine::FetchError,
-            >,
-        > {
-            use atlas_native_agent::engine::catalog_cache::{GatewayCatalogue, GatewayRow};
-            use futures::FutureExt;
-            let answer = match &self.error {
-                Some(err) => Err(err.clone()),
-                None => Ok(GatewayCatalogue {
-                    has_grant: true,
-                    rows: self
-                        .rows
-                        .iter()
-                        .map(|(id, entitled)| GatewayRow {
-                            id: id.to_string(),
-                            entitled: *entitled,
-                            ..GatewayRow::default()
-                        })
-                        .collect(),
-                }),
-            };
-            async move { answer }.boxed()
-        }
-
-        fn org(&self) -> Option<String> {
-            Some("org_1".to_string())
-        }
-    }
-
-    /// ADR-0007: the picker's Refresh rewrites the cache the next connect
-    /// reads and answers with the list — with no engine open, that is the
-    /// whole job, and the next spawn picks the rows up without a request.
-    #[tokio::test]
-    async fn refreshing_models_rewrites_the_cache_the_next_connect_reads() {
-        use atlas_native_agent::engine::catalog_cache::load_cache;
-        let native = Arc::new(RebindingNative { fresh_id: "s-1" });
-        let (host, dir) = fresh_host_with_native(native);
-
-        let refreshed = host
-            .refresh_native_models_with(&FakeCatalogue {
-                rows: vec![
-                    ("model-a", true),
-                    ("model-locked", false),
-                    ("model-b", true),
-                ],
-                error: None,
-            })
-            .await
-            .expect("the gateway answered");
-
-        let ids: Vec<&str> = refreshed.models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, ["model-a", "model-b"], "entitled rows, gateway order");
-        assert_eq!(refreshed.default_model, "model-a");
-        assert!(refreshed.changed);
-        assert!(
-            !refreshed.reconnected,
-            "nothing was open, so nothing was torn down"
-        );
-
-        let home = atlas_native_agent::engine::EngineHome::under_config_dir(&dir);
-        let cache = load_cache(home.path())
-            .await
-            .expect("the cache was written");
-        assert_eq!(
-            cache.org.as_deref(),
-            Some("org_1"),
-            "keyed by the org it was fetched for"
-        );
-        assert_eq!(
-            cache.rows.len(),
-            3,
-            "the gateway's rows verbatim, locked one included"
-        );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// A refresh the gateway refuses reaches the frontend classified, so a
-    /// credential failure routes to sign-in and an empty grant reads as the
-    /// setup problem it is — never as "the button did nothing".
-    #[tokio::test]
-    async fn a_refused_refresh_is_classified_for_the_frontend() {
-        let native = Arc::new(RebindingNative { fresh_id: "s-1" });
-        let (host, dir) = fresh_host_with_native(native);
-
-        let Err(denied) = host
-            .refresh_native_models_with(&FakeCatalogue {
-                rows: vec![],
-                error: Some(atlas_native_agent::engine::FetchError::Unauthorized(
-                    String::new(),
-                )),
-            })
-            .await
-        else {
-            panic!("a 401 is a refusal");
-        };
-        assert!(matches!(denied.class, ErrorClass::Auth), "{denied:?}");
-
-        let Err(nothing) = host
-            .refresh_native_models_with(&FakeCatalogue {
-                rows: vec![("model-locked", false)],
-                error: None,
-            })
-            .await
-        else {
-            panic!("a list with nothing entitled is no list");
-        };
-        assert!(matches!(nothing.class, ErrorClass::Fatal), "{nothing:?}");
-        assert!(nothing.message.contains("no models"), "{}", nothing.message);
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// Issue #56 (B1): the engine may answer a resume with a *different*
-    /// session id than the stored one — its fresh-thread fallback for a
-    /// pre-cutover row does exactly that. The row the user clicked must be
-    /// rebound to the id the live feed will stamp on its events; otherwise the
-    /// feed's first write mints a duplicate sidebar row and the original is
-    /// orphaned on the dead id.
     #[tokio::test]
     async fn a_resume_that_comes_back_under_a_new_id_rebinds_the_row() {
-        let native = Arc::new(RebindingNative {
+        let native = Arc::new(RebindingAgent {
             fresh_id: "engine-fresh-id",
         });
-        let (host, dir) = fresh_host_with_native(native);
+        let (host, dir) = fresh_host_with_external(native).await;
         let history = host.history().expect("a fresh host has history");
 
         let thread = atlas_thread_metadata::ThreadMetadata {
             session_id: Some(acp::SessionId::new("pre-rename-id")),
             ..atlas_thread_metadata::ThreadMetadata::new(
                 atlas_thread_metadata::ThreadId::new(),
-                ATLAS_AGENT_ID.into(),
+                TEST_AGENT_ID.into(),
                 atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
             )
         };
@@ -3444,7 +2991,7 @@ mod tests {
         // The live feed's first write under the new id must land on the row
         // the user clicked, not mint a second one.
         history.record_connected(
-            &atlas_acp_thread::AgentId::new(ATLAS_AGENT_ID),
+            &atlas_acp_thread::AgentId::new(TEST_AGENT_ID),
             &acp::SessionId::new("engine-fresh-id"),
             atlas_thread_metadata::ThreadSnapshot {
                 is_draft: false,
@@ -3459,43 +3006,6 @@ mod tests {
             rows[0].session_id,
             Some(acp::SessionId::new("engine-fresh-id"))
         );
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The whole no-default-agents rule, checked at the only place that
-    /// enforces it. A fresh install must offer exactly one agent, and every
-    /// other id — including the ones the deleted `BUILTIN_AGENTS` table used to
-    /// name — must be refused rather than downloaded, discovered or guessed.
-    #[tokio::test]
-    async fn a_fresh_install_can_run_only_the_native_agent() {
-        let (host, dir) = fresh_host();
-
-        let plugins = host.list_plugins();
-        assert_eq!(plugins.len(), 1, "one agent, and it is the native one");
-        assert_eq!(plugins[0].plugin_id, ATLAS_AGENT_ID);
-        assert!(!plugins[0].external);
-
-        assert!(matches!(host.agent_for(ATLAS_AGENT_ID), Ok(Agent::Native)));
-        for id in ["claude-code-ts", "codex", "opencode", "cursor", "kilo"] {
-            let Err(err) = host.agent_for(id) else {
-                panic!("{id} must not be runnable");
-            };
-            // Fatal, not auth: signing in or retrying changes nothing, only
-            // installing does.
-            assert_eq!(err.class, ErrorClass::Fatal, "for {id}");
-            assert!(err.message.contains("not installed"), "for {id}: {err}");
-        }
-
-        // Nothing has connected, so nothing is running and no capability is
-        // claimed — capabilities only exist after `initialize`.
-        assert!(host.list_agents().is_empty());
-        let caps = host.capabilities(ATLAS_AGENT_ID);
-        assert!(caps.auth_kinds.is_empty());
-        assert!(!caps.supports_logout);
-        // `session/fork` has no equivalent on the ported seam, so this is
-        // false for every agent rather than optimistically true.
-        assert!(!caps.supports_fork);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3582,7 +3092,7 @@ mod tests {
             .into_iter()
             .map(|plugin| plugin.plugin_id)
             .collect();
-        assert_eq!(ids, [ATLAS_AGENT_ID, "some-agent"]);
+        assert_eq!(ids, ["some-agent"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -3615,8 +3125,8 @@ mod tests {
     /// (ADR-0001) — gets Atlas's own recording, which is what makes its history
     /// rows reopen at all.
     #[test]
-    fn only_the_native_agent_keeps_its_own_readable_transcript() {
-        assert_eq!(transcript_kind_for(ATLAS_AGENT_ID), TranscriptKind::Native);
+    fn historical_native_and_external_transcript_kinds_are_preserved() {
+        assert_eq!(transcript_kind_for("atlas-agent"), TranscriptKind::Native);
         for id in [
             "claude-code-ts",
             "claude-code",
@@ -3674,12 +3184,12 @@ mod tests {
         --- END RELEVANT PROJECT MEMORY ---\n\n\
         fix the sidebar scrolling bug\nit jumps on resize";
 
-    /// An agent that never titles its threads — the native agent — used to
+    /// An agent that never titles its threads — the ACP agent — used to
     /// have every one named `--- SHARED MEMORY ---`, the first line of the
     /// memory Atlas prepends. The name is the user's first line.
     #[test]
     fn an_untitled_thread_is_named_after_the_user_not_the_injected_memory() {
-        let connection = Arc::new(RebindingNative { fresh_id: "s" });
+        let connection = Arc::new(RebindingAgent { fresh_id: "s" });
         let thread = connection.thread(acp::SessionId::new("s"), Vec::new());
         lock_thread(&thread).push_user_content_block(
             None,
@@ -3699,7 +3209,7 @@ mod tests {
     fn a_row_named_after_injected_memory_reads_as_the_default_title() {
         let mut row = ThreadMetadata::new(
             ThreadId::new(),
-            ThreadAgentId::new(ATLAS_AGENT_ID),
+            ThreadAgentId::new(TEST_AGENT_ID),
             PathList::default(),
         );
 
@@ -3712,14 +3222,18 @@ mod tests {
         row.title = Some("Origin dropdown cleanup".into());
         assert_eq!(thread_row(&row).title, "Origin dropdown cleanup");
     }
+    #[tokio::test]
+    async fn a_fresh_install_has_no_builtin_agent_or_connection() {
+        let (host, dir) = fresh_host();
+        assert!(host.list_plugins().is_empty());
+        assert!(host.list_agents().is_empty());
+        for id in ["atlas-agent", "claude-code-ts", "codex", "opencode"] {
+            assert_eq!(host.agent_for(id).unwrap_err().class, ErrorClass::Fatal);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
-/// A real host wired to a temp data dir, for tests that need one.
-///
-/// Shared with `commands::catalog` and `commands::registry`: those answer
-/// questions *about* a host, and standing up the real thing is what makes the
-/// answers worth anything — an empty installed map really is what a fresh
-/// profile has.
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;
@@ -3763,41 +3277,19 @@ pub(crate) mod test_support {
         (host, dir)
     }
 
-    /// [`fresh_host`], but the native agent is the caller's scripted stand-in
-    /// rather than the real engine.
-    pub(crate) fn fresh_host_with_native(
-        native: Arc<dyn AgentServer>,
+    pub(crate) async fn fresh_host_with_external(
+        server: Arc<dyn atlas_agent_servers::AgentServer>,
     ) -> (Arc<AgentHost>, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("atlas-host-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        struct Discard;
-        impl DeltaSink for Discard {
-            fn emit(&self, _envelope: atlas_agent_wire::SessionDeltaEnvelope) {}
-        }
-        struct Offline;
-        impl atlas_agent_store::HttpClient for Offline {
-            fn get(
-                &self,
-                _url: &str,
-            ) -> futures::future::BoxFuture<'static, anyhow::Result<atlas_agent_store::HttpResponse>>
-            {
-                use futures::FutureExt;
-                async { Err(anyhow::anyhow!("offline in tests")) }.boxed()
-            }
-        }
-        let http: Arc<dyn atlas_agent_store::HttpClient> = Arc::new(Offline);
-        let registry = Arc::new(atlas_agent_store::AgentRegistryStore::new(
-            dir.clone(),
-            http.clone(),
-        ));
-        let store = Arc::new(AgentServerStore::new(
-            dir.clone(),
-            http,
-            atlas_agent_store::NodeRuntime::unavailable("not needed in this test"),
-            Arc::new(atlas_agent_store::InheritedProjectEnvironment),
-            Some(registry.clone()),
-        ));
-        let host = AgentHost::with_native(Arc::new(Discard), dir.clone(), store, registry, native);
+        let (host, dir) = fresh_host();
+        let id = server.agent_id();
+        let mut settings = atlas_agent_store::AllAgentServersSettings::default();
+        settings.0.insert(
+            id.as_str().to_string(),
+            atlas_agent_store::AgentServerSettings::custom("fixture-agent", Vec::new()),
+        );
+        host.store().set_settings(settings).await;
+        host.manager()
+            .request_connection(Agent::Custom { id }, server);
         (host, dir)
     }
 }

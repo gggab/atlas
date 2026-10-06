@@ -656,6 +656,7 @@ impl SharedMemoryStore {
 }
 
 /// The provenance of every entry the extractor writes.
+#[cfg(test)]
 pub const EXTRACTOR_SOURCE: &str = "extractor";
 
 /// The provenance of every edit made from the Memory panel.
@@ -715,6 +716,7 @@ impl SharedMemoryStore {
     /// same path as a tool write — redacted, key-or-hash identity with
     /// near-duplicate merge, logged as an event so the Shared tab shows it,
     /// announced as a memory change.
+    #[cfg(test)]
     pub fn record_extracted(
         &self,
         project_path: &str,

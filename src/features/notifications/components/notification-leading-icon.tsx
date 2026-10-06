@@ -7,8 +7,6 @@ import {
   Download,
   GitBranch,
   Hand,
-  KeyRound,
-  MessageSquare,
   SquareTerminal,
   Sparkles,
   X,
@@ -29,8 +27,7 @@ const BADGE_STYLE: Record<LeadingBadge, { bg: string; Icon: typeof Check }> = {
 function SourceIcon({ kind, size }: { kind: NotificationKind; size: number }) {
   const common = { size, strokeWidth: 1.5 };
   const error = "text-[var(--atlas-status-error-foreground)]";
-  if (kind === "atlas-signed-out") return <KeyRound {...common} className="text-primary" />;
-  if (kind === "app-update-ready") return <Download {...common} className="text-primary" />;
+
   if (kind === "model-download-done")
     return <Download {...common} className="text-secondary-foreground" />;
   if (kind === "model-download-failed") return <Download {...common} className={error} />;
@@ -43,7 +40,6 @@ function SourceIcon({ kind, size }: { kind: NotificationKind; size: number }) {
   if (kind === "config-error") return <AlertTriangle {...common} className={warn} />;
   if (kind === "agent-update-failed") return <Download {...common} className={warn} />;
   const source = catalogEntry(kind).source;
-  if (source === "chat") return <MessageSquare {...common} className="text-primary" />;
   if (kind === "terminal-failed")
     return <AlertTriangle {...common} className="text-[var(--atlas-status-error-foreground)]" />;
   if (kind === "terminal-attention")

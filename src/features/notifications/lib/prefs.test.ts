@@ -34,7 +34,6 @@ describe("prefsFromSettings", () => {
       const locked = catalogEntry(kind).locked;
       expect(kind in prefs).toBe(!locked);
     }
-    expect(prefs["atlas-signed-out"]).toBeUndefined();
   });
 
   it("the tier switches decide banner and sound for every kind in the tier", () => {
@@ -79,13 +78,12 @@ describe("prefsFromSettings", () => {
     }
   });
 
-  it("ignores unknown ids, and a locked kind cannot be silenced", () => {
+  it("ignores unknown and retired ids", () => {
     const settings = {
       ...DEFAULT_SETTINGS,
       notifyDisabledKinds: ["not-a-kind", "atlas-signed-out"],
     };
     expect(decide("terminal-done", settings)).not.toBeNull();
-    expect(decide("atlas-signed-out", settings)).not.toBeNull();
     expect(prefsFromSettings(settings)).not.toHaveProperty("not-a-kind");
   });
 });
@@ -108,22 +106,6 @@ describe("the decision honours the settings", () => {
     expect(decide("agent-rate-limit", DEFAULT_SETTINGS)?.channels.native).toBe(false);
     const opted = decide("agent-rate-limit", { ...DEFAULT_SETTINGS, notifyWarningNative: true });
     expect(opted?.channels.native).toBe(true);
-  });
-
-  it("team kinds follow the team tier", () => {
-    const d = decide("chat-dm", { ...DEFAULT_SETTINGS, notifyTeamNative: false });
-    expect(d?.channels.native).toBe(false);
-    expect(decide("chat-mention", DEFAULT_SETTINGS)?.channels.native).toBe(true);
-  });
-
-  it("signed-out stays on whatever the switches say", () => {
-    const quiet = {
-      ...DEFAULT_SETTINGS,
-      notificationsEnabled: false,
-      notifyNeedsYouNative: false,
-      notifyNeedsYouSound: false,
-    };
-    expect(decide("atlas-signed-out", quiet)?.channels.native).toBe(true);
   });
 });
 

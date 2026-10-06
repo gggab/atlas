@@ -29,7 +29,7 @@ use tauri::{AppHandle, Manager};
 /// that one-time export already happened, so a user who deletes `config.toml`
 /// afterward gets fresh defaults rather than a silent re-import of whatever
 /// was last in `state.json`.
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// Just enough to name a project: the {name, path} pair the legacy v1
 /// `current_project` field and the recents list carry. `Project` proper is
@@ -112,40 +112,6 @@ pub struct ProjectGroup {
     pub pinned: bool,
 }
 
-/// A top-level tenant that owns a set of projects (the Linear "workspace
-/// picker" model). Exactly one org is active per window. Local-only until the
-/// user opts into sync per org (Chrome-profile model). The shape is a superset
-/// of the server `organization` row so cloud sync is a thin adapter:
-/// `{ id, name, slug, logo, metadata }` map to the server; the rest is local.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Organisation {
-    pub id: String,
-    pub name: String,
-    /// URL-safe unique handle (server enforces a global unique index). Derived
-    /// from `name` at create time; kept stable thereafter.
-    pub slug: String,
-    #[serde(default)]
-    pub color: Option<String>,
-    #[serde(default)]
-    pub logo: Option<String>,
-    /// ISO-8601 creation timestamp.
-    #[serde(default)]
-    pub created_at: Option<String>,
-    /// Per-org memory of the last active project, so an org switch restores
-    /// the user where they left off. Local-only (the server has no such notion).
-    #[serde(default)]
-    pub active_workspace_id: Option<String>,
-    /// Opt-in cloud sync flag (Chrome-profile model). `false` = local-only.
-    #[serde(default)]
-    pub sync_enabled: bool,
-    /// The server `organization.id` once this org has been linked via
-    /// "Turn on sync". `None` while local-only. Reconciliation seam for the
-    /// auth branch.
-    #[serde(default)]
-    pub remote_id: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppState {
@@ -165,17 +131,6 @@ pub struct AppState {
     pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
-    /// The Organisation layer above projects (v3). Each project/group is
-    /// tagged with an `org_id`; the sidebar shows only the active org's set.
-    #[serde(default)]
-    pub organisations: Vec<Organisation>,
-    #[serde(default)]
-    pub active_organisation_id: Option<String>,
-    /// Stable anonymous id for opt-in product telemetry (PostHog `distinct_id`).
-    /// Generated once on first launch (see `lib.rs` setup); never contains PII.
-    /// `None` on old `state.json` files — backfilled + persisted at startup.
-    #[serde(default)]
-    pub telemetry_anon_id: Option<String>,
     /// Whether the one-time `state.json.settings` → `config.toml` export
     /// (issue #64) has already run. See the `SCHEMA_VERSION` doc for why this
     /// can't just be "does config.toml exist".
@@ -215,10 +170,6 @@ pub struct AppStatePatch {
     pub groups: Vec<ProjectGroup>,
     #[serde(default)]
     pub active_workspace_id: Option<String>,
-    #[serde(default)]
-    pub organisations: Vec<Organisation>,
-    #[serde(default)]
-    pub active_organisation_id: Option<String>,
 }
 
 impl Default for AppState {
@@ -229,43 +180,10 @@ impl Default for AppState {
             workspaces: Vec::new(),
             groups: Vec::new(),
             active_workspace_id: None,
-            organisations: Vec::new(),
-            active_organisation_id: None,
-            telemetry_anon_id: None,
             settings_config_migrated: false,
             version: SCHEMA_VERSION,
         }
     }
-}
-
-/// A globally-unique handle for the auto-created "Personal" organisation.
-///
-/// Every install creates one, so a fixed `"personal"` would collide for the
-/// second person who ever turns on sync — the server's unique index on
-/// `organization.slug` would reject it, and the failure would land on a user who
-/// never chose the handle in the first place. Suffixing per-install entropy
-/// makes the first sync of a default org always succeed.
-///
-/// The entropy is a **fresh random UUID**, deliberately not the telemetry
-/// anon-id: a slug is public and leaves the machine, and the org's creation
-/// time sits right next to it, so hashing that id with a timestamp would be
-/// recomputable by anyone holding both — quietly linking an anonymous telemetry
-/// profile to a named account. Random bytes give the same uniqueness and cannot
-/// correlate to anything.
-fn default_personal_slug() -> String {
-    use sha2::{Digest, Sha256};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let entropy = uuid::Uuid::new_v4();
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let digest = Sha256::digest(format!("{entropy}:{millis}").as_bytes());
-    // 5 bytes = 10 hex chars (~2^40). The handle stays typeable, and the space
-    // is far beyond anything a birthday collision reaches in practice.
-    let short: String = digest.iter().take(5).map(|b| format!("{b:02x}")).collect();
-    format!("personal-{short}")
 }
 
 impl AppState {
@@ -296,81 +214,15 @@ impl AppState {
             }
         }
         self.current_project = None;
-
-        // v2 → v3: ensure a default Organisation owns all existing projects.
-        if self.organisations.is_empty() {
-            let org_id = uuid::Uuid::new_v4().to_string();
-            self.organisations.push(Organisation {
-                id: org_id.clone(),
-                name: "Personal".to_string(),
-                slug: default_personal_slug(),
-                color: None,
-                logo: None,
-                created_at: None,
-                active_workspace_id: self.active_workspace_id.clone(),
-                sync_enabled: false,
-                remote_id: None,
-            });
-            self.active_organisation_id = Some(org_id);
+        // Retire tenant ownership without dropping projects, groups or their UI ids.
+        for project in &mut self.workspaces {
+            project.org_id = None;
         }
-
-        // Repair installs created before the handle carried entropy: their
-        // default org still holds the literal `"personal"`, which is exactly
-        // the collision above avoids. Safe to rewrite only while the org is
-        // UNSYNCED — once `remote_id` is set the server owns that handle and
-        // it is not ours to change. Narrowed to the untouched auto-created
-        // default (name AND slug both still the originals) so a handle the
-        // user deliberately typed is never silently swapped underneath them.
-        for org in &mut self.organisations {
-            if org.remote_id.is_none() && org.name == "Personal" && org.slug == "personal" {
-                org.slug = default_personal_slug();
-            }
+        for group in &mut self.groups {
+            group.org_id = None;
         }
-
-        // Backfill org ownership on any untagged project/group (covers both
-        // the fresh migration above and stray untagged entries — the frontend
-        // can mint `org_id: null` rows during a boot race, and every render
-        // surface filters strictly by org, so an untagged row would otherwise
-        // be invisible in one org and leak into all of them). When no active
-        // org is set, fall back to the first org rather than leaving rows
-        // untagged forever.
-        let default_org = self
-            .active_organisation_id
-            .clone()
-            .or_else(|| self.organisations.first().map(|o| o.id.clone()));
-        if let Some(default_org) = default_org {
-            let group_orgs: std::collections::HashMap<String, String> = self
-                .groups
-                .iter()
-                .filter_map(|g| Some((g.id.clone(), g.org_id.clone()?)))
-                .collect();
-            let mut backfilled = 0usize;
-            for group in &mut self.groups {
-                if group.org_id.is_none() {
-                    group.org_id = Some(default_org.clone());
-                    backfilled += 1;
-                }
-            }
-            for ws in &mut self.workspaces {
-                if ws.org_id.is_none() {
-                    // A project inside an org-tagged group belongs to that
-                    // group's org; only truly orphaned rows get the default.
-                    ws.org_id = Some(
-                        ws.group_id
-                            .as_ref()
-                            .and_then(|gid| group_orgs.get(gid).cloned())
-                            .unwrap_or_else(|| default_org.clone()),
-                    );
-                    backfilled += 1;
-                }
-            }
-            if backfilled > 0 {
-                tracing::info!(
-                    count = backfilled,
-                    default_org = %default_org,
-                    "backfilled org_id on untagged projects/groups"
-                );
-            }
+        for recent in &mut self.recent_projects {
+            recent.org_id = None;
         }
 
         self.version = SCHEMA_VERSION;
@@ -393,8 +245,6 @@ impl AppState {
         self.workspaces = p.workspaces;
         self.groups = p.groups;
         self.active_workspace_id = p.active_workspace_id;
-        self.organisations = p.organisations;
-        self.active_organisation_id = p.active_organisation_id;
         self.version = SCHEMA_VERSION;
         // `telemetry_anon_id` (and anything Rust adds later) is deliberately
         // NOT assigned here. See the `AppStatePatch` doc.
@@ -474,6 +324,14 @@ impl AppState {
         if let (Some(dst), Some(src)) = (merged.as_object_mut(), fresh.as_object()) {
             for (k, v) in src {
                 dst.insert(k.clone(), v.clone());
+            }
+            for key in [
+                "organisations",
+                "active_organisation_id",
+                "activeOrganisationId",
+                "telemetry_anon_id",
+            ] {
+                dst.remove(key);
             }
             if state.settings_config_migrated {
                 dst.remove("settings");
@@ -654,37 +512,6 @@ mod tests {
         );
     }
 
-    /// The same freeze, one level down. `Organisation::active_workspace_id` is
-    /// a NESTED storage key inside the `organisations` array, which the
-    /// workspace→project rename missed: the frontend sent `activeProjectId`,
-    /// serde dropped it (no `deny_unknown_fields`, `#[serde(default)]`), and
-    /// `apply_patch` committed `None` over every org's last-active project.
-    /// The frontend now translates at the seam (`organisations/types.ts`
-    /// `toOrganisationWire`); this asserts what it must translate *to*.
-    #[test]
-    fn an_organisation_carries_the_frozen_nested_active_project_key() {
-        let org: Organisation = serde_json::from_value(serde_json::json!({
-            "id": "org-1",
-            "name": "Personal",
-            "slug": "personal",
-            "activeWorkspaceId": "proj-1",
-            "syncEnabled": false,
-        }))
-        .expect("wire organisation deserializes");
-        assert_eq!(org.active_workspace_id.as_deref(), Some("proj-1"));
-
-        // …and the app-side spelling is exactly the silent drop being guarded.
-        let renamed: Organisation = serde_json::from_value(serde_json::json!({
-            "id": "org-1",
-            "name": "Personal",
-            "slug": "personal",
-            "activeProjectId": "proj-1",
-            "syncEnabled": false,
-        }))
-        .expect("an unknown key is not an error — that is the whole problem");
-        assert_eq!(renamed.active_workspace_id, None);
-    }
-
     /// `pinned` was frontend-only: `pin()` scheduled a save and serde threw the
     /// field away, so a pinned project or group came back unpinned on the next
     /// launch. Found by `tests/state-payload-contract.test.ts`.
@@ -699,58 +526,6 @@ mod tests {
         assert!(patch.groups[0].pinned);
     }
 
-    /// The regression test for the analytics bug: a settings save must not cost
-    /// the install its telemetry identity. Before `AppStatePatch`, `save_app_state`
-    /// did `*guard = payload` and this id became `None` on every settings change,
-    /// so the next launch minted a new PostHog person.
-    #[test]
-    fn apply_patch_preserves_telemetry_anon_id() {
-        let mut state = AppState {
-            telemetry_anon_id: Some("device-uuid".into()),
-            ..AppState::default()
-        };
-
-        state.apply_patch(frontend_payload());
-
-        assert_eq!(state.telemetry_anon_id.as_deref(), Some("device-uuid"));
-    }
-
-    /// A first run — no `state.json` on disk — must come up with the default
-    /// Organisation, exactly like a parsed file with none does. Without one
-    /// the frontend's `requireActiveOrgId()` is `undefined`, `addProject`
-    /// bails with a log line and no UI feedback, and "Open Folder" picks a
-    /// directory and silently does nothing until the app is relaunched.
-    #[test]
-    fn a_first_run_still_gets_the_default_organisation() {
-        let (state, legacy) = AppState::from_raw(None);
-
-        assert_eq!(
-            state.organisations.len(),
-            1,
-            "no default org on a fresh install"
-        );
-        assert_eq!(state.organisations[0].name, "Personal");
-        assert_eq!(
-            state.active_organisation_id.as_deref(),
-            Some(state.organisations[0].id.as_str()),
-            "default org exists but nothing is active"
-        );
-        assert_eq!(state.version, SCHEMA_VERSION);
-        assert!(legacy.is_none());
-    }
-
-    /// A present-but-unreadable `state.json` takes the same fallback and is
-    /// migrated the same way: the two inputs must never diverge again.
-    #[test]
-    fn a_corrupt_state_file_still_gets_the_default_organisation() {
-        let (state, legacy) = AppState::from_raw(Some("{ not json"));
-
-        assert_eq!(state.organisations.len(), 1);
-        assert_eq!(state.organisations[0].name, "Personal");
-        assert!(state.active_organisation_id.is_some());
-        assert!(legacy.is_none());
-    }
-
     /// A patch with unknown/extra keys (an older or newer frontend) still parses,
     /// and absent keys fall back to their defaults rather than failing the save.
     #[test]
@@ -759,11 +534,9 @@ mod tests {
             serde_json::from_value(serde_json::json!({ "recentProjects": [] }))
                 .expect("partial payload");
         let mut state = AppState {
-            telemetry_anon_id: Some("keep-me".into()),
             ..AppState::default()
         };
         state.apply_patch(patch);
-        assert_eq!(state.telemetry_anon_id.as_deref(), Some("keep-me"));
         assert_eq!(state.version, SCHEMA_VERSION);
     }
 
@@ -787,5 +560,32 @@ mod tests {
         }))
         .expect("an older state file parses even with the retired settings key present");
         assert_eq!(state.recent_projects.len(), 1);
+    }
+    #[test]
+    fn fresh_profile_and_old_organization_projects_work_locally() {
+        let (fresh, _) = AppState::from_raw(None);
+        assert_eq!(fresh.version, SCHEMA_VERSION);
+        assert!(fresh.workspaces.is_empty());
+        let raw = serde_json::json!({
+            "version": 4, "organisations": [{"id":"org-old"}], "activeOrganisationId":"org-old",
+            "workspaces":[{"id":"p1","name":"Project","path":"/tmp/project","orgId":"org-old","groupId":"g1","pinned":true}],
+            "groups":[{"id":"g1","name":"Group","orgId":"org-old"}],
+            "activeWorkspaceId":"p1",
+            "recentProjects":[{"name":"Project","path":"/tmp/project","lastOpened":"now","orgId":"org-old"}]
+        }).to_string();
+        let (state, _) = AppState::from_raw(Some(&raw));
+        assert_eq!(state.workspaces[0].id, "p1");
+        assert_eq!(state.workspaces[0].group_id.as_deref(), Some("g1"));
+        assert!(state.workspaces[0].pinned);
+        assert_eq!(state.workspaces[0].org_id, None);
+        assert_eq!(state.groups[0].org_id, None);
+        assert_eq!(state.recent_projects[0].org_id, None);
+        assert_eq!(state.active_workspace_id.as_deref(), Some("p1"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        std::fs::write(&path, raw).unwrap();
+        let saved = AppState::merged_for_save(&path, &state).unwrap();
+        assert!(saved.get("organisations").is_none());
+        assert!(saved.get("activeOrganisationId").is_none());
     }
 }

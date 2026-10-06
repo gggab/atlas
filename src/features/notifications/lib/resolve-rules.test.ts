@@ -66,11 +66,6 @@ describe("planOpened", () => {
     expect(p.markRead).toEqual([{ terminalId: "a" }, { terminalId: "b" }]);
   });
 
-  it("removes a conversation's group", () => {
-    const p = planOpened({ type: "chat-conversation", convId: "c1" }, CAN_REMOVE);
-    expect(p.groups).toEqual(["chat:c1"]);
-  });
-
   it("removes no group without the removal capability but still marks read", () => {
     const p = planOpened(
       { type: "terminal", tabId: "t", terminalIds: ["a"] },
@@ -90,10 +85,7 @@ describe("matchesScope", () => {
     expect(matchesScope(item({ sessionId: "s2" }), scope)).toBe(false);
   });
 
-  it("matches chat and sign-in items through their target", () => {
-    const chat = item({ kind: "chat-dm", target: { type: "chat-conversation", convId: "c1" } });
-    expect(matchesScope(chat, [{ convId: "c1" }])).toBe(true);
-    expect(matchesScope(chat, [{ convId: "c2" }])).toBe(false);
+  it("matches vendor sign-in items through their target", () => {
     const si = item({ kind: "agent-sign-in", target: { type: "agent-sign-in", agentType: "a" } });
     expect(matchesScope(si, [{ kind: "agent-sign-in", agentType: "a" }])).toBe(true);
     expect(matchesScope(si, [{ agentType: "b" }])).toBe(false);

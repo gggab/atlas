@@ -103,7 +103,7 @@ The fake backend is never part of a build, and it switches itself off inside the
 
 If you're working on the **Claude Code** agent specifically, you also need the `claude` CLI on your `PATH`. The native Atlas agent needs nothing extra.
 
-`.env` is optional — copy `.env.example` only if you want to point telemetry at your own PostHog project. Left blank, telemetry is permanently inert.
+No Atlas account or telemetry environment is required.
 
 ## Fork, branch, PR
 
@@ -213,7 +213,7 @@ Jobs run on your machine, except:
   Mac the Linux one goes to the container.
 - **The jobs that need Linux itself** go to a container built from
   `scripts/ci-linux/Dockerfile`, with Rust, Bun and Node at the pinned versions.
-  That means `atlas-native-agent`, whose suites drive the engine's sandbox, and
+  That means
   the app's Linux compile check. On Linux the sandbox is bubblewrap, landlock
   and seccomp; on a Mac it's seatbelt, which allows what landlock denies, so a
   macOS run passes where Linux fails. The container starts only when the plan
@@ -292,7 +292,7 @@ CI does:
 
 ```bash
 cargo test -p atlas-native-agent                          # the native agent
-cargo test -p atlas-native-agent --test engine_turn       # a single file
+cargo test -p atlas-agent-manager --test spawning       # a single file
 cd crates/atlas-native-agent && cargo test                # same thing, from the crate
 ```
 
@@ -345,20 +345,9 @@ IPC seam, not the UI itself.
 
 Opening a PR pre-fills the checklist from the [PR template](.github/PULL_REQUEST_TEMPLATE.md) — work through it before asking for review.
 
-## Telemetry
+## Local scope
 
-Atlas ships one narrow PostHog pipeline, in `src-tauri/src/telemetry/`. It's anonymous, coarse, and opt-out. Changing it has its own rules.
-
-**Never sent, under any circumstance:**
-
-- Prompt or response text
-- File contents, or absolute paths
-- Knowledge-base or chat content
-- API keys and credentials
-- Terminal input or output
-- Browser URLs
-
-New events need discussion in the issue before they're built, and any change to the pipeline updates [TELEMETRY.md](TELEMETRY.md) in the same PR.
+External CLI agents own their vendor credentials. Do not introduce Atlas accounts, cloud organization services, a model gateway or product uploads into this build. Preserve local thread, checkpoint and memory data when pruning code. Historical ADRs do not override the current local workbench scope.
 
 ## New markdown files
 

@@ -4,7 +4,6 @@
 // Each answer is typed with the same type the frontend's API wrapper uses, so
 // `bun run typecheck` flags a fake that no longer matches what Rust returns.
 
-import type { UpdaterSnapshot } from "@/features/updater/lib/updater-api";
 import type { FileEntry } from "@/features/explorer/stores/explorer-store";
 import type { Theme, ThemeCatalogSummary } from "@/features/theme/lib/theme-api";
 import type { MockHandlers } from "../types";
@@ -13,7 +12,7 @@ import builtinThemesJson from "../fixtures/builtin-themes.json";
 import { agentHandlers } from "../fake-agent";
 import { artifactsHandlers } from "../fixtures/artifacts";
 import { captureHandlers } from "../fixtures/capture";
-import { commsHandlers } from "../fixtures/comms";
+
 import { fsHandlers, listDir } from "../fixtures/files";
 import { gitHandlers } from "../fixtures/git";
 import { iconThemeHandlers } from "../fixtures/icon-themes";
@@ -24,7 +23,7 @@ import { memoryHandlers } from "../fixtures/memory";
 import { miscHandlers } from "../fixtures/misc";
 import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
-import { spacesHandlers } from "../fixtures/spaces";
+
 import { terminalHandlers } from "../fixtures/terminal";
 import { importedUserThemes, themeImportHandlers } from "../fixtures/theme-import";
 import { appState, MOCK_PROJECT } from "../project";
@@ -54,11 +53,11 @@ export const baseFixtureMaps: Readonly<Record<string, MockHandlers>> = {
   "fixtures/log": logHandlers,
   "fixtures/artifacts": artifactsHandlers,
   "fixtures/capture": captureHandlers,
-  "fixtures/comms": commsHandlers,
+
   "fixtures/integrations": integrationsHandlers,
   "fixtures/memory": memoryHandlers,
   "fixtures/skills": skillsHandlers,
-  "fixtures/spaces": spacesHandlers,
+
   "fixtures/terminal": terminalHandlers,
 };
 
@@ -105,20 +104,6 @@ export const baseHandlers: MockHandlers = {
   app_profile: (): AppProfile => DEFAULT_APP_PROFILE,
   cli_take_initial_project_path: nothing,
   set_window_title: nothing,
-  telemetry_config: () => ({
-    enabled: false,
-    host: "",
-    anonId: "mock-device",
-    accountId: null,
-    usingDefaultKey: false,
-    // null keeps posthog-js from ever loading in mock mode.
-    key: null,
-  }),
-  update_state: (): UpdaterSnapshot => ({
-    phase: "idle",
-    version: null,
-    currentVersion: "0.0.0-mock",
-  }),
 
   // ── project open ──────────────────────────────────────────────────────
   save_app_state: nothing,
@@ -151,7 +136,6 @@ export const baseHandlers: MockHandlers = {
 
   // ── agents ──────────────────────────────────────────────────────────────
   ...agentHandlers,
-  agents_set_effort: nothing,
 
   // ── everything else, one fixture file per surface ───────────────────────
   //
@@ -163,15 +147,15 @@ export const baseHandlers: MockHandlers = {
   ...logHandlers,
   ...artifactsHandlers,
   ...captureHandlers,
-  ...commsHandlers,
+
   ...integrationsHandlers,
   ...memoryHandlers,
   ...skillsHandlers,
-  ...spacesHandlers,
+
   ...terminalHandlers,
 
   // ── fire-and-forget housekeeping ────────────────────────────────────────
-  comms_ready: nothing,
+
   fileindex_close_project: nothing,
   // Mirrored instructions: Rust writes AGENTS.md; nothing to fake in a browser.
   instruction_sync_start: nothing,
@@ -183,7 +167,6 @@ export const baseHandlers: MockHandlers = {
   knowledge_export_note_html: nothing,
   knowledge_export_workspace_md: nothing,
   knowledge_export_workspace_html: nothing,
-  telemetry_set_org: nothing,
 
   // ── Tauri plugins ───────────────────────────────────────────────────────
   "plugin:app|version": () => "0.0.0-mock",

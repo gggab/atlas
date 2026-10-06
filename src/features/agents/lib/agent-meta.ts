@@ -6,7 +6,6 @@
 
 import {
   AGENT_LABEL,
-  NATIVE_AGENT_ID,
   PLUGIN_ID_BY_AGENT,
   type AgentType,
   type FirstPartyAgent,
@@ -88,7 +87,8 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
   const id =
     typeof agentTypeOrPluginId === "string" && agentTypeOrPluginId.length > 0
       ? agentTypeOrPluginId
-      : NATIVE_AGENT_ID;
+      : "";
+
   const catalog = catalogEntry(id);
   const firstParty = firstPartyOf(id);
   if (firstParty) {
@@ -113,7 +113,7 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
     agentType: id,
     // Catalog first (it already merged manifest + install + discovery), then
     // the registry listing, then a last-resort prettified id.
-    label: catalog?.name ?? entry?.name ?? prettifyId(id),
+    label: catalog?.name ?? entry?.name ?? (id ? prettifyId(id) : "Choose agent"),
     firstPartyIcon: null,
     iconDataUrl: catalog?.iconDataUrl ?? entry?.iconDataUrl ?? null,
     external: true,
@@ -142,7 +142,7 @@ export function agentMeta(agentTypeOrPluginId: string | null | undefined): Agent
  *  rendered as "Claude Code" in the agent pill — wrong name, wrong icon, and
  *  the switcher highlighted the wrong row. One implementation, one behaviour. */
 export function switchableAgentOf(agentType: string | undefined): AgentType {
-  if (!agentType || agentType === "custom") return NATIVE_AGENT_ID;
+  if (!agentType || agentType === "custom") return "";
   // Only the retired built-in spec ids alias to the persisted "claude-code".
   // `claude-acp` is a registry agent whose identity is its plugin id (see
   // `agentTypeFromPluginId`), and a third-party `claude-*` is its own agent.
@@ -174,32 +174,15 @@ export function installedExternals(): AgentCatalogEntry[] {
     .catalog.filter((e) => e.kind !== "native" && e.installed && e.source !== "unavailable");
 }
 
-/** The agents the user can switch between: the native agent, then everything
- *  they installed from the Marketplace, A–Z by label.
- *
- *  Drives option+/ cycling and the composer "+" agent picker. What is NOT here
- *  is the point: an agent merely DETECTED on the user's PATH is an offer to
- *  install, not a spawn candidate (`catalog.rs`), and Atlas ships no ACP
- *  agents of its own (ADR-0002) — so a fresh profile offers exactly the
- *  native agent, and Claude Code appears the moment it is installed and
- *  disappears when it is removed.
- *
- *  Returns `agentType`s, not spec ids: that is the identity sessions persist
- *  and every picker compares against ("claude-code", not "claude-code-ts"). */
+/** Installed external agents, sorted by label, for the composer and shortcuts.
+ * Detection offers installation; it does not authorize launching a CLI.
+ * Returns the agent types persisted by sessions (e.g. "claude-code"). */
 export function switchableAgentIds(): string[] {
-  const { catalog } = useAgentRegistryStore.getState();
-  // Pre-hydration (boot paths run before any catalog exists): the native agent
-  // is in-process and needs no install, so it is always a truthful answer.
-  if (catalog.length === 0) return [NATIVE_AGENT_ID];
-
   const byLabel = (a: string, b: string) => agentMeta(a).label.localeCompare(agentMeta(b).label);
-  const native = catalog
-    .filter((e) => e.kind === "native" && e.source !== "unavailable")
-    .map((e) => e.agentType);
   const installed = installedExternals()
     .map((e) => e.agentType)
     .sort(byLabel);
-  return [...native, ...installed];
+  return installed;
 }
 
 /** Reactive variant for components that must re-render when agents are

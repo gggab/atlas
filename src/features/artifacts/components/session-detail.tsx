@@ -1,12 +1,10 @@
 import {
-  createContext,
   memo,
   useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
-  useContext,
   useState,
   type ReactNode,
 } from "react";
@@ -17,8 +15,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  ChevronsDown,
-  MessageSquare,
   Filter,
   Download,
   GitCommitHorizontal,
@@ -64,16 +60,12 @@ import {
 import { observeSize } from "../lib/shared-resize-observer";
 import { animatedScrollTo } from "../lib/scroll-to";
 import { useTimelineScroll } from "../lib/use-timeline-scroll";
-import { commentActivity } from "../lib/comment-activity";
+
 import { toolLine } from "../lib/tool-line";
 import { ToolGlyph } from "@/features/chat/components/tool-glyph";
-import { anchorKindFor, visibleCount, type Comment } from "../lib/comments-api";
-import { CodeBlock, CopyButton, prettyJson } from "./code-block";
-import { AccountAvatar } from "@/features/auth/components/account-avatar";
-import type { OrgDirectory } from "@/features/organisations/lib/use-org-directory";
 
-import { avatarUser, CommentButton, type CommentActions } from "./comment-thread";
-import { filterKeyForKind } from "../lib/comment-threads";
+import { CodeBlock, CopyButton, prettyJson } from "./code-block";
+
 import { JUMP_EVENT, type JumpDetail } from "./session-chat-message";
 import { AgentGlyph } from "./agent-glyph";
 
@@ -132,42 +124,24 @@ const MEASURE = "mx-auto w-full max-w-[920px] px-14";
  * cloud Project there is no anchor to attach a comment to, so every part of it
  * is absent together.
  */
-export interface RowComments {
-  /** Entry `rowId` → its thread. The id is the local one, pushed verbatim. */
-  byAnchor: Record<string, Comment[]>;
-  /** Comments on the Session itself, shown from the masthead. */
-  session: Comment[];
-  actions: CommentActions;
-  /**
-   * The Organisation's roster, for names and faces.
-   *
-   * Passed down rather than looked up per comment: one hook at the pane, and
-   * every byline, mention and avatar stack below resolves against the same map.
-   * It also carries `currentUserId`, which is what decides whose comments get a
-   * delete affordance.
-   */
-  directory: OrgDirectory;
-}
 
 interface Props {
   detail: Detail;
   /** Needed to fetch spilled payloads via `artifacts_payload`. */
   projectPath: string;
   /** `null` when the Session is local-only. */
-  comments?: RowComments | null;
+
   /** The masthead is painted from the board row and the timeline is still on
    *  its way. Without it an empty `entries` reads as "nothing was recorded". */
   entriesPending?: boolean;
   /** Set only for a Session with no local copy — see [`RemoteSourceContext`]. */
-  remote?: RemoteSource | null;
+
   /** Opened from a commit: land on that Checkpoint rather than at the top. */
   focusCommitSha?: string;
   /** Whether the grounded chat occupies the other half of the split. */
   chatOpen?: boolean;
   onToggleChat?: () => void;
   /** Whether the comments panel does. The two share one slot. */
-  commentsOpen?: boolean;
-  onToggleComments?: () => void;
 }
 
 /**
@@ -179,25 +153,16 @@ interface Props {
  * none of which have any other reason to know about it. Threading it would put
  * a prop nobody reads through every one of them.
  */
-export interface RemoteSource {
-  /** The server Project id. */
-  projectId: string;
-  sessionId: string;
-}
-
-const RemoteSourceContext = createContext<RemoteSource | null>(null);
 
 export function SessionDetail({
   detail,
   projectPath,
-  comments = null,
+
   entriesPending = false,
-  remote = null,
+
   focusCommitSha,
   chatOpen,
   onToggleChat,
-  commentsOpen,
-  onToggleComments,
 }: Props) {
   const [filters, setFilters] = useState<TimelineFilters>(DEFAULT_FILTERS);
   /** Narrow tool calls to failed ones — the "which calls failed" question. */
@@ -251,12 +216,6 @@ export function SessionDetail({
    * same response are two comments, and a reply is one more. The badge says
    * how much has been said; the panel's rows say where.
    */
-  const commentCount = useMemo(() => {
-    if (!comments) return 0;
-    let n = visibleCount(comments.session);
-    for (const rowId in comments.byAnchor) n += visibleCount(comments.byAnchor[rowId]);
-    return n;
-  }, [comments]);
 
   /**
    * Entries with identity carried across detail re-reads.
@@ -401,7 +360,7 @@ export function SessionDetail({
     }
   }, []);
 
-  const { more, activeAnchor, onScroll, invalidate } = useTimelineScroll({
+  const { more, onScroll, invalidate } = useTimelineScroll({
     scrollRef,
     contentRef,
     anchorRefs,
@@ -414,21 +373,8 @@ export function SessionDetail({
   });
 
   /** The next prompt below the reader — the action bar's forward jump. */
-  const nextAnchor = anchors[Math.min(activeAnchor + 1, anchors.length - 1)];
 
   /** Scroll to a rail tick, growing the window first if it is past the fold. */
-  const jumpToAnchor = useCallback(
-    (anchor: { id: string; index: number }) => {
-      if (anchor.index >= renderCount) {
-        setRenderCount(Math.min(anchor.index + WINDOW_CHUNK, groups.length));
-        setPendingJump(anchor.id);
-        return;
-      }
-      const node = entryRefs.current.get(anchor.id);
-      if (node) jumpTo(node, "start");
-    },
-    [renderCount, groups.length, jumpTo],
-  );
 
   // A new Session or a filter change restarts the window from the top.
   // Keyed to the DEFERRED search so the reset lands with the results it belongs
@@ -561,7 +507,7 @@ export function SessionDetail({
     tools.size;
 
   return (
-    <RemoteSourceContext.Provider value={remote}>
+    <>
       <div className="relative flex h-full min-h-0">
         <div
           ref={scrollRef}
@@ -569,7 +515,7 @@ export function SessionDetail({
           className="hide-scrollbar min-h-0 flex-1 overflow-y-auto"
         >
           <div ref={contentRef} className={cn(MEASURE, "pb-28 pt-14")}>
-            <Masthead detail={detail} comments={comments} />
+            <Masthead detail={detail} />
 
             {groups.length === 0 ? (
               <Empty
@@ -587,7 +533,6 @@ export function SessionDetail({
                   expandTools={expandTools}
                   landed={landed}
                   register={register}
-                  comments={comments}
                 />
                 {renderCount < groups.length && (
                   <p className="py-6 text-center font-mono text-xs text-[var(--muted-foreground)]">
@@ -673,27 +618,7 @@ export function SessionDetail({
                *  one there are none to find, so it keeps the jump it always
                *  had. Comments are the thing that is hard to locate in a long
                *  record — the next prompt is only ever a scroll away. */}
-              {comments ? (
-                <BarButton
-                  label={commentsOpen ? "Close comments" : "Comments"}
-                  bare
-                  active={commentsOpen}
-                  badge={commentCount > 0 ? commentCount : undefined}
-                  disabled={!onToggleComments}
-                  onClick={onToggleComments}
-                >
-                  <MessageSquare size={14} strokeWidth={1.6} />
-                </BarButton>
-              ) : (
-                <BarButton
-                  label="Next prompt"
-                  bare
-                  disabled={!nextAnchor || activeAnchor >= anchors.length - 1}
-                  onClick={() => nextAnchor && jumpToAnchor(nextAnchor)}
-                >
-                  <ChevronsDown size={14} strokeWidth={1.6} />
-                </BarButton>
-              )}
+
               <span aria-hidden className="h-4 w-px bg-[var(--border)]" />
               <BarButton
                 label={chatOpen ? "Close chat" : "Ask about this session"}
@@ -735,7 +660,7 @@ export function SessionDetail({
           />
         )}
       </div>
-    </RemoteSourceContext.Provider>
+    </>
   );
 }
 
@@ -750,7 +675,7 @@ export function SessionDetail({
  * around it rather than three rows that happen to be stacked. Export is not
  * here; it lives in the header dock with the tab's other actions.
  */
-function Masthead({ detail, comments }: { detail: Detail; comments: RowComments | null }) {
+function Masthead({ detail }: { detail: Detail }) {
   const s = detail.summary;
   const branch = s.branches[0];
   const tokens = tokenLabel(s);
@@ -795,17 +720,6 @@ function Masthead({ detail, comments }: { detail: Detail; comments: RowComments 
           )}
         </h1>
         {/* The whole-Session thread, for anything that is not about one step. */}
-        {comments && (
-          <CommentButton
-            anchorKind="session"
-            anchorId={s.id}
-            comments={comments.session}
-            actions={comments.actions}
-            directory={comments.directory}
-            label="Comment on this Session"
-            className="mt-1 group-hover/row:opacity-100"
-          />
-        )}
       </div>
 
       <div className="mt-[22px] flex min-w-0 flex-wrap items-center gap-2">
@@ -1104,7 +1018,6 @@ const Timeline = memo(function Timeline({
   expandTools,
   landed,
   register,
-  comments,
 }: {
   groups: Group[];
   projectPath: string;
@@ -1112,7 +1025,6 @@ const Timeline = memo(function Timeline({
   expandTools: boolean;
   landed: string | null;
   register: (id: string, node: HTMLDivElement | null) => void;
-  comments: RowComments | null;
 }) {
   return (
     <>
@@ -1132,7 +1044,6 @@ const Timeline = memo(function Timeline({
               : null
           }
           register={register}
-          comments={comments}
         />
       ))}
     </>
@@ -1156,7 +1067,6 @@ const Row = memo(function Row({
   isLanded,
   landedCallId,
   register,
-  comments,
 }: {
   group: Group;
   first: boolean;
@@ -1173,7 +1083,6 @@ const Row = memo(function Row({
   landedCallId: string | null;
   register: (id: string, node: HTMLDivElement | null) => void;
   /** `null` on a Session that is not shared — there is nothing to anchor to. */
-  comments: RowComments | null;
 }) {
   const head = group.entries[0];
   // A group of tool calls speaks for several anchors, not one. Every comment
@@ -1182,15 +1091,7 @@ const Row = memo(function Row({
   // Every thread on this row: the entry's own, plus each call's when the row is
   // a run of them. The activity lines under a folded run are the only place a
   // thread on its fifth call is visible without opening it.
-  const threads = useMemo(
-    () =>
-      !comments
-        ? undefined
-        : isCallRun
-          ? group.entries.flatMap((e) => comments.byAnchor[e.id] ?? [])
-          : comments.byAnchor[head.id],
-    [comments, isCallRun, group.entries, head.id],
-  );
+
   return (
     <div
       ref={(node) => register(head.id, node)}
@@ -1239,12 +1140,12 @@ const Row = memo(function Row({
            *  over there, and two independent `flex-1`s would split the gap. */}
           <span className="flex-1" />
           <ActionCluster
+            pinned={false}
             // A discussed row keeps its controls on screen. Hiding them behind
             // hover was the bug: the comment pill was visible (it has to be —
             // it is how a discussion announces itself) while the copy button
             // beside it was not, so the row showed a lone pill with a hole
             // next to it until the pointer arrived.
-            pinned={comments && !isCallRun ? visibleCount(comments.byAnchor[head.id]) > 0 : false}
           >
             {/* Comment first, copy second. The comment button is the one that
              *  grows — faces and a count once a discussion exists — so
@@ -1256,16 +1157,7 @@ const Row = memo(function Row({
              *  A run of calls is the exception: this header can only anchor the
              *  FIRST of them, so each call carries its own button instead (see
              *  `CallRow`) and the aggregate lives on the fold. */}
-            {comments && !isCallRun && (
-              <CommentButton
-                bare
-                anchorKind={anchorKindFor(group.kind)}
-                anchorId={head.id}
-                comments={comments.byAnchor[head.id]}
-                actions={comments.actions}
-                directory={comments.directory}
-              />
-            )}
+
             {(group.kind === "prompt" || group.kind === "response") && head.text && (
               <CopyButton text={head.text} className="opacity-100" />
             )}
@@ -1277,7 +1169,7 @@ const Row = memo(function Row({
             calls={group.entries}
             projectPath={projectPath}
             expandAll={expandTools}
-            comments={comments}
+
             revealId={landedCallId}
           />
         ) : group.kind === "checkpoint" ? (
@@ -1291,8 +1183,6 @@ const Row = memo(function Row({
             </div>
           </Clamp>
         )}
-
-        {comments && <ActivityLog comments={threads} directory={comments.directory} />}
       </div>
     </div>
   );
@@ -1310,51 +1200,6 @@ const Row = memo(function Row({
  * above, and a second way to open it would be a second place for the popover's
  * state to live.
  */
-const ActivityLog = memo(function ActivityLog({
-  comments,
-  directory,
-}: {
-  comments: Comment[] | undefined;
-  directory: OrgDirectory;
-}) {
-  const lines = useMemo(() => commentActivity(comments, directory), [comments, directory]);
-  if (lines.length === 0) return null;
-
-  return (
-    // The lines are 14px faces against 11px text, so they read as a dense block
-    // at a gap that would be fine for prose. Given room they read as a list.
-    <div className="mt-4 flex flex-col gap-2">
-      {lines.map((line) => {
-        const member = directory.byId.get(line.authorId) ?? null;
-        return (
-          <div key={line.id} className="flex min-w-0 items-center gap-1.5">
-            {member ? (
-              <AccountAvatar user={avatarUser(member)} size={14} />
-            ) : (
-              <span className="size-[14px] shrink-0 rounded-full bg-[var(--atlas-element-selected)]" />
-            )}
-            <span className="min-w-0 truncate text-xs text-[var(--muted-foreground)]">
-              <span className="text-[var(--secondary-foreground)]">{line.actorName}</span>{" "}
-              {!line.isReply
-                ? "commented on this"
-                : line.self
-                  ? "replied to their own comment"
-                  : line.targetName
-                    ? `replied to ${line.targetName}'s comment`
-                    : "replied to a comment"}
-              <span aria-hidden className="px-1 text-[var(--atlas-text-disabled)]">
-                ·
-              </span>
-              <span className="text-[var(--atlas-text-disabled)]">
-                {timeAgo(line.at, { suffix: true })}
-              </span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-});
 
 function kindLabel(group: Group): string {
   switch (group.kind) {
@@ -1472,13 +1317,13 @@ function Calls({
   calls,
   projectPath,
   expandAll,
-  comments,
+
   revealId,
 }: {
   calls: TimelineEntry[];
   projectPath: string;
   expandAll: boolean;
-  comments: RowComments | null;
+
   /** A jump landed on one of these calls — unfold so it can be seen. */
   revealId?: string | null;
 }) {
@@ -1494,9 +1339,6 @@ function Calls({
   // Threads inside the fold, summed. A run of calls is folded by default, so
   // without this the only sign of a discussion on its third call would be the
   // count in the panel — the fold would look untouched.
-  const inside = comments
-    ? calls.reduce((n, call) => n + visibleCount(comments.byAnchor[call.id]), 0)
-    : 0;
 
   if (!open) {
     return (
@@ -1507,15 +1349,6 @@ function Calls({
       >
         Show tool calls
         <ChevronRight size={12} />
-        {inside > 0 && (
-          <span
-            className="flex h-5 items-center gap-1 rounded-full border border-border bg-card pl-1.5 pr-1.5 text-[var(--secondary-foreground)]"
-            aria-label={`${inside} ${inside === 1 ? "comment" : "comments"} on these tool calls`}
-          >
-            <MessageSquare size={11} />
-            <span className="text-2xs tabular-nums">{inside > 9 ? "9+" : inside}</span>
-          </span>
-        )}
       </button>
     );
   }
@@ -1526,7 +1359,7 @@ function Calls({
         calls={calls}
         projectPath={projectPath}
         compact
-        comments={comments}
+
         revealId={revealId}
       />
       <button
@@ -1654,13 +1487,13 @@ function CallTable({
   calls,
   projectPath,
   compact: dense,
-  comments,
+
   revealId,
 }: {
   calls: TimelineEntry[];
   projectPath: string;
   compact?: boolean;
-  comments: RowComments | null;
+
   /** A jump landed on this call: expand it, and grow the window until it is
    *  mounted. Without this a comment on the fourth call of a run scrolled the
    *  group into view and stopped there. */
@@ -1710,7 +1543,6 @@ function CallTable({
           divider={i < visibleCalls.length - 1 || hidden > 0}
           onToggle={toggle}
           projectPath={projectPath}
-          comments={comments}
         />
       ))}
       {hidden > 0 && (
@@ -1751,7 +1583,6 @@ const CallRow = memo(function CallRow({
   divider,
   onToggle,
   projectPath,
-  comments,
 }: {
   call: TimelineEntry;
   dense?: boolean;
@@ -1760,13 +1591,12 @@ const CallRow = memo(function CallRow({
   onToggle: (id: string) => void;
   projectPath: string;
   /** `null` on a Session that is not shared — there is nothing to anchor to. */
-  comments: RowComments | null;
 }) {
   const failed = call.toolStatus === "failed";
   // One parse of the recorded arguments per call, not per render: the table can
   // hold a Session's whole call history.
   const line = useMemo(() => toolLine(call), [call]);
-  const thread = comments?.byAnchor[call.id];
+
   return (
     <div>
       <div
@@ -1826,18 +1656,6 @@ const CallRow = memo(function CallRow({
         {/* A discussed call keeps its button on screen — that is how the
             discussion announces itself; an undiscussed one reveals on hover
             like every other Timeline control. */}
-        {comments && (
-          <ActionCluster pinned={visibleCount(thread) > 0}>
-            <CommentButton
-              bare
-              anchorKind="tool_call"
-              anchorId={call.id}
-              comments={thread}
-              actions={comments.actions}
-              directory={comments.directory}
-            />
-          </ActionCluster>
-        )}
       </div>
 
       {expanded && (
@@ -1854,8 +1672,6 @@ const CallRow = memo(function CallRow({
               json
               projectPath={projectPath}
               blobRef={spilledRef(call.argumentsRef, call.arguments)}
-              rowId={call.id}
-              part="arguments"
             />
           )}
           {call.resultBinary ? (
@@ -1870,8 +1686,6 @@ const CallRow = memo(function CallRow({
                 path={call.paths[0]}
                 projectPath={projectPath}
                 blobRef={spilledRef(call.resultRef, call.result)}
-                rowId={call.id}
-                part="result"
               />
             )
           )}
@@ -2641,8 +2455,6 @@ function Pre({
   json,
   projectPath,
   blobRef,
-  rowId,
-  part,
 }: {
   label: string;
   text: string;
@@ -2651,10 +2463,7 @@ function Pre({
   json?: boolean;
   projectPath: string;
   blobRef: string | null;
-  rowId: string;
-  part: PayloadPart;
 }) {
-  const remote = useContext(RemoteSourceContext);
   const [full, setFull] = useState<string | null>(null);
   const source = full ?? text;
   const pretty = json ? prettyJson(source) : { text: source, json: false };
@@ -2666,12 +2475,11 @@ function Pre({
         label={label}
         language={pretty.json ? "JSON" : undefined}
       />
-      {(blobRef || remote) && full === null && (
+      {blobRef && full === null && (
         <ShowFull
           projectPath={projectPath}
           blobRef={blobRef}
-          rowId={rowId}
-          part={part}
+
           onLoaded={setFull}
         />
       )}
@@ -2705,7 +2513,6 @@ function Body({
   /** Pre-resolved text, when the caller already has it. */
   raw?: string;
 }) {
-  const remote = useContext(RemoteSourceContext);
   const [full, setFull] = useState<string | null>(null);
   const truncated = entry.truncated && full === null;
 
@@ -2714,12 +2521,11 @@ function Body({
       <span className="ml-1 text-xs text-[var(--muted-foreground)]">
         … {compact(entry.bodyBytes)} bytes not shown
       </span>
-      {(entry.bodyRef || remote) && (
+      {entry.bodyRef && (
         <ShowFull
           projectPath={projectPath}
           blobRef={entry.bodyRef}
-          rowId={entry.id}
-          part="body"
+
           onLoaded={setFull}
         />
       )}
@@ -2756,24 +2562,19 @@ function Body({
  * it you want. `blobRef` picks the first; the remote context picks the second.
  */
 /** Which half of an entry to fetch. Mirrors the server's `part` parameter. */
-type PayloadPart = "body" | "arguments" | "result";
 
 function ShowFull({
   projectPath,
   blobRef,
   onLoaded,
-  rowId,
-  part,
 }: {
   projectPath: string;
   /** `null` on a remote Session — nothing was spilled to this disk. */
   blobRef: string | null;
   /** The entry the payload belongs to, for the remote read. */
-  rowId: string;
-  part: PayloadPart;
+
   onLoaded: (text: string) => void;
 }) {
-  const remote = useContext(RemoteSourceContext);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2781,14 +2582,7 @@ function ShowFull({
     setBusy(true);
     setError(null);
     try {
-      const payload = blobRef
-        ? await invoke<ArtifactPayload>("artifacts_payload", { projectPath, blobRef })
-        : await invoke<ArtifactPayload>("artifacts_cloud_payload", {
-            projectId: remote?.projectId,
-            sessionId: remote?.sessionId,
-            rowId,
-            part,
-          });
+      const payload = await invoke<ArtifactPayload>("artifacts_payload", { projectPath, blobRef });
       if (payload.text !== null) onLoaded(payload.text);
       else setError("The full payload is binary and cannot be shown.");
     } catch {
@@ -2945,4 +2739,19 @@ function compact(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
   return String(n);
+}
+
+function filterKeyForKind(kind: TimelineEntry["kind"]): keyof TimelineFilters {
+  switch (kind) {
+    case "prompt":
+      return "prompts";
+    case "response":
+      return "responses";
+    case "thinking":
+      return "thinking";
+    case "tool_call":
+      return "toolCalls";
+    case "checkpoint":
+      return "checkpoints";
+  }
 }

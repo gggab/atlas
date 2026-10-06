@@ -83,7 +83,7 @@ fn a_healthy_project_reports_ok_with_no_issues() {
     let health = health(&store, watching());
     assert_eq!(health.state, HealthState::Ok);
     assert!(health.issues.is_empty(), "{:?}", health.issues);
-    assert_eq!(health.summary, "Synced");
+    assert_eq!(health.summary, "Recording locally");
 }
 
 #[test]
@@ -93,23 +93,6 @@ fn a_non_git_project_is_healthy_without_a_watcher() {
     let dir = tempfile::tempdir().unwrap();
     let store = bound(dir.path());
     assert_eq!(health(&store, no_watcher_needed()).state, HealthState::Ok);
-}
-
-#[test]
-fn a_healthy_project_still_surfaces_its_pending_count() {
-    // Not a problem — the one number a developer wants continuously is whether
-    // their work has reached their team.
-    let dir = tempfile::tempdir().unwrap();
-    let store = store_in(dir.path());
-    bind(&store, WORKSPACE, dir.path(), ProjectMode::Cloud).unwrap();
-
-    let mut store = store;
-    record_session_in(&mut store, "s1", ProjectMode::Cloud);
-
-    let health = health(&store, no_watcher_needed());
-    assert_eq!(health.state, HealthState::Ok);
-    assert!(health.pending_rows > 0);
-    assert!(health.summary.contains("pending"), "{}", health.summary);
 }
 
 // ── Degraded ────────────────────────────────────────────────────────────────
@@ -275,7 +258,6 @@ fn a_paused_project_is_off_and_still_reports_what_it_holds() {
     assert!(health.issues.is_empty(), "{:?}", health.issues);
     assert_eq!(health.summary, "Session capture is paused");
     // The counts survive the pause — work captured before it is still there.
-    assert_eq!(health.pending_rows, 0);
     assert_eq!(health.flagged_sessions, 0);
 }
 
@@ -364,30 +346,6 @@ fn a_dead_capture_worker_reports_stopped() {
         "{:?}",
         health.issues
     );
-}
-
-#[test]
-fn a_revoked_drain_authorization_surfaces_without_stopping_capture() {
-    // Degraded, not Stopped: capture keeps recording locally — only the drain
-    // is gated — and the reason still says work is not reaching the team.
-    let dir = tempfile::tempdir().unwrap();
-    let store = store_in(dir.path());
-    bind(&store, WORKSPACE, dir.path(), ProjectMode::Cloud).unwrap();
-    store
-        .set_drain_state(atlas_checkpoint::model::DrainGate::NotAuthorized)
-        .unwrap();
-
-    let health = health(&store, no_watcher_needed());
-    assert_eq!(health.state, HealthState::Degraded);
-    assert!(
-        health
-            .issues
-            .iter()
-            .any(|i| i.reason.contains("authorized")),
-        "{:?}",
-        health.issues
-    );
-    assert!(health.issues.iter().all(|i| !i.next_step.is_empty()));
 }
 
 #[test]
@@ -550,8 +508,6 @@ fn evaluating_health_never_fails_on_a_project_with_no_history() {
     let store = store_in(dir.path());
     let health = health(&store, no_watcher_needed());
     assert_eq!(health.flagged_sessions, 0);
-    assert_eq!(health.failed_rows, 0);
-    assert_eq!(health.pending_rows, 0);
 }
 
 #[test]

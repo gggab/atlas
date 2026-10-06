@@ -1,5 +1,4 @@
 mod app_icon;
-mod auth;
 mod commands;
 mod keep_awake;
 mod logging;
@@ -7,7 +6,6 @@ mod logging;
 mod menu;
 mod notifier;
 mod state;
-mod telemetry;
 mod window_background;
 
 use std::sync::Arc;
@@ -74,12 +72,6 @@ pub fn run() {
     // stderr. Verbosity is controlled by `RUST_LOG`; see `logging.rs`.
     logging::init();
 
-    // Load a `.env` from the current dir (if any) so source / fork builds can
-    // point telemetry at their own PostHog OSS project via POSTHOG_KEY /
-    // POSTHOG_HOST without a rebuild. No-op when absent. Must run before the
-    // telemetry client resolves its key in `setup()`.
-    let _ = dotenvy::dotenv();
-
     // Strip CLAUDECODE so child ACP agents (canonical claude-code-acp) don't
     // refuse to start when Atlas was launched from a parent Claude Code shell.
     atlas_agent_servers::sanitize_host_env();
@@ -141,24 +133,6 @@ pub fn run() {
             // field, so it's carried separately for the one-time migration
             // below rather than being silently dropped by serde.
             let (mut loaded, legacy_settings_raw) = AppState::load(app.handle());
-            // Device-stable telemetry identity, owned by Rust in its own file.
-            // It used to live in `state.json` as `telemetry_anon_id`, where every
-            // settings save wiped it (the frontend payload omitted the field and
-            // the command replaced the whole struct) — so one machine became a
-            // new PostHog person on every save. An install upgrading from that
-            // era ADOPTS its existing id here rather than forking a new person.
-            let (device, is_new_device) = telemetry::device::load_or_create(
-                app.handle(),
-                loaded.telemetry_anon_id.as_deref(),
-            );
-            let device_id = device.device_id.clone();
-            let device_id_source = device.source;
-            let telemetry_id_changed =
-                loaded.telemetry_anon_id.as_deref() != Some(device_id.as_str());
-            if telemetry_id_changed {
-                loaded.telemetry_anon_id = Some(device_id.clone());
-            }
-
             // `config.toml` (issue #64): user preferences move out of
             // `state.json.settings` into their own validated, human-editable
             // file. `bootstrap` imports the legacy settings exactly once,
@@ -174,12 +148,8 @@ pub fn run() {
             if migration_marker_changed {
                 loaded.settings_config_migrated = true;
             }
-            let telemetry_enabled = migration.manager.effective().share_telemetry;
             // The engine reads this gate on its first connect, which happens
             // after setup — so it must be in the environment before then.
-            commands::atlas_config::apply_curated_plugin_sync_gate(
-                migration.manager.effective().curated_plugin_sync,
-            );
             // Opaque window background, in the theme the user actually chose.
             // Fills the brief gap between window-shown and first React paint
             // with the theme's own background instead of the WebKit default
@@ -229,7 +199,7 @@ pub fn run() {
             // Mirror the (possibly updated) telemetry id + migration marker
             // back into `state.json` so both agree and a downgrade still
             // finds them. `AppStatePatch` stops the frontend wiping either.
-            if telemetry_id_changed || migration_marker_changed {
+            if migration_marker_changed {
                 let _ = AppState::save(app.handle(), &loaded);
             }
             let app_state: AppStateHandle = Arc::new(Mutex::new(loaded));
@@ -243,132 +213,14 @@ pub fn run() {
             // that store (`~/.agents/skills`) is shared with the released app.
             commands::skills::ensure_bundled_skills();
 
-            // Opt-in product telemetry. Inert unless the user has enabled it AND
-            // a PostHog key resolves (env / telemetry.json / build-time default).
-            let (telemetry, flush_rx) =
-                telemetry::TelemetryClient::new(app.handle(), device_id, telemetry_enabled);
-            app.manage(telemetry.clone());
-            if let Some(rx) = flush_rx {
-                let tclient = telemetry.clone();
-                tauri::async_runtime::spawn(async move {
-                    telemetry::run_flush_loop(tclient, rx).await;
-                });
-            }
-            // Crash capture: best-effort synchronous POST from the panic hook
-            // (the build is `panic = "abort"`, so the async flush task can't be
-            // relied on). Chains to the previously-installed hook. `location` is
-            // Atlas's own `file:line`; `message` is redacted of path/URL tokens.
-            {
-                let tclient = telemetry.clone();
-                let prev = std::panic::take_hook();
-                std::panic::set_hook(Box::new(move |info| {
-                    let location = info
-                        .location()
-                        .map(|l| format!("{}:{}", l.file(), l.line()))
-                        .unwrap_or_default();
-                    let msg = info
-                        .payload()
-                        .downcast_ref::<&str>()
-                        .copied()
-                        .or_else(|| {
-                            info.payload()
-                                .downcast_ref::<String>()
-                                .map(std::string::String::as_str)
-                        })
-                        .unwrap_or("panic");
-                    tclient.capture_panic_blocking(serde_json::json!({
-                        "location": location,
-                        "message": telemetry::redact_message(msg, 160),
-                    }));
-                    prev(info);
-                }));
-            }
-            // Launch / active-user signal. `is_first_launch` is only honest now
-            // that the device id survives a settings save.
-            telemetry.capture(
-                "app_started",
-                serde_json::json!({
-                    "is_first_launch": is_new_device,
-                    "device_id_source": device_id_source,
-                }),
-            );
-
             commands::agents::install_manager(app.handle());
             // Silent background refresh of model pricing from models.dev — first
             // launch populates the cache; later launches update only on change.
             commands::models_pricing::refresh_in_background(app.handle());
-            // Auto-update: clean up any staged update that already took effect,
-            // then run a non-blocking background check + a periodic re-check. The
-            // download/verify/stage happens silently; the user is only prompted
-            // once it's ready to restart. See `commands::updater`.
-            // Account auth (ATL-35). The config dir only resolves from the
-            // app handle, so this is managed here rather than in the builder
-            // chain. Restore runs off-thread: a signed-out launch touches the
-            // network not at all, and a signed-in one must never block boot.
-            {
-                let config_dir = app
-                    .path()
-                    .app_config_dir()
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."));
-                app.manage(commands::auth::AuthState::new(config_dir));
-                // Team chat's socket, before `restore_on_launch` broadcasts:
-                // that broadcast is what points it at an Organisation, and a
-                // manager that is not yet managed would miss the first one.
-                commands::comms::install(app.handle());
-                commands::artifacts_cloud::install(app.handle());
-                commands::auth::restore_on_launch(app.handle());
-
-                // Seed the Organisation every event is attributed to, from the
-                // state we just loaded. The app has an active org from its first
-                // frame; waiting for the renderer to announce it would leave
-                // every launch-time event ungrouped, which is exactly the
-                // window where launch/update/crash events land. Runs after
-                // `AuthState` is managed because a synced org's role is read
-                // from the auth snapshot.
-                {
-                    let handle = app.handle();
-                    let active = handle
-                        .state::<AppStateHandle>()
-                        .lock()
-                        .active_organisation_id
-                        .clone();
-                    handle
-                        .state::<Arc<telemetry::TelemetryClient>>()
-                        .set_active_org(commands::telemetry::resolve_org(
-                            handle,
-                            active.as_deref(),
-                        ));
-                }
-
-                // Session capture's drain needs a credential, and the auth core
-                // only exists from here on. Installed rather than passed in at
-                // construction because `CaptureState` is registered earlier in
-                // the builder chain; until this runs the drain simply parks,
-                // which is exactly Local-mode behaviour.
-                // The worker announces its writes through this handle — without
-                // it the Timeline board only ever sees them on its 15 s poll.
-                app.state::<commands::capture::CaptureState>()
-                    .install_notifier(app.handle().clone());
-
-                let core = app.state::<commands::auth::AuthState>().core();
-                app.state::<commands::capture::CaptureState>()
-                    .install_token_provider(Box::new(move || {
-                        tauri::async_runtime::block_on(core.mint_access_token()).ok()
-                    }));
-            }
+            app.state::<commands::capture::CaptureState>()
+                .install_notifier(app.handle().clone());
 
             app.manage(Arc::new(notifier::Notifier::new(app.handle())));
-
-            commands::updater::init_on_startup(app.handle());
-            // No automatic update checks for the dev profile: an update it
-            // staged would be the released installer, and applying it on quit
-            // would upgrade the user's installed Atlas from inside a source
-            // build. The manual verbs (`update_check_now`, `update_apply`)
-            // refuse under the dev profile for the same reason.
-            if !atlas_profile::is_dev() {
-                commands::updater::check_in_background(app.handle());
-                commands::updater::spawn_periodic(app.handle());
-            }
 
             // Background memory indexer (Step 4): a single owned Tokio task drains
             // a bounded queue and indexes each open project's corpus into its
@@ -409,7 +261,6 @@ pub fn run() {
         // thread. Managed before `install_manager` runs its pipeline so a
         // delta arriving early finds it.
         .manage(commands::capture::CaptureState::new())
-        .manage(commands::updater::UpdaterState::new())
         // Drop a window's per-window index + mention caches when it closes, so
         // its file watcher stops and memory is freed (these states are keyed by
         // webview label for multi-window project scoping).
@@ -441,71 +292,6 @@ pub fn run() {
             commands::notifier::notifier_remove_group,
             commands::notifier::notifier_icon_lookup,
             commands::notifier::notifier_icon_store,
-            commands::agent_entitlement::native_agent_entitlement,
-            commands::agent_entitlement::native_agent_refresh_models,
-            commands::auth::auth_snapshot,
-            commands::auth::auth_sign_in,
-            commands::auth::auth_cancel_sign_in,
-            commands::auth::auth_sign_out,
-            commands::auth::auth_set_active_org,
-            commands::comms::comms_ready,
-            commands::comms::comms_fetch_attachment,
-            commands::comms::comms_save_attachment,
-            commands::comms::comms_call_recordings,
-            commands::comms::comms_start_call,
-            commands::comms::comms_save_transcript,
-            commands::comms::comms_save_recording,
-            commands::comms::comms_status,
-            commands::comms::comms_snapshot,
-            commands::comms::comms_open_conversation,
-            commands::comms::comms_close_conversation,
-            commands::comms::comms_conversation_snapshot,
-            commands::comms::comms_load_older,
-            commands::comms::comms_pins,
-            commands::comms::comms_drafts,
-            commands::comms::comms_create_draft,
-            commands::comms::comms_draft_open,
-            commands::comms::comms_draft_update,
-            commands::comms::comms_draft_awareness,
-            commands::comms::comms_fetch_recording,
-            commands::comms::comms_send,
-            commands::comms::comms_upload_attachment,
-            commands::comms::comms_cancel_upload,
-            commands::comms::comms_edit,
-            commands::comms::comms_delete,
-            commands::comms::comms_react,
-            commands::comms::comms_pin,
-            commands::comms::comms_read,
-            commands::comms::comms_typing,
-            commands::comms::comms_create_channel,
-            commands::comms::comms_create_dm,
-            commands::comms::comms_create_group_dm,
-            commands::comms::comms_join,
-            commands::comms::comms_invite,
-            commands::comms::comms_leave,
-            commands::comms::comms_patch_conversation,
-            commands::comms::comms_search,
-            commands::comms::comms_reconnect,
-            commands::comms::comms_disconnect,
-            commands::comms::comms_base_url,
-            commands::spaces::spaces_connect,
-            commands::spaces::spaces_disconnect,
-            commands::spaces::spaces_cycle,
-            commands::spaces::spaces_send_control,
-            commands::spaces::spaces_send_binary,
-            commands::spaces::spaces_summary,
-            commands::spaces::spaces_media_upload,
-            commands::spaces::spaces_media_fetch,
-            commands::auth::auth_create_org,
-            commands::auth::auth_check_org_slug,
-            commands::auth::auth_list_members,
-            commands::auth::auth_list_invitations,
-            commands::auth::auth_invite_member,
-            commands::auth::auth_cancel_invitation,
-            commands::auth::auth_update_member_role,
-            commands::auth::auth_remove_member,
-            commands::auth::auth_refresh,
-            commands::auth::auth_delete_org,
             commands::window::window_zoom,
             commands::clipboard::clipboard_file_paths,
             commands::clipboard::clipboard_write_text,
@@ -617,30 +403,10 @@ pub fn run() {
             commands::capture::capture_disable,
             commands::capture::capture_git_init,
             commands::capture::capture_git_available,
-            commands::artifacts_cloud::artifacts_cloud_retarget,
-            commands::artifacts_cloud::artifacts_cloud_follow,
-            commands::artifacts_cloud::artifacts_cloud_unfollow,
-            commands::artifacts_cloud::chat_comment_target,
-            commands::artifacts_cloud::artifacts_cloud_session,
-            commands::artifacts_cloud::artifacts_cloud_payload,
-            commands::artifacts_cloud::artifacts_cloud_session_url,
-            commands::artifacts_cloud::artifacts_cloud_refresh,
-            commands::artifacts_cloud::artifacts_cloud_comments,
-            commands::artifacts_cloud::artifacts_cloud_comment_create,
-            commands::artifacts_cloud::artifacts_cloud_comment_update,
-            commands::artifacts_cloud::artifacts_cloud_comment_delete,
             commands::capture::capture_health,
             commands::capture::capture_import_preview,
             commands::capture::capture_import_confirm,
-            commands::capture::capture_slug_available,
-            commands::capture::capture_register_cloud,
-            commands::capture::capture_promotion_preview,
-            commands::capture::capture_promote,
-            commands::capture::capture_connect_options,
-            commands::capture::capture_connect,
-            commands::capture::capture_switch_project,
             commands::capture::capture_activate,
-            commands::capture::capture_retry_failed,
             commands::capture::capture_retry_watcher,
             commands::capture::artifacts_session,
             commands::capture::artifacts_payload,
@@ -728,13 +494,6 @@ pub fn run() {
             commands::icon_themes::search_icon_themes,
             commands::icon_themes::install_icon_theme,
             commands::icon_themes::remove_icon_theme,
-            commands::telemetry::telemetry_config,
-            commands::telemetry::telemetry_set_org,
-            commands::feedback::feedback_submit,
-            commands::updater::update_check_now,
-            commands::updater::update_apply,
-            commands::updater::update_state,
-            commands::updater::update_ignore,
             commands::compose_prompt::compose_prompt,
             commands::cli::cli_status,
             commands::cli::cli_install_helper,
@@ -774,7 +533,6 @@ pub fn run() {
             commands::agents::agents_cancel,
             commands::agents::agents_set_mode,
             commands::agents::agents_set_model,
-            commands::agents::agents_set_effort,
             commands::models_pricing::models_pricing_get,
             commands::models_pricing::models_pricing_refresh,
             commands::agents::agents_respond_permission,
@@ -783,8 +541,6 @@ pub fn run() {
             commands::agents::agents_logout,
             commands::agents::agents_set_config_option,
             commands::agents::agents_respond_elicitation,
-            commands::ui_server::ui_action_respond,
-            commands::agents::agents_fork_session,
             commands::agents::agents_rewind_last_turn,
             commands::agents::agents_run_auth_method,
             commands::agents::agents_authenticate,
@@ -875,12 +631,9 @@ pub fn run() {
         .build(context)
         .expect("error while building Atlas")
         .run(|app_handle, event| {
-            // Apply-on-quit: if the user chose "Later" for a staged update, swap
-            // it in on the way out so the next launch is the new version.
             match event {
                 tauri::RunEvent::ExitRequested { .. } => {
-                    // Quit sweep (M7): stop native turns (cancel tokens kill
-                    // tool process groups) and tear down every ACP subprocess
+                    // Quit sweep: tear down every ACP subprocess
                     // (dropping each driver's shutdown channel closes the
                     // child's stdin; the SDK reaps it). `process::exit` skips
                     // Drop impls, so this must happen before the exit — with a
@@ -892,9 +645,7 @@ pub fn run() {
                         std::thread::sleep(std::time::Duration::from_millis(500));
                     }
                 }
-                tauri::RunEvent::Exit => {
-                    commands::updater::apply_on_exit(app_handle);
-                }
+                tauri::RunEvent::Exit => {}
                 _ => {}
             }
         });

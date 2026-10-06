@@ -303,13 +303,29 @@ async fn dropping_the_connection_kills_the_agent_process() {
 
 /// `kill -0`: signal 0 checks for existence without delivering anything.
 fn process_is_alive(pid: i32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("tasklist")
+            .args(["/FO", "CSV", "/NH", "/FI", &format!("PID eq {pid}")])
+            .output();
+        return output.is_ok_and(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout).lines().any(|line| {
+                    line.split(',').nth(1).map(|field| field.trim_matches('"'))
+                        == Some(pid.to_string().as_str())
+                })
+        });
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
 }
 
 /// A fake agent that also answers `session/new`, with whatever config options

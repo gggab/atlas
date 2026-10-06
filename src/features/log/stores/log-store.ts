@@ -3,7 +3,6 @@ import { immer } from "zustand/middleware/immer";
 import { invoke } from "@tauri-apps/api/core";
 import { createSelectors } from "@/lib/create-selectors";
 import { useAppStore } from "@/features/app/stores/app-store";
-import { useOrgStore } from "@/features/organisations/stores/org-store";
 
 export type LogSource =
   | "atlas"
@@ -23,10 +22,7 @@ export interface LogEntry {
   source: LogSource;
   kind: string;
   summary: string;
-  /** Owning Organisation, stamped at append time. Absent on entries written
-   *  before the console was org-scoped — treated as belonging to whichever org
-   *  is active, since that is the only org those entries could have come from
-   *  on a single-org install. */
+  /** Legacy attribution retained when reading old log rows; unused for access or filtering. */
   orgId?: string;
   projectPath?: string;
   projectName?: string;
@@ -40,9 +36,6 @@ interface LogState {
   ready: boolean;
   /** Project path whose persisted log is currently loaded into `buffer`. */
   loadedProject?: string;
-  /** Organisation whose pinned entries are currently loaded. Switching orgs
-   *  re-reads, exactly like switching projects re-reads the buffer. */
-  loadedOrg?: string;
 }
 
 interface LogActions {
@@ -60,9 +53,6 @@ interface LogActions {
     /** Load a project's persisted activity log into the buffer (scopes the
      *  buffer to that project and restores it across restarts). */
     loadProject: (project: string) => Promise<void>;
-    /** Re-scope the console to an Organisation: drop other orgs' buffered
-     *  entries and load that org's pins. */
-    setOrg: (orgId: string | null) => Promise<void>;
   };
 }
 
@@ -76,11 +66,6 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-/** The Organisation the console is scoped to. `null` only before hydrate. */
-function activeOrg(): string | null {
-  return useOrgStore.getState().activeOrganisationId;
-}
-
 export const useLogStore = createSelectors(
   create<LogState & LogActions>()(
     immer((set, get) => ({
@@ -90,7 +75,6 @@ export const useLogStore = createSelectors(
       actions: {
         append: (entry) => {
           const project = useAppStore.getState().currentProject;
-          const orgId = useOrgStore.getState().activeOrganisationId ?? undefined;
           const projectPath = entry.projectPath ?? project?.path ?? undefined;
           const projectName =
             entry.projectName ??
@@ -99,7 +83,6 @@ export const useLogStore = createSelectors(
             ...entry,
             id: genId(),
             timestamp: nowIso(),
-            orgId,
             projectPath,
             projectName,
           };
@@ -131,13 +114,7 @@ export const useLogStore = createSelectors(
             if (i !== -1) s.buffer[i].pinned = true;
           });
           try {
-            const org = activeOrg();
-            if (org) {
-              await invoke("append_pinned_log", {
-                org,
-                entryJson: JSON.stringify(target),
-              });
-            }
+            await invoke("append_pinned_log", { entryJson: JSON.stringify(target) });
           } catch (err) {
             // eslint-disable-next-line no-console
             console.error("pin log entry failed", err);
@@ -150,11 +127,10 @@ export const useLogStore = createSelectors(
             if (i !== -1) s.buffer[i].pinned = false;
           });
           try {
-            const org = activeOrg();
             const remaining = get().pinned;
             const body =
               remaining.map((e) => JSON.stringify(e)).join("\n") + (remaining.length ? "\n" : "");
-            if (org) await invoke("rewrite_pinned_log", { org, entriesJson: body });
+            await invoke("rewrite_pinned_log", { entriesJson: body });
           } catch (err) {
             // eslint-disable-next-line no-console
             console.error("unpin log entry failed", err);
@@ -176,28 +152,16 @@ export const useLogStore = createSelectors(
             for (const e of s.buffer) e.pinned = false;
           });
           try {
-            const org = activeOrg();
-            if (org) await invoke("clear_pinned_log", { org });
+            await invoke("clear_pinned_log");
           } catch (err) {
             // eslint-disable-next-line no-console
             console.error("clear pinned log failed", err);
           }
         },
         loadPinned: async () => {
-          const org = activeOrg();
-          // Keyed on the org, not a one-shot `ready` flag: an org switch has to
-          // be able to re-read, and the old guard made the first org's pins the
-          // only ones the console would ever show.
-          if (get().ready && get().loadedOrg === org) return;
-          if (!org) {
-            set((s) => {
-              s.pinned = [];
-              s.ready = true;
-            });
-            return;
-          }
+          if (get().ready) return;
           try {
-            const text = await invoke<string>("load_pinned_log", { org });
+            const text = await invoke<string>("load_pinned_log");
             const lines = text.split("\n").filter((l) => l.trim());
             const parsed: LogEntry[] = [];
             for (const l of lines) {
@@ -212,12 +176,10 @@ export const useLogStore = createSelectors(
             set((s) => {
               s.pinned = parsed;
               s.ready = true;
-              s.loadedOrg = org;
             });
           } catch {
             set((s) => {
               s.ready = true;
-              s.loadedOrg = org;
             });
           }
         },
@@ -254,21 +216,6 @@ export const useLogStore = createSelectors(
             s.buffer = merged;
             s.loadedProject = project;
           });
-        },
-
-        setOrg: async (orgId) => {
-          if (get().loadedOrg === orgId) return;
-          set((s) => {
-            // Drop the outgoing org's entries. An org switch tears down its
-            // whole project set, so leaving its activity in the console would
-            // show work from projects that are no longer even mounted.
-            s.buffer = orgId ? s.buffer.filter((e) => e.orgId === orgId) : [];
-            s.pinned = [];
-            s.ready = false;
-            s.loadedProject = undefined;
-            s.loadedOrg = undefined;
-          });
-          await get().actions.loadPinned();
         },
       },
     })),

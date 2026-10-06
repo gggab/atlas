@@ -142,6 +142,8 @@ const RULES: Rule[] = [
  * scanned.
  */
 const EXEMPT_FILES: Record<string, string> = {
+  "src/features/app/components/app-error-boundary.tsx":
+    "The render-crash recovery screen remains independent of theme and style loading so it still works when either subsystem failed.",
   "src/features/theme/theme-key-registry.ts":
     "Shape 1. The one table of Atlas's per-appearance default for every theme " +
     "key, so every entry is a colour literal by construction.",
@@ -156,11 +158,7 @@ const EXEMPT_FILES: Record<string, string> = {
   "src/features/knowledge/components/cover-picker.tsx":
     "Shape 2. The page-cover palette the user picks from. These are document " +
     "content, like a highlighter colour — the chrome around the picker is themed.",
-  "src/features/spaces/lib/space-wire.ts":
-    "Shape 2. The sticky-note and shape palette a user picks from on a space, " +
-    "and the wire format those choices persist in. Theming them would repaint " +
-    "other people's notes.",
-  "src/features/spaces/lib/space-wire.test.ts": "Shape 2. Fixtures for the palette above.",
+
   "src/features/pdf/stores/pdf-annotation-store.ts":
     "Shape 2. Highlighter and ink colours the user picks and that are written " +
     "into the annotation, i.e. into the document.",
@@ -176,10 +174,7 @@ const EXEMPT_FILES: Record<string, string> = {
     "Not a colour: it BUILDS `rgb(r,g,b)` strings out of the numeric " +
     "parameters of an ANSI escape sequence. The rule matches the format, not a " +
     "choice anyone made.",
-  "src/features/telemetry/error-boundary.tsx":
-    "Shape 2, of a kind: the last-resort screen after React has unmounted the " +
-    "app. It is styled entirely inline, on purpose, so that it renders when " +
-    "whatever broke was the thing that paints everything else.",
+
   "src/dev/mock-backend/badge.ts":
     "Shape 2, of a kind: the unmocked-command counter, injected into the DOM " +
     "by the dev mock backend. It has to stay legible over whatever theme is " +

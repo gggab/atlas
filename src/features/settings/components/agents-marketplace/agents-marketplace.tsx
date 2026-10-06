@@ -522,7 +522,7 @@ const AgentCard = memo(function AgentCard({
         <span className="font-mono">ID: {entry.id}</span>
         {entry.distributionKind && <span className="font-mono">[{entry.distributionKind}]</span>}
         <span className="flex-1" />
-        {/* 6-month download trend — seeded mock series today, PostHog-backed
+        {/* 6-month download trend — seeded mock series today, demonstration
             once the `acp_agent_installed` events accrue. Count wears a text
             token; only the sparkline mark carries the trend color. */}
         <span className="tabular-nums">{fmtDownloads(trend.total)}</span>

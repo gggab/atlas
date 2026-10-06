@@ -74,16 +74,6 @@ import { copyText } from "@/lib/clipboard";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { retryLastTurn } from "../lib/retry-turn";
 import { useChatPinsStore } from "../stores/chat-pins-store";
-import { ActionCluster } from "@/features/artifacts/components/action-cluster";
-import { CommentButton } from "@/features/artifacts/components/comment-thread";
-import { visibleCount } from "@/features/artifacts/lib/comments-api";
-import {
-  useAnchorHit,
-  useCommentActions,
-  useCommentBucket,
-  useCommentDirectory,
-} from "../stores/chat-comments-store";
-import { useRowHasComments } from "./chat-comment-pills";
 
 export function ActionButton({
   label,
@@ -151,46 +141,12 @@ export function useCopy(text: string): { copied: boolean; onCopy: () => void } {
  * something missing. Without a cloud anchor this is the plain copy button —
  * no surround around a single control.
  */
-export function CommentAndCopy({
-  tabId,
-  messageId,
-  text,
-  label,
-}: {
-  tabId: string;
-  messageId: string;
-  text: string;
-  label: string;
-}) {
+export function CopyAction({ text, label }: { text: string; label: string }) {
   const { copied, onCopy } = useCopy(text);
-  const anchor = useAnchorHit(tabId, messageId);
-  const comments = useCommentBucket(tabId, messageId);
-  const commentActions = useCommentActions(tabId);
-  const directory = useCommentDirectory(tabId);
-  const copy = (
+  return (
     <ActionButton label={label} onClick={onCopy}>
       <CopyGlyph copied={copied} size="sm" />
     </ActionButton>
-  );
-  if (!anchor || !commentActions || !directory) return copy;
-  return (
-    // The surround's OUTER edge is what the eye lines up with the bubble, so
-    // the cluster sits flush with the bar's end and the icons inset inside
-    // it. Pulling it out to keep the copy icon where it stands alone was
-    // tried and read as the pill overhanging the bubble (measured headless:
-    // the pill's border landed 4px past the bubble's edge).
-    <ActionCluster reveal="snap" pinned={visibleCount(comments) > 0}>
-      <CommentButton
-        bare
-        className="transition-none"
-        anchorKind={anchor.anchorKind}
-        anchorId={anchor.rowId}
-        comments={comments}
-        actions={commentActions}
-        directory={directory}
-      />
-      {copy}
-    </ActionCluster>
   );
 }
 
@@ -237,7 +193,6 @@ export function UserRowActions({
   // The other permitted subscription: the comments store, written only when a
   // comment arrives or the session's cloud identity resolves — never on a
   // streaming frame. A boolean, so the bar re-renders only when it flips.
-  const discussed = useRowHasComments(tabId, messageId);
 
   const onRetry = useCallback(() => void retryLastTurn(tabId), [tabId]);
 
@@ -297,7 +252,7 @@ export function UserRowActions({
           // without it, keyboard users would tab into controls they cannot see.
           // A discussed prompt keeps its bar: the pill is how the discussion
           // announces itself, and it must not vanish with the pointer.
-          discussed ? "visible" : "invisible group-hover:visible focus-within:visible",
+          "invisible group-hover:visible focus-within:visible",
         )}
       >
         {canRetry && (
@@ -314,7 +269,7 @@ export function UserRowActions({
         <ActionButton label="Edit and send as new message" onClick={onEdit}>
           <CornerUpRight size={12} />
         </ActionButton>
-        <CommentAndCopy tabId={tabId} messageId={messageId} text={text} label="Copy message" />
+        <CopyAction text={text} label="Copy prompt" />
       </div>
     </HintGroup>
   );

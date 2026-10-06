@@ -255,11 +255,9 @@ fn spawning_manager_inner(
     });
     // The native server is never used here; every path goes through the
     // installed agent.
-    let native: Arc<dyn atlas_agent_servers::AgentServer> = super::TestServer::new("unused");
     Some((
         AgentManager::new(
             catalog,
-            native,
             ConnectOptions {
                 session_mcp,
                 ..connect_options()

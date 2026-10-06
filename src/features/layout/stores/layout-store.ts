@@ -6,7 +6,7 @@ import { useTerminalStore, type TerminalTabState } from "@/features/terminal/sto
 import { invoke } from "@tauri-apps/api/core";
 import {
   LEGACY_TAB_TYPES,
-  ORG_SCOPED_TYPES,
+  GLOBAL_TAB_TYPES,
   TAB_TYPES,
   migrateTabType,
   type TabType,
@@ -59,7 +59,7 @@ interface LayoutState {
     /** The right slot holds one occupant at a time: source control (⌘⇧B) or
      *  team chat (⌘⇧C). Pressing the other one's key swaps the occupant rather
      *  than opening a second panel. */
-    mode: "source-control" | "chat";
+    mode: "source-control";
   };
   /** Per-app KB tab layout — survives tab switches (each KB tab gets the
    *  same panel layout, matching the global-left/right model). */
@@ -124,8 +124,7 @@ interface LayoutActions {
     /** ⌘⇧B — source control. Closes the slot if it already holds source
      *  control, otherwise takes the slot over from chat. */
     toggleRightPanel: () => void;
-    /** ⌘⇧C — team chat. Mirror of `toggleRightPanel`. */
-    toggleRightChatPanel: () => void;
+
     /** Shared implementation: a key that owns a mode either closes the slot
      *  (it already holds that mode) or claims it. */
     toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
@@ -348,7 +347,7 @@ function captureView(s: LayoutState): ProjectView {
  * Exported for `org-tabs.test.ts`.
  */
 export function persistsInEditorState(t: { type: TabType; closable: boolean }): boolean {
-  return t.closable && !ORG_SCOPED_TYPES.has(t.type);
+  return t.closable && !GLOBAL_TAB_TYPES.has(t.type);
 }
 
 /**
@@ -360,7 +359,7 @@ export function persistsInEditorState(t: { type: TabType; closable: boolean }): 
  */
 export function restoredTabType(saved: string): TabType | null {
   const type = migrateTabType(saved);
-  if (type === null || ORG_SCOPED_TYPES.has(type)) return null;
+  if (type === null || GLOBAL_TAB_TYPES.has(type)) return null;
   return type;
 }
 
@@ -437,15 +436,7 @@ export const useLayoutStore = createSelectors(
               s.rightPanel.visible = true;
               s.rightPanel.mode = "source-control";
             }),
-          toggleRightChatPanel: () =>
-            set((s) => {
-              if (s.rightPanel.visible && s.rightPanel.mode === "chat") {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = "chat";
-            }),
+
           toggleChatSidebar: () =>
             set((s) => {
               s.chatSidebar.visible = !s.chatSidebar.visible;
@@ -519,9 +510,7 @@ export const useLayoutStore = createSelectors(
                 tab.type === "notebook" ||
                 // One per DRAFT (id is `comms-draft-{id}`): the singleton rule
                 // would focus draft A when asked to open draft B.
-                tab.type === "comms-draft" ||
                 // One per CONVERSATION (id is `spaces-{convId}`), same rule.
-                tab.type === "spaces" ||
                 tab.type === "unsupported";
 
               let targetId = tab.id;
@@ -997,7 +986,7 @@ export const useLayoutStore = createSelectors(
           if (!RIGHT.includes(rightPanel.activeSection)) rightPanel.activeSection = "changes";
           // Same coercion for the slot occupant — a persisted state predating
           // the chat panel has no `mode` at all.
-          const RIGHT_MODES = ["source-control", "chat"];
+          const RIGHT_MODES = ["source-control"];
           if (!RIGHT_MODES.includes(rightPanel.mode)) rightPanel.mode = "source-control";
           // Tabs whose feature has since been removed (pomodoro, model-chat,
           // research…) still sit in persisted state.json; restoring them

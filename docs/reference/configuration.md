@@ -39,11 +39,9 @@ editing:
 
 | Stays in `app_config_dir()` | Why |
 |---|---|
-| `state.json` | Projects, recents, orgs — machine-managed. (Its keys still say `workspaces` / `activeWorkspaceId`: storage keys, not the concept.) |
-| `device.json` | Telemetry identity; see the exclusions below. |
-| `telemetry.json` | Self-hosted PostHog override. |
+| `state.json` | Local projects and recents — machine-managed. (Its keys still say `workspaces` / `activeWorkspaceId`: storage keys, not the concept.) |
 | `models-pricing.json`, `byok-usage.jsonl` | Caches. |
-| `session-chat/`, comms state | Session data. |
+| `session-chat/` | Session data. |
 
 In application code, call `ConfigManager::config_path()` (Rust) or the
 `get_atlas_config_info` command (frontend) rather than rebuilding the path.
@@ -109,28 +107,10 @@ adaptiveSuggestions = "agent"
 # switches in place and starts over. (default: "reset")
 agentSwitchBehavior = "reset"
 
-# updaterIgnoredVersion: a release you chose to skip in the update
-# prompt. Absent unless one was ignored — TOML has no null, so "unset"
-# means the key simply isn't here. Delete the line to clear it; never
-# write an empty string.
-
 # Chat composer send gesture. true = Enter sends and Shift+Enter
 # inserts a newline; false = only Cmd/Ctrl+Enter sends. Cmd/Ctrl+Enter
 # sends either way. (default: true)
 enterToSend = true
-
-# Let Atlas Agent act on the window: open files at a line, switch tabs
-# and panels, fill in a chat message, type a command for you to run.
-# It never switches projects, sends for you or presses Enter. Off: its
-# UI tools are withdrawn and every call is refused. (default: true)
-agentUiNavigation = true
-
-# Let Atlas Agent act in your organisation, as you: read the recorded
-# sessions, comments, members and conversations of the organisation a
-# cloud-bound Project belongs to. Anything that reaches another person
-# asks you first. Off: its organisation tools are withdrawn and every
-# call is refused. (default: true)
-agentOrgAccess = true
 
 # Notify when a command succeeds after running longer than
 # terminalNotifyMinDurationMs. (The master switch for all notifications
@@ -155,8 +135,7 @@ terminalNotifyNative = true
 # Play a short chime with terminal notifications. (default: false)
 terminalNotifySound = false
 
-# Notifications master switch. Off silences every notification except
-# sign-in problems, which always show. (default: true)
+# Notifications master switch. Off silences notifications. (default: true)
 notificationsEnabled = true
 
 # OS banner for notifications that need you — a permission request, a
@@ -181,13 +160,6 @@ notifyWarningNative = false
 # Sound for warnings. (default: false)
 notifyWarningSound = false
 
-# OS banner for Chat direct messages and @mentions. Shown only when you
-# are away. (default: true)
-notifyTeamNative = true
-
-# Sound for Chat notifications. (default: true)
-notifyTeamSound = true
-
 # Show Allow once / Deny buttons on permission banners. Off: the banner
 # only opens the session. (default: true)
 notifyPermissionActions = true
@@ -197,8 +169,7 @@ notifyPermissionActions = true
 notificationsMigrated = false
 
 # Notification kinds you switched off in Settings > Notifications, by id,
-# e.g. ["terminal-done", "git-behind"]. Unknown ids are ignored; a kind
-# that must always show (sign-in lost) cannot be silenced. (default: [])
+# e.g. ["terminal-done", "git-behind"]. Unknown and retired ids are ignored. (default: [])
 notifyDisabledKinds = []
 
 # Set once Atlas has folded your earlier per-kind notification switches
@@ -227,8 +198,6 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `enableAtlasLogs` | boolean | `true` | — |
 | `showHiddenFiles` | boolean | `true` | — |
 | `uiScale` | number | `1.0` | finite, `0.5`–`2.0` inclusive |
-| `shareTelemetry` | boolean | `true` | — |
-| `linkTelemetryToAccount` | boolean | `true` | — |
 | `embeddingModelId` | string | `"all-MiniLM-L6-v2"` | non-empty |
 | `theme` | string | `"atlas"` | known theme id; an unknown id is logged and falls back to `"atlas"` |
 | `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
@@ -240,14 +209,9 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `gitBlameInline` | boolean | `true` | — |
 | `gitAutoFetch` | boolean | `true` | — |
 | `keepAwakeWhileRunning` | boolean | `false` | no effect on Windows |
-| `autoUpdate` | boolean | `true` | — |
-| `curatedPluginSync` | boolean | `false` | — |
 | `instructionSync` | boolean | `false` | — . See [Mirrored instructions](#mirrored-instructions-instructionsync) |
 | `rememberBeforeSwitch` | boolean | `false` | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |
-| `updaterIgnoredVersion` | string, or absent | absent | — |
 | `enterToSend` | boolean | `true` | — |
-| `agentUiNavigation` | boolean | `true` | — |
-| `agentOrgAccess` | boolean | `true` | — |
 | `terminalNotifications` | boolean | `true` | — |
 | `terminalNotifyMinDurationMs` | integer | `10000` | 0 ≤ n ≤ 3600000 |
 | `terminalNotifyOnFailure` | boolean | `true` | — |
@@ -261,8 +225,6 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `notifyOutcomeSound` | boolean | `true` | — |
 | `notifyWarningNative` | boolean | `false` | — |
 | `notifyWarningSound` | boolean | `false` | — |
-| `notifyTeamNative` | boolean | `true` | — |
-| `notifyTeamSound` | boolean | `true` | — |
 | `notifyPermissionActions` | boolean | `true` | — |
 | `notificationsMigrated` | boolean | `false` | — |
 | `notifyDisabledKinds` | array of strings | `[]` | — |
@@ -497,12 +459,6 @@ schema accepts only `"agent"` or `"off"`.
 
 - **API keys / credentials.** Atlas doesn't store these itself at all — see
   `src-tauri/src/commands/byok.rs`; they live in the user's shell profile.
-- **Telemetry identity** (`device.json`) and the **self-hosted PostHog
-  override** (`telemetry.json`) — deliberately separate files. Their split
-  from coarse settings writes fixed a real bug (a settings save used to wipe
-  the telemetry anonymous id); folding them back in would reverse that fix.
-  `shareTelemetry`/`linkTelemetryToAccount` (the on/off preferences) stay in
-  `config.toml` — only the identity/override files are excluded.
 - **Session history, transcripts, per-project `.atlas/` state.** File-backed,
   but not a "setting," and out of scope until an explicit ownership design
   says otherwise.
