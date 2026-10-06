@@ -93,28 +93,38 @@ export function AnnotationLayer({ pdfPath, page, pageW, pageH }: AnnotationLayer
     }
   };
 
-  /** The page's text lines, normalized — read from react-pdf's text layer,
-   *  which sits beside this overlay in the same page wrapper. */
-  const textLines = (): LineBand[] => {
+  /** The page's text runs, normalized — read from react-pdf's text layer,
+   *  which sits beside this overlay in the same page wrapper. Only the leaf
+   *  runs: a tagged PDF wraps them in `span.markedContent` containers whose
+   *  box is a whole paragraph, and one of those under the stroke would turn
+   *  a line highlight into a paragraph one. */
+  const textRuns = (): LineBand[] => {
     const svg = svgRef.current;
     const pageEl = svg?.closest("[data-page-number]");
     if (!svg || !pageEl) return [];
     const r = svg.getBoundingClientRect();
-    if (r.height === 0) return [];
-    const lines: LineBand[] = [];
-    for (const span of pageEl.querySelectorAll<HTMLElement>(".textLayer span")) {
+    if (r.height === 0 || r.width === 0) return [];
+    const runs: LineBand[] = [];
+    for (const span of pageEl.querySelectorAll<HTMLElement>(
+      ".textLayer span:not(.markedContent)",
+    )) {
       if (!span.textContent?.trim()) continue;
       const s = span.getBoundingClientRect();
-      if (s.height === 0) continue;
-      lines.push({ top: (s.top - r.top) / r.height, bottom: (s.bottom - r.top) / r.height });
+      if (s.height === 0 || s.width === 0) continue;
+      runs.push({
+        top: (s.top - r.top) / r.height,
+        bottom: (s.bottom - r.top) / r.height,
+        left: (s.left - r.left) / r.width,
+        right: (s.right - r.left) / r.width,
+      });
     }
-    return lines;
+    return runs;
   };
 
   const onPointerUp = () => {
     if (!draft) return;
     const rect =
-      draft.kind === "highlight" && draft.rect ? highlightRect(draft.rect, textLines()) : null;
+      draft.kind === "highlight" && draft.rect ? highlightRect(draft.rect, textRuns()) : null;
     if (rect) {
       add(pdfPath, {
         id: newAnnotationId(),
