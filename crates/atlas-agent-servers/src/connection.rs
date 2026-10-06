@@ -51,8 +51,8 @@ const INITIALIZE_EXIT_GRACE: Duration = Duration::from_millis(250);
 /// Before this the handshake was raced only against the child *dying*. A child
 /// that is alive but silent — or whose grandchild `codex app-server` is wedged
 /// — won that race forever, and the tab sat on "connecting" with nothing to
-/// report. Generous: a cold `node` start on a slow disk is seconds, not a
-/// minute, so expiry means the agent is not going to answer.
+/// report. Windows Antigravity's standalone server needs a longer bound to
+/// unpack its bundled Python runtime before it can answer (see `stdio`).
 pub const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Maximum time the exit path waits for the stderr reader to reach EOF before
@@ -63,7 +63,7 @@ const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(1);
 /// How long a one-shot RPC on the connect/bind path may take: `session/new`,
 /// `session/load`, `session/resume`, `authenticate`, `session/list`.
 ///
-/// Longer than [`INITIALIZE_TIMEOUT`] because `session/load` replays history
+/// Normally longer than [`INITIALIZE_TIMEOUT`] because `session/load` replays history
 /// and `session/new` may set a mode round-trip behind it. `session/prompt`
 /// deliberately has no deadline — see [`CANCEL_GRACE`].
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -183,6 +183,14 @@ impl AcpConnection {
         client_name: &'static str,
         client_version: String,
     ) -> Result<Self> {
+        // Antigravity 1.3.0 unpacks its standalone Windows runtime on each
+        // launch. A real initialize took 63.56s locally, exceeding the ordinary
+        // 60s deadline before it could advertise its Google sign-in methods.
+        let initialize_timeout = if cfg!(windows) && agent_id.as_str() == "antigravity-acp" {
+            Duration::from_secs(120)
+        } else {
+            INITIALIZE_TIMEOUT
+        };
         let mut child_command = atlas_process::async_command(&command.path);
         child_command
             .args(&command.args)
@@ -280,7 +288,7 @@ impl AcpConnection {
                 .context("failed to receive ACP connection handle")
         });
         let connection = match tokio::time::timeout(
-            INITIALIZE_TIMEOUT,
+            initialize_timeout,
             futures::future::select(connection_rx, status_fut),
         )
         .await
@@ -296,7 +304,7 @@ impl AcpConnection {
                 return Err(timed_out(
                     &agent_id,
                     "handshake",
-                    INITIALIZE_TIMEOUT,
+                    initialize_timeout,
                     &debug_log,
                 ));
             }
@@ -314,7 +322,7 @@ impl AcpConnection {
 
         // Same shape as above: expiry drops `status_fut`, which kills the tree.
         let (response, status_fut) = match tokio::time::timeout(
-            INITIALIZE_TIMEOUT,
+            initialize_timeout,
             futures::future::select(initialize, status_fut),
         )
         .await
@@ -338,7 +346,7 @@ impl AcpConnection {
                 return Err(timed_out(
                     &agent_id,
                     "initialize",
-                    INITIALIZE_TIMEOUT,
+                    initialize_timeout,
                     &debug_log,
                 ));
             }

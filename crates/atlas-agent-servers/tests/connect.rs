@@ -231,15 +231,68 @@ async fn a_missing_binary_fails_to_spawn() {
 /// after [`INITIALIZE_TIMEOUT`] with a typed `TimedOut` naming the phase
 /// (ADR-0008) — before the deadline, the tab sat on "connecting" forever.
 ///
-/// On a paused clock: the runtime jumps to the next timer whenever it is idle,
-/// so the real 60s deadline runs out in no wall time, and the elapsed time on
+/// On a paused clock advanced by the test, so the real 60s deadline runs out
+/// without waiting a minute, and the elapsed time on
 /// that clock says the connect gave up AT the deadline, not early.
 #[tokio::test(start_paused = true)]
 async fn an_agent_that_never_answers_initialize_times_out_at_the_deadline() {
+    assert_silent_agent_timeout("fake", INITIALIZE_TIMEOUT).await;
+}
+
+/// The standalone Windows server can spend over 60s unpacking before it
+/// answers initialize. It gets extra time, but a wedged launch is still bounded.
+#[cfg(windows)]
+#[tokio::test(start_paused = true)]
+async fn antigravity_windows_startup_has_a_longer_bounded_deadline() {
+    assert_silent_agent_timeout("antigravity-acp", std::time::Duration::from_secs(120)).await;
+}
+
+async fn assert_silent_agent_timeout(agent: &str, expected: std::time::Duration) {
+    let silent_command = if cfg!(windows) {
+        command(
+            "powershell.exe",
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::In.ReadToEnd() | Out-Null",
+            ],
+        )
+    } else {
+        command("/bin/sh", &["-c", "sleep 30"])
+    };
     let started = tokio::time::Instant::now();
-    let error = connect(command("/bin/sh", &["-c", "sleep 30"]))
+    let agent = AgentId::new(agent);
+    let pending = tokio::spawn(async move {
+        AcpConnection::stdio(
+            agent,
+            silent_command,
+            None,
+            AcpConnectionDefaults::default(),
+            thread_events(),
+            request_elicitation_events(),
+            "atlas",
+            "0.0.0-test".to_string(),
+        )
         .await
-        .expect_err("a silent agent must fail the connect, not park it");
+    });
+    // Windows pipe reads use blocking workers, which prevent Tokio's paused
+    // clock from auto-advancing. Drive it explicitly, allowing real I/O to run.
+    for _ in 0..expected.as_secs() * 2 {
+        if pending.is_finished() {
+            break;
+        }
+        tokio::time::advance(std::time::Duration::from_secs(1)).await;
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    if !pending.is_finished() {
+        pending.abort();
+        panic!("a silent agent must fail the connect, not park it");
+    }
+    let error = pending
+        .await
+        .expect("connect task failed")
+        .expect_err("expected a timeout");
     let elapsed = started.elapsed();
 
     let load_error = error
@@ -252,13 +305,13 @@ async fn an_agent_that_never_answers_initialize_times_out_at_the_deadline() {
                 "initialize",
                 "the hop that stalled is named"
             );
-            assert_eq!(*after, INITIALIZE_TIMEOUT);
+            assert_eq!(*after, expected);
         }
         other => panic!("expected TimedOut, got {other:?}"),
     }
     assert!(
-        elapsed >= INITIALIZE_TIMEOUT && elapsed < INITIALIZE_TIMEOUT * 2,
-        "gave up after {elapsed:?}, not at the {INITIALIZE_TIMEOUT:?} deadline"
+        elapsed >= expected && elapsed < expected * 2,
+        "gave up after {elapsed:?}, not at the {expected:?} deadline"
     );
 }
 

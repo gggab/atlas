@@ -27,6 +27,10 @@ Run frontend typechecks, Vitest contracts / chat / permissions / memory tests an
 
 A browser mock validates UI and IPC wiring only. Real vendor subscription login, CLI streaming, approval, model selection and resume require installed CLIs and the user's vendor accounts. This build does not add automatic quota fallback, multi-model review or new memory injection.
 
+### Windows Antigravity startup
+
+The Antigravity 1.3.0 standalone server unpacks its bundled runtime before it can answer ACP initialization. A local probe took 63.56 seconds and then returned `Log in with Google`; the ordinary 60-second deadline interrupted it before authentication. Windows `antigravity-acp` initialization now has a bounded 120-second deadline. Other agents retain 60 seconds. An initialization timeout occurs before vendor login and does not establish an account or subscription failure.
+
 ## Compatibility retained deliberately
 
 Old native source labels, sync-state columns and organization attribution in stored records remain readable; they cannot launch an agent or send records to a server. Old organization projects and groups migrate into the local project registry, and old cloud capture bindings become local while session rows, checkpoint links and content-addressed blobs stay in place. Pinned logs merge into the local log once without deleting originals.
