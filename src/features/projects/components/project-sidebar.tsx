@@ -24,6 +24,7 @@ import {
   Copy,
   GitBranch,
   TerminalSquare,
+  Server,
   HelpCircle,
   MessageCircle,
   Keyboard,
@@ -41,6 +42,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { GithubIcon } from "@/components/github-icon";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
+import { useSshStore } from "@/features/ssh/stores/ssh-store";
 import { useProjectStore, type Project, type ProjectGroup } from "../stores/project-store";
 import { useRunningChatKeys } from "../lib/agent-activity";
 import { openAgentSession, openNewAgentChat } from "@/features/chat/lib/open-agent-session";
@@ -255,6 +257,15 @@ const ProjectRow = memo(function ProjectRow({
                       className="px-2.5 h-6 flex items-center gap-1.5 outline-none hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] cursor-default"
                     >
                       <Pencil size={11} /> Rename
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onClick={() => {
+                        useSshStore.getState().selectProject(ws.path);
+                        openSettingsSection("remote");
+                      }}
+                      className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer rounded hover:bg-element-hover"
+                    >
+                      <Server size={11} /> Remote connections
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
                       onClick={() => {

@@ -344,6 +344,7 @@ struct SharingGatedLifecycle {
     /// Released here rather than from deltas: a session can end without a
     /// terminal status (sign-out, killing an agent, quitting).
     keep_awake: Option<Arc<crate::keep_awake::KeepAwakeManager>>,
+    ssh: Arc<super::ssh::SshState>,
 }
 
 enum LifecycleWrite {
@@ -359,6 +360,7 @@ enum LifecycleWrite {
 
 impl SharingGatedLifecycle {
     fn new(app: AppHandle, server: Arc<super::memory_server::MemoryServerHost>) -> Self {
+        let ssh = app.state::<Arc<super::ssh::SshState>>().inner().clone();
         let keep_awake = app
             .try_state::<Arc<crate::keep_awake::KeepAwakeManager>>()
             .map(|state| state.inner().clone());
@@ -391,6 +393,7 @@ impl SharingGatedLifecycle {
             writes: tx,
             server,
             keep_awake,
+            ssh,
         }
     }
 
@@ -401,6 +404,7 @@ impl SharingGatedLifecycle {
 
 impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     fn session_started(&self, session_id: &str, agent: &str, cwd: &str) {
+        self.ssh.runtime.session_started(session_id);
         super::agent_host::SessionLifecycle::session_started(
             &**self.server.tokens(),
             session_id,
@@ -415,6 +419,7 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     }
 
     fn session_ended(&self, session_id: &str) {
+        tauri::async_runtime::spawn(self.ssh.runtime.revoke(session_id, None, true));
         super::agent_host::SessionLifecycle::session_ended(&**self.server.tokens(), session_id);
         if let Some(keep_awake) = &self.keep_awake {
             keep_awake.session_ended(session_id);
@@ -491,6 +496,8 @@ pub fn install_manager(app: &AppHandle) {
         ));
         let server = Arc::new(super::memory_server::MemoryServerHost::new());
         app.manage(server.clone());
+        let ssh = app.state::<Arc<super::ssh::SshState>>().inner().clone();
+        ssh.start(server.tokens().clone());
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(
             app.clone(),
             server.clone(),
@@ -498,10 +505,10 @@ pub fn install_manager(app: &AppHandle) {
         let gate_app = app.clone();
         let gate: super::memory_server::SharingGate =
             Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
-        host.set_session_mcp(Arc::new(super::memory_server::MemorySessionOffers::new(
-            server.clone(),
-            gate.clone(),
-        )));
+        host.set_session_mcp(Arc::new(
+            super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
+                .with_ssh(ssh),
+        ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
         let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {

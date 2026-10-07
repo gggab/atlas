@@ -51,21 +51,27 @@ impl OfferDecision {
     }
 }
 
-/// Offers each session the memory tool server with a token of its own
-/// ([`SessionMcpServers`], installed on every agent connection), and — with
-/// [`with_ui`](Self::with_ui) — the UI tool server beside it on the same
-/// token (ADR-0012), and — with [`with_org`](Self::with_org) — the
-/// organisation tool server as the third (ADR-0014). One offer decides all
-/// three because all three ride one token: the token table holds one token
-/// per session, so two offers minting two tokens would revoke each other.
+/// Offers shared memory when enabled, and SSH through [`with_ssh`](Self::with_ssh)
+/// independently of that setting. Every entry shares one session token:
+/// separately minted tokens would revoke each other.
 pub struct MemorySessionOffers {
     host: Arc<MemoryServerHost>,
     gate: SharingGate,
+    ssh: Option<Arc<crate::commands::ssh::SshState>>,
 }
 
 impl MemorySessionOffers {
     pub fn new(host: Arc<MemoryServerHost>, gate: SharingGate) -> Self {
-        Self { host, gate }
+        Self {
+            host,
+            gate,
+            ssh: None,
+        }
+    }
+
+    pub fn with_ssh(mut self, ssh: Arc<crate::commands::ssh::SshState>) -> Self {
+        self.ssh = Some(ssh);
+        self
     }
 }
 
@@ -87,12 +93,16 @@ impl SessionMcpServers for MemorySessionOffers {
         if let (OfferDecision::Included, Some(url)) = (decision, url) {
             entries.push((MEMORY_SERVER_NAME, url));
         }
+        // SSH is offered even when shared memory is disabled.
+        if request.http_mcp {
+            if let Some(url) = self.ssh.as_ref().and_then(|ssh| ssh.url()) {
+                entries.push(("atlas_ssh", url));
+            }
+        }
         if entries.is_empty() {
             return SessionMcpOffer::none();
         }
-        // Minted once, after every decision, for every entry — carrying the
-        // organisation only when the organisation server is among them (the
-        // org decision names none otherwise).
+        // Mint once for all included servers, then bind to the actual session.
         let tokens = self.host.tokens().clone();
         let token = tokens.mint_unbound(&agent, &cwd);
         let servers = entries

@@ -520,7 +520,10 @@ export const useLayoutStore = createSelectors(
 
               if (!allowMultiple) {
                 const existingInGroup = s.tabs.find(
-                  (t) => t.type === tab.type && groupOf(t) === targetGroup,
+                  (t) =>
+                    t.type === tab.type &&
+                    groupOf(t) === targetGroup &&
+                    (tab.type !== "terminal" || !!t.data.remote === !!tab.data.remote),
                 );
                 if (existingInGroup) {
                   targetId = existingInGroup.id; // focus the one already in this column

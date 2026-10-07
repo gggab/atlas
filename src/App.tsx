@@ -89,6 +89,7 @@ import { warmMarkdownWorker, primeMarkdownRenderer } from "@/lib/markdown-cache"
 import { primeMarkdown } from "@/lib/markdown";
 import { NotificationPanel } from "@/features/notifications/components/notification-panel";
 import { StopAgentsDialog } from "@/features/projects/components/stop-agents-dialog";
+import { SshHost } from "@/features/ssh/components/ssh-host";
 import { RemoveAgentDialog } from "@/features/agents/components/remove-agent-dialog";
 
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
@@ -1229,6 +1230,7 @@ export function App() {
       <NotificationPanel />
       <KeymapOnboarding />
       <StopAgentsDialog />
+      <SshHost />
       <RemoveAgentDialog />
       <BrowserOverlayWatcher />
       {/* Renders nothing at all until a glyph-based icon theme is in use, and

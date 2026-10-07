@@ -62,6 +62,7 @@ pub mod session_chat_sessions;
 pub mod shared_memory;
 pub mod shell_profile;
 pub mod skills;
+pub mod ssh;
 pub mod terminal;
 pub mod theme_import;
 pub mod themes;

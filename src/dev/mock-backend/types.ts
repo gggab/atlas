@@ -12,6 +12,7 @@ import type { LogResponses } from "./fixtures/log";
 import type { MemoryResponses } from "./fixtures/memory";
 import type { SettingsResponses } from "./fixtures/settings";
 import type { SkillsResponses } from "./fixtures/skills";
+import type { SshResponses } from "./fixtures/ssh";
 import type { TerminalResponses } from "./fixtures/terminal";
 import type { ThemeImportResponses } from "./fixtures/theme-import";
 
@@ -66,6 +67,7 @@ export interface MockResponses
     MemoryResponses,
     SettingsResponses,
     SkillsResponses,
+    SshResponses,
     TerminalResponses,
     ThemeImportResponses {}
 

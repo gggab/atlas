@@ -10,7 +10,7 @@ import {
 } from "@/lib/constants";
 // The store's own predicates, not copies: a re-implementation here would keep
 // passing after the store stopped applying the rule.
-import { persistsInEditorState, restoredTabType } from "./layout-store";
+import { persistsInEditorState, restoredTabType, useLayoutStore } from "./layout-store";
 
 /**
  * Org-scoped tabs must never reach the per-project editor state.
@@ -33,6 +33,48 @@ function restorable(types: string[]) {
 }
 
 describe("global tab persistence", () => {
+  it("opens local and remote terminals independently and reuses each kind", () => {
+    const baseline = useLayoutStore.getState();
+    try {
+      useLayoutStore.setState({
+        tabs: [],
+        groupOrder: ["main"],
+        focusedGroupId: "main",
+        activeByGroup: { main: null },
+      });
+      const add = useLayoutStore.getState().actions.addTab;
+      add({
+        id: "terminal",
+        type: "terminal",
+        title: "Terminal",
+        closable: true,
+        dirty: false,
+        data: {},
+      });
+      add({
+        id: "terminal-ssh",
+        type: "terminal",
+        title: "Remote",
+        closable: true,
+        dirty: false,
+        data: { remote: true },
+      });
+      add({
+        id: "terminal-ssh",
+        type: "terminal",
+        title: "Remote",
+        closable: true,
+        dirty: false,
+        data: { remote: true },
+      });
+      const tabs = useLayoutStore.getState().tabs;
+      expect(tabs).toHaveLength(2);
+      expect(tabs.find((t) => t.id === "terminal-ssh")?.data.remote).toBe(true);
+      expect(useLayoutStore.getState().activeTabId).toBe("terminal-ssh");
+    } finally {
+      useLayoutStore.setState(baseline, true);
+    }
+  });
   const tabs: Array<{ type: TabType; closable: boolean }> = [
     { type: "editor", closable: true },
     { type: "settings", closable: true },

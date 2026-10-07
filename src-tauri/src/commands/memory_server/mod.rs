@@ -38,6 +38,7 @@ pub use briefing::{SessionClocks, SessionReads};
 pub use host::{MemoryServer, MemoryServerHost, SharingGate, Sources};
 #[allow(unused_imports)]
 pub use offers::{MemorySessionOffers, OfferDecision};
+pub(crate) use tokens::require_token;
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};
 #[allow(unused_imports)]

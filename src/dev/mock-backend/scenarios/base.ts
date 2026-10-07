@@ -23,6 +23,7 @@ import { memoryHandlers } from "../fixtures/memory";
 import { miscHandlers } from "../fixtures/misc";
 import { settingsHandlers } from "../fixtures/settings";
 import { skillsHandlers } from "../fixtures/skills";
+import { sshHandlers } from "../fixtures/ssh";
 
 import { terminalHandlers } from "../fixtures/terminal";
 import { importedUserThemes, themeImportHandlers } from "../fixtures/theme-import";
@@ -57,11 +58,13 @@ export const baseFixtureMaps: Readonly<Record<string, MockHandlers>> = {
   "fixtures/integrations": integrationsHandlers,
   "fixtures/memory": memoryHandlers,
   "fixtures/skills": skillsHandlers,
+  "fixtures/ssh": sshHandlers,
 
   "fixtures/terminal": terminalHandlers,
 };
 
 export const baseHandlers: MockHandlers = {
+  ...sshHandlers,
   // ── catch-all ───────────────────────────────────────────────────────────
   // FIRST, not last: with object spread the LAST definition of a key wins, so
   // spreading `misc` first is what lets every domain file (and every inline

@@ -64,13 +64,15 @@ export function startMockBackend(name: string): MockBackend {
 
   const answer = (cmd: string, args: unknown): unknown => {
     const a = (args ?? {}) as MockArgs;
-    if (calls.length < 2000) calls.push({ cmd, args: a });
+    const logged =
+      cmd === "ssh_save" ? { ...a, password: "[REDACTED]", sudoPassword: "[REDACTED]" } : a;
+    if (calls.length < 2000) calls.push({ cmd, args: logged });
 
     const handler = overrides[cmd] ?? baseHandlers[cmd];
     if (handler) return handler(a);
 
     if (!unmocked.has(cmd)) {
-      console.warn(`[mock-backend] unmocked: ${cmd}`, a);
+      console.warn(`[mock-backend] unmocked: ${cmd}`, logged);
       onUnmocked();
     }
     unmocked.set(cmd, (unmocked.get(cmd) ?? 0) + 1);

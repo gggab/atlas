@@ -2542,3 +2542,18 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* The SSH transcript uses the requested Windows Terminal dark palette even
+   with a light app theme. Scope the existing tokens to this pane only. */
+.atlas-ssh-terminal {
+  --atlas-terminal-background: #0c0c0c;
+  --atlas-terminal-foreground: #cccccc;
+  --atlas-terminal-ansi-green: #16c60c;
+  --atlas-terminal-ansi-yellow: #f9cb6b;
+  --card: #171717;
+  --foreground: #cccccc;
+  --muted-foreground: #a0a0a0;
+  --border: rgba(255, 255, 255, 0.15);
+  --atlas-element-hover: rgba(255, 255, 255, 0.1);
+  --atlas-selection-background: rgba(255, 255, 255, 0.2);
+}

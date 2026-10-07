@@ -90,6 +90,10 @@
     "cross": true
   },
   {
+    "crate": "atlas-ssh",
+    "cross": true
+  },
+  {
     "crate": "atlas-theme",
     "clippy": true,
     "cross": true

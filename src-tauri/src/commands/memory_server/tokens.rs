@@ -155,6 +155,15 @@ impl MemoryTokens {
     pub fn grant(&self, token: &str) -> Option<Grant> {
         self.table.lock().by_token.get(token).cloned()
     }
+
+    pub fn is_live(&self, grant: &Grant) -> bool {
+        let table = self.table.lock();
+        table
+            .by_session
+            .get(&grant.session_id)
+            .and_then(|token| table.by_token.get(token))
+            .is_some_and(|current| current == grant)
+    }
 }
 
 /// A session gets its token when it starts and loses it when it ends.
@@ -187,7 +196,7 @@ impl SessionLifecycle for MemoryTokens {
 
 /// Admit a request only with `Authorization: Bearer <live token>`; hand the
 /// token's [`Grant`] to the tool handler through the request extensions.
-pub(super) async fn require_token(
+pub(crate) async fn require_token(
     State(tokens): State<Arc<MemoryTokens>>,
     mut request: Request<Body>,
     next: Next,

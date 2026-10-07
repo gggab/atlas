@@ -15,6 +15,7 @@ export const SETTINGS_SECTIONS = [
   "icons",
   "layouts",
   "providers",
+  "remote",
   "skills",
   "agents",
   "models",

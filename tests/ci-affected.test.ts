@@ -190,6 +190,7 @@ describe("the CI plan", () => {
       "atlas-memory",
       "atlas-process",
       "atlas-redact",
+      "atlas-ssh",
     ]);
   });
 

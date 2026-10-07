@@ -1,3 +1,4 @@
+import { RemoteExecutionPanel } from "@/features/ssh/components/remote-execution-panel";
 import {
   useEffect,
   useRef,
@@ -795,7 +796,11 @@ function PersistentPanel({
     case "chat":
       return <ChatPanel tabId={tab.id} />;
     case "terminal":
-      return <TerminalPanel tabId={tab.id} projectId={projectId} />;
+      return tab.data.remote ? (
+        <RemoteExecutionPanel />
+      ) : (
+        <TerminalPanel tabId={tab.id} projectId={projectId} />
+      );
     default: {
       const _exhaustive: never = tab.type;
       void _exhaustive;
@@ -823,7 +828,9 @@ function ProjectlessCenter() {
   // the very tab the user clicked away from.
   const [atHome, setAtHome] = useState(false);
 
-  const allowed = tabs.filter((t) => PROJECTLESS_TYPES.has(t.type));
+  const allowed = tabs.filter(
+    (t) => PROJECTLESS_TYPES.has(t.type) || (t.type === "terminal" && t.data.remote),
+  );
   // Today's behaviour, exactly, until something project-independent opens.
   if (allowed.length === 0) return <WelcomeScreen />;
 
@@ -940,6 +947,8 @@ function PanelLoading() {
 
 function TabContent({ tab }: { tab: Tab }) {
   switch (tab.type) {
+    case "terminal":
+      return tab.data.remote ? <RemoteExecutionPanel /> : <PlaceholderContent tab={tab} />;
     case "chat":
       return <ChatPanel tabId={tab.id} />;
     case "canvas":

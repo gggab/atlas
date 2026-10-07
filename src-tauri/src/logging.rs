@@ -32,6 +32,17 @@ const MAX_LOG_FILES: usize = 7;
 
 static LOG_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+fn safe_transport_log(target: &str) -> bool {
+    // Transport debug logs can contain raw packets before Atlas redacts them.
+    // This hard filter also applies when RUST_LOG enables a specific module.
+    !["russh", "keyring"].iter().any(|prefix| {
+        target == *prefix
+            || target
+                .strip_prefix(prefix)
+                .is_some_and(|s| s.starts_with("::"))
+    })
+}
+
 /// Where the rolling log files are written, when a file sink was installed.
 pub fn log_dir() -> Option<PathBuf> {
     LOG_DIR.get().cloned().flatten()
@@ -97,11 +108,30 @@ pub fn init() {
 
     let _ = tracing_subscriber::registry()
         .with(filter)
+        .with(tracing_subscriber::filter::filter_fn(|metadata| {
+            safe_transport_log(metadata.target())
+        }))
         .with(stderr_layer)
         .with(file_layer)
         .try_init();
 
     if let Some(dir) = log_dir() {
         tracing::info!(dir = %dir.display(), version = env!("CARGO_PKG_VERSION"), "log file sink installed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn raw_ssh_and_vault_logs_are_always_excluded() {
+        for target in [
+            "russh",
+            "russh::client::encrypted",
+            "keyring::windows",
+            "keyring::macos",
+        ] {
+            assert!(!super::safe_transport_log(target));
+        }
+        assert!(super::safe_transport_log("atlas::ssh"));
     }
 }

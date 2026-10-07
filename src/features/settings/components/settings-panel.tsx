@@ -12,6 +12,7 @@ import {
   Keyboard,
   Info,
   KeyRound,
+  Server,
   LayoutTemplate,
   Zap,
   WandSparkles,
@@ -25,6 +26,7 @@ import { clampScale, SCALE_STEP, MIN_SCALE, MAX_SCALE, DEFAULT_SCALE } from "../
 import { APP_ICONS } from "../lib/app-icons";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { ProvidersSettings } from "./providers-settings";
+import { RemoteConnectionsSettings } from "@/features/ssh/components/remote-connections-settings";
 import { LayoutsSettings } from "./layouts-settings";
 import { AtlasThemesSettings } from "./atlas-themes-settings";
 import { IconThemesSettings } from "./icon-themes-settings";
@@ -56,6 +58,7 @@ const SECTIONS: Array<{
   { id: "icons", label: "Icons", icon: Shapes },
   { id: "layouts", label: "Layouts", icon: LayoutTemplate },
   { id: "providers", label: "API Keys", icon: KeyRound },
+  { id: "remote", label: "Remote connections", icon: Server },
   { id: "skills", label: "Skills", icon: Zap },
   { id: "agents", label: "Agents", icon: WandSparkles },
   { id: "models", label: "Local Models", icon: Boxes },
@@ -187,6 +190,10 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
       {activeSection === "providers" ? (
         <div className="flex-1 min-w-0 min-h-0">
           <ProvidersSettings />
+        </div>
+      ) : activeSection === "remote" ? (
+        <div className="flex-1 min-w-0 min-h-0">
+          <RemoteConnectionsSettings />
         </div>
       ) : activeSection === "skills" ? (
         <div className="flex-1 min-w-0 min-h-0">

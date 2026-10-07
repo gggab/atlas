@@ -119,6 +119,8 @@ atlas-bus = { path = "../crates/atlas-bus" }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 atlas-terminal = { path = "../crates/atlas-terminal" }
+atlas-ssh = { path = "../crates/atlas-ssh" }
+zeroize = "1"
 atlas-icon-theme = { path = "../crates/atlas-icon-theme" }
 atlas-theme = { path = "../crates/atlas-theme" }
 atlas-embed = { path = "../crates/atlas-embed" }

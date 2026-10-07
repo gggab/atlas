@@ -213,6 +213,7 @@ pub fn run() {
             // that store (`~/.agents/skills`) is shared with the released app.
             commands::skills::ensure_bundled_skills();
 
+            commands::ssh::SshState::install(app.handle())?;
             commands::agents::install_manager(app.handle());
             // Silent background refresh of model pricing from models.dev — first
             // launch populates the cache; later launches update only on change.
@@ -285,6 +286,18 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::ssh::ssh_snapshot,
+            commands::ssh::ssh_save,
+            commands::ssh::ssh_delete,
+            commands::ssh::ssh_probe,
+            commands::ssh::ssh_trust,
+            commands::ssh::ssh_test,
+            commands::ssh::ssh_decide,
+            commands::ssh::ssh_revoke,
+            commands::ssh::ssh_disconnect,
+            commands::ssh::ssh_cancel,
+            commands::ssh::ssh_associations,
+            commands::ssh::ssh_associate,
             commands::notifier::notifier_init,
             commands::notifier::notifier_request_authorization,
             commands::notifier::notifier_show,

@@ -35,7 +35,10 @@ const permissionActions = {
   requestPermissionQuestionMulti,
 };
 
+import { sshScenario } from "./ssh";
+
 const all: Scenario[] = [
+  sshScenario,
   {
     name: "default",
     description: "Every surface, populated. The one to review a theme against.",
