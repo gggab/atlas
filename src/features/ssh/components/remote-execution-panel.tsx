@@ -9,12 +9,46 @@ export function RemoteExecutionPanel() {
   const authorizations = useSshStore((s) => s.authorizations);
   const jobs = useSshStore((s) => s.jobs);
   const refresh = useSshStore((s) => s.refresh);
+  const selectedConnection = useSshStore((s) => s.selectedConnection);
+  const selectConnection = useSshStore((s) => s.selectConnection);
+  const connections = useMemo(() => {
+    const entries = new Map<
+      string,
+      { id: string; name: string; target: string; agent: string; session: string }
+    >();
+    for (const job of [...jobs].reverse()) {
+      entries.set(job.remote_session, {
+        id: job.remote_session,
+        name: job.connection_name,
+        target: job.target,
+        agent: job.caller.agent,
+        session: job.caller.session_id,
+      });
+    }
+    for (const session of sessions) {
+      entries.set(session.id, {
+        id: session.id,
+        name: session.connection.name,
+        target: `${session.connection.username}@${session.connection.host}:${session.connection.port}`,
+        agent: session.caller.agent,
+        session: session.caller.session_id,
+      });
+    }
+    return [...entries.values()];
+  }, [jobs, sessions]);
+  const activeConnection = connections.find((c) => c.id === selectedConnection);
+  const activeId = activeConnection?.id ?? null;
   const timeline = useMemo(
-    () => [...jobs].reverse().sort((a, b) => a.started_at - b.started_at),
-    [jobs],
+    () =>
+      [...jobs]
+        .reverse()
+        .filter((job) => !activeId || job.remote_session === activeId)
+        .sort((a, b) => a.started_at - b.started_at),
+    [jobs, activeId],
   );
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
+  const [clearing, setClearing] = useState(false);
   useLayoutEffect(() => {
     const el = transcript.current;
     if (el && following) el.scrollTop = el.scrollHeight;
@@ -25,6 +59,19 @@ export function RemoteExecutionPanel() {
       await refresh();
     } catch (error) {
       toast.error(String(error));
+    }
+  };
+  const clearHistory = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await ssh.clearHistory(activeId);
+      await refresh();
+      setFollowing(true);
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setClearing(false);
     }
   };
   return (
@@ -38,6 +85,14 @@ export function RemoteExecutionPanel() {
         >
           Read-only
         </span>
+        <button
+          className="rounded border border-border px-2 py-0.5 hover:bg-element-hover disabled:opacity-40"
+          title={`Delete completed command history for ${activeConnection?.name ?? "all connections"}. Running commands remain visible.`}
+          disabled={clearing || !timeline.some((job) => job.status !== "running")}
+          onClick={() => void clearHistory()}
+        >
+          {clearing ? "Clearing…" : "Clear history"}
+        </button>
         {!following && (
           <button
             className="rounded border border-border px-2 py-0.5 hover:bg-element-hover"
@@ -47,6 +102,44 @@ export function RemoteExecutionPanel() {
           </button>
         )}
       </div>
+      {connections.length > 0 && (
+        <div
+          role="group"
+          aria-label="Remote connections"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 bg-card px-2 py-1 text-xs"
+        >
+          {[{ id: null, name: "All output" }, ...connections].map((connection, index) => (
+            <button
+              key={connection.id ?? "all"}
+              aria-pressed={activeId === connection.id}
+              className={`shrink-0 rounded px-2 py-1 hover:bg-element-hover ${activeId === connection.id ? "bg-element-hover text-foreground" : "text-muted-foreground"}`}
+              title={
+                "target" in connection
+                  ? `${connection.target} · ${connection.agent} · ${connection.session} · SSH ${connection.id}`
+                  : "Show output from all connections"
+              }
+              onClick={() => {
+                selectConnection(connection.id);
+                setFollowing(true);
+              }}
+            >
+              {connection.name}
+              {"agent" in connection && (
+                <span className="ml-1 text-muted-foreground">
+                  · {connection.agent} · {connection.session.slice(0, 8)}
+                  {connections.filter(
+                    (c) =>
+                      c.name === connection.name &&
+                      c.agent === connection.agent &&
+                      c.session === connection.session,
+                  ).length > 1 && ` · #${index}`}
+                  {!sessions.some((s) => s.id === connection.id) && " · Disconnected"}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="shrink-0 border-b border-border/60 bg-card">
         {authorizations.map((grant) => {
           const session = sessions.find(
@@ -57,6 +150,7 @@ export function RemoteExecutionPanel() {
               s.connection.id === grant.connection.id &&
               s.connection.revision === grant.connection.revision,
           );
+          if (activeId && session?.id !== activeId) return null;
           return (
             <div
               key={`${grant.caller.session_id}-${grant.id}`}
@@ -169,7 +263,11 @@ export function RemoteExecutionPanel() {
           </article>
         ))}
         {!timeline.length && (
-          <div className="text-muted-foreground">Agent command output will appear here.</div>
+          <div className="text-muted-foreground">
+            {activeId
+              ? "No command output for this connection yet."
+              : "Agent command output will appear here."}
+          </div>
         )}
       </div>
     </div>

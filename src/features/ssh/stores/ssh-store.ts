@@ -2,6 +2,8 @@ import { create } from "zustand";
 import { ssh, type Snapshot } from "../lib/api";
 
 interface State extends Snapshot {
+  selectedConnection: string | null;
+  selectConnection: (id: string | null) => void;
   selectedProject: string;
   loading: boolean;
   error: string | null;
@@ -14,6 +16,8 @@ export const useSshStore = create<State>((set, get) => ({
   authorizations: [],
   sessions: [],
   jobs: [],
+  selectedConnection: null,
+  selectConnection: (selectedConnection) => set({ selectedConnection }),
   selectedProject: "",
   loading: false,
   error: null,

@@ -287,6 +287,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::ssh::ssh_snapshot,
+            commands::ssh::ssh_clear_history,
             commands::ssh::ssh_save,
             commands::ssh::ssh_delete,
             commands::ssh::ssh_probe,

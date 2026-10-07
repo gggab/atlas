@@ -114,10 +114,17 @@ impl Runtime {
         }
     }
     pub fn snapshot(&self) -> Result<Snapshot> {
-        let mut jobs = self.store.history()?;
         let live = self.live.lock();
+        let mut jobs = self.store.history()?;
+        let persisted: HashSet<_> = jobs.iter().map(|j| j.id.clone()).collect();
         jobs.retain(|j| !live.jobs.contains_key(&j.id));
-        jobs.extend(live.jobs.values().cloned());
+        // Cleared results remain available to the agent, but not in the transcript.
+        jobs.extend(
+            live.jobs
+                .values()
+                .filter(|j| j.status == "running" || persisted.contains(&j.id))
+                .cloned(),
+        );
         jobs.sort_by_key(|j| std::cmp::Reverse(j.started_at));
         jobs.truncate(100);
         let authorizations = live
@@ -142,6 +149,14 @@ impl Runtime {
             sessions: live.sessions.values().map(|s| s.info.clone()).collect(),
             jobs,
         })
+    }
+    pub fn clear_history(&self, remote_session: Option<&str>) -> Result<()> {
+        // Serialize with job start/finish so a running command is never removed.
+        let live = self.live.lock();
+        self.store.clear_history(remote_session)?;
+        drop(live);
+        self.changed();
+        Ok(())
     }
     pub fn allowed(&self, caller: &Identity, connection: &Connection) -> bool {
         let live = self.live.lock();

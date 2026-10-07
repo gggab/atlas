@@ -4,6 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 
 export interface SshResponses {
   ssh_snapshot: Snapshot;
+  ssh_clear_history: Unit;
   ssh_save: Connection;
   ssh_delete: Unit;
   ssh_probe: string;
@@ -33,6 +34,12 @@ const changed = () => {
 };
 export const sshHandlers: TypedHandlers<SshResponses> = {
   ssh_snapshot: () => snapshot,
+  ssh_clear_history: ({ connectionHandle }) => {
+    snapshot.jobs = snapshot.jobs.filter(
+      (j) => j.status === "running" || (connectionHandle && j.remote_session !== connectionHandle),
+    );
+    changed();
+  },
   ssh_save: ({ input, password, sudoPassword }) => {
     const old = snapshot.connections.find((c) => c.id === input.id);
     const connection: Connection = {

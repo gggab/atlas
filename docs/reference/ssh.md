@@ -56,11 +56,23 @@ with a server prompt, streamed output and completion status for each command.
 Open **Remote execution** from the sidebar or the right panel's tabs. It shares
 the resizable right panel with Source Control, so the central Agent conversation
 stays visible. Approval opens this panel without changing the central tab. SSH
-output remains accessible with no project open.
+output remains accessible with no project open. Connection tabs separate each SSH
+handle and show its server and Agent session; **All output** combines them. New
+connections add tabs without switching the user's selection. Disconnected tabs
+remain available while they have history. Reconnecting creates a new tab if Atlas
+creates a new SSH handle. The selected tab is remembered while the app stays open,
+including when switching to Source Control and back.
 It follows new output at the bottom and preserves the reading position when
 scrolling up; **Latest output** resumes following. Stopping, disconnecting and
 revoking access remain available. Output is capped at 1 MiB per job;
-the last 100 completed jobs are retained. App interruption leaves an unknown outcome.
+the last 100 completed jobs are retained in the local database across app restarts,
+with no age-based expiry. **Clear history** deletes completed command history for
+the selected connection from the transcript and database; in **All output**, it
+clears all connections. Running commands remain visible and
+are saved when they finish; connections and authorizations stay active. Recent
+results remain in the bounded app-session cache for the agent's `ssh_job_status`
+calls until evicted or the app exits, so clearing does not interrupt its work.
+App interruption leaves an unknown outcome.
 Cancellation and disconnect are best effort: check server state before retrying a
 command with an unknown outcome. Atlas does not automatically replay commands.
 
@@ -110,10 +122,13 @@ resolve `comctl32!TaskDialogIndirect`. This was applied only to the generated te
 executable using the Windows SDK Manifest Tool; no system DLL or registry setting
 was changed.
 
-Validated locally: 13 SSH core tests, frontend management/layout/IPC contracts,
+Validated locally: 14 SSH core tests, frontend management/layout/IPC contracts,
 TypeScript, lint and frontend build. The approval-continuation tests cover waiting,
 approval followed by a usable SSH handle, denial, cancellation, configuration edits
-and session termination. The app library and its test targets pass
+and session termination. History-clearing tests cover scoped deletion, restart
+persistence, running commands and continued Agent access to recent results.
+Frontend tests cover new Agent connection tabs and retaining the selected view.
+The app library and its test targets pass
 `cargo check -p atlas --tests` with the temporary C optimization workaround above.
 The HTTP MCP and transport log-filter tests passed for the initial implementation.
 The updated HTTP MCP approval-continuation regression was compile-checked in this

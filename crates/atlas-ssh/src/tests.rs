@@ -233,6 +233,69 @@ async fn authorize(runtime: &Arc<Runtime>, caller: Identity, c: &Connection) -> 
 }
 
 #[tokio::test]
+async fn clearing_history_preserves_running_jobs_agent_results_and_connections() {
+    let (runtime, c, server) = fixture().await;
+    let owner = caller("clear-history");
+    let handle = authorize(&runtime, owner.clone(), &c).await;
+    let done = runtime
+        .exec(&owner, &handle, "echo hi".into(), false, 5)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while runtime.job(&owner, &done.id).unwrap().status == "running" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let running = runtime
+        .exec(&owner, &handle, "hang".into(), false, 10)
+        .await
+        .unwrap();
+    let mut other = runtime.job(&owner, &done.id).unwrap();
+    other.id = "archived-other".into();
+    other.remote_session = "other-connection".into();
+    runtime.store.save_job(&other).unwrap();
+    runtime.clear_history(Some(&handle)).unwrap();
+    let snapshot = runtime.snapshot().unwrap();
+    assert_eq!(snapshot.jobs.len(), 2);
+    assert!(snapshot
+        .jobs
+        .iter()
+        .any(|j| j.id == running.id && j.status == "running"));
+    assert!(snapshot.jobs.iter().any(|j| j.id == other.id));
+    assert_eq!(snapshot.sessions.len(), 1);
+    assert_eq!(snapshot.authorizations.len(), 1);
+    assert!(runtime.allowed(&owner, &c));
+    assert_eq!(runtime.job(&owner, &done.id).unwrap().status, "succeeded");
+    assert_eq!(
+        runtime.job(&owner, &done.id).unwrap().output,
+        "hello [REDACTED] 你好\n"
+    );
+    assert!(runtime.job(&caller("other"), &done.id).is_err());
+    assert_eq!(runtime.store.history().unwrap().len(), 2);
+    runtime.clear_history(None).unwrap();
+    assert_eq!(runtime.snapshot().unwrap().jobs.len(), 1);
+    runtime.cancel(Some(&owner), &running.id).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while runtime.job(&owner, &running.id).unwrap().status == "running" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // Finishing a command after clearing records only that command again.
+    assert_eq!(runtime.snapshot().unwrap().jobs[0].id, running.id);
+    assert_eq!(runtime.snapshot().unwrap().jobs.len(), 1);
+    runtime.clear_history(None).unwrap();
+    runtime.clear_history(None).unwrap();
+    assert!(runtime.snapshot().unwrap().jobs.is_empty());
+    assert!(runtime.store.history().unwrap().is_empty());
+    runtime.revoke(&owner.session_id, None, true).await;
+    server.abort();
+}
+
+#[tokio::test]
 async fn authenticated_execution_is_scoped_redacted_and_revocable() {
     let (runtime, c, server) = fixture().await;
     // A management test never associates the server with a project.

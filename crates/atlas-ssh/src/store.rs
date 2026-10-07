@@ -176,6 +176,16 @@ impl Store {
         }
         Ok(())
     }
+    pub fn clear_history(&self, remote_session: Option<&str>) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "DELETE FROM jobs WHERE json_extract(data,'$.status') != 'running' AND (?1 IS NULL OR json_extract(data,'$.remote_session') = ?1)",
+                [remote_session],
+            )
+            .map_err(|_| "Cannot clear SSH history")?;
+        Ok(())
+    }
     pub fn history(&self) -> Result<Vec<crate::Job>> {
         let db = self.0.lock();
         let mut query = db
@@ -289,5 +299,8 @@ mod tests {
         assert_eq!(history[0].status, "interrupted_unknown");
         assert!(history[0].finished_at.is_some());
         assert!(history.iter().all(|j| j.status != "running"));
+        reopened.clear_history(None).unwrap();
+        drop(reopened);
+        assert!(Store::open(&path).unwrap().history().unwrap().is_empty());
     }
 }

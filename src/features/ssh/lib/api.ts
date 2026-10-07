@@ -58,6 +58,8 @@ export interface Association {
 }
 export const ssh = {
   snapshot: () => invoke<Snapshot>("ssh_snapshot"),
+  clearHistory: (connectionHandle: string | null) =>
+    invoke<void>("ssh_clear_history", { connectionHandle }),
   save: (
     input: Pick<Connection, "name" | "purpose" | "host" | "port" | "username"> & {
       id: string | null;

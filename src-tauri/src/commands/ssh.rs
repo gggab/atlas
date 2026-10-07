@@ -111,6 +111,14 @@ pub fn ssh_snapshot(state: State<'_, Arc<SshState>>) -> Result<atlas_ssh::Snapsh
 }
 
 #[tauri::command]
+pub fn ssh_clear_history(
+    state: State<'_, Arc<SshState>>,
+    connection_handle: Option<String>,
+) -> Result<(), String> {
+    state.runtime.clear_history(connection_handle.as_deref())
+}
+
+#[tauri::command]
 pub async fn ssh_save(
     state: State<'_, Arc<SshState>>,
     input: ConnectionInput,

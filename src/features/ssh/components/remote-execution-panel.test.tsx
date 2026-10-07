@@ -4,9 +4,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { RemoteExecutionPanel } from "./remote-execution-panel";
 import { useSshStore } from "../stores/ssh-store";
 import { ssh, type Approval, type Job, type Snapshot } from "../lib/api";
+import { toast } from "sonner";
 
 vi.mock("../lib/api", () => ({
-  ssh: { snapshot: vi.fn(), disconnect: vi.fn(), revoke: vi.fn(), cancel: vi.fn() },
+  ssh: {
+    snapshot: vi.fn(),
+    clearHistory: vi.fn(),
+    disconnect: vi.fn(),
+    revoke: vi.fn(),
+    cancel: vi.fn(),
+  },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
@@ -37,7 +44,7 @@ beforeEach(() => {
     sessions: [{ id: "ssh-one", caller: grant.caller, connection: grant.connection }],
     jobs: [],
   };
-  useSshStore.setState({ ...snapshot, loading: false, error: null });
+  useSshStore.setState({ ...snapshot, selectedConnection: null, loading: false, error: null });
   vi.mocked(ssh.snapshot).mockImplementation(async () => snapshot);
 });
 
@@ -49,7 +56,7 @@ it("shows one card and keeps authorization visible after disconnecting", async (
     snapshot = { ...snapshot, authorizations: [] };
   });
   render(<RemoteExecutionPanel />);
-  expect(screen.getAllByRole("group")).toHaveLength(1);
+  expect(screen.getByRole("group", { name: "Production · Claude Code · session-" })).toBeTruthy();
   expect(screen.getByText("Authorized · Connected")).toBeTruthy();
   expect(screen.getByText("deploy@192.0.2.10:22")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Disconnect Production" }));
@@ -172,4 +179,136 @@ it("follows output unless the reader scrolls up, and can resume following", () =
   fireEvent.click(screen.getByRole("button", { name: "Latest output ↓" }));
   expect(history.scrollTop).toBe(1400);
   expect(screen.queryByRole("button", { name: "Latest output ↓" })).toBeNull();
+});
+
+it("clears completed history while keeping running commands and access", async () => {
+  const completed = command("completed", 10, "old output");
+  const running = {
+    ...command("running", 20, "working"),
+    status: "running",
+    finished_at: null,
+    exit_code: null,
+  };
+  snapshot = { ...snapshot, jobs: [running, completed] };
+  useSshStore.setState(snapshot);
+  vi.mocked(ssh.clearHistory).mockImplementation(async () => {
+    snapshot = { ...snapshot, jobs: [running] };
+  });
+  const view = render(<RemoteExecutionPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+  await waitFor(() => expect(screen.queryByText("old output")).toBeNull());
+  expect(screen.getByText("working")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Stop command: echo running" })).toBeTruthy();
+  expect(screen.getByText("Authorized · Connected")).toBeTruthy();
+  expect(ssh.clearHistory).toHaveBeenCalledTimes(1);
+  expect(ssh.clearHistory).toHaveBeenCalledWith(null);
+  expect(ssh.cancel).not.toHaveBeenCalled();
+  expect(ssh.disconnect).not.toHaveBeenCalled();
+  expect(ssh.revoke).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Clear history" }).hasAttribute("disabled")).toBe(
+      true,
+    ),
+  );
+  view.unmount();
+  render(<RemoteExecutionPanel />);
+  await act(() => useSshStore.getState().refresh());
+  expect(screen.queryByText("old output")).toBeNull();
+  snapshot = { ...snapshot, jobs: [{ ...running, status: "succeeded", finished_at: 21 }] };
+  await act(() => useSshStore.getState().refresh());
+  expect(screen.getByRole("button", { name: "Clear history" }).hasAttribute("disabled")).toBe(
+    false,
+  );
+});
+
+it("preserves history and reports a failed clear", async () => {
+  const completed = command("completed", 10, "old output");
+  useSshStore.setState({ jobs: [completed] });
+  vi.mocked(ssh.clearHistory).mockRejectedValueOnce(new Error("Cannot clear SSH history"));
+  render(<RemoteExecutionPanel />);
+  fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Error: Cannot clear SSH history"));
+  expect(screen.getByText("old output")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Clear history" }).hasAttribute("disabled")).toBe(
+    false,
+  );
+});
+
+it("switches between connections from different agents and scopes clearing to the selected one", async () => {
+  const first = command("first", 10, "first output");
+  const second = {
+    ...command("second", 20, "second output"),
+    remote_session: "ssh-two",
+    caller: { ...grant.caller, agent: "Codex", session_id: "codex-session" },
+  };
+  const secondSession = { id: "ssh-two", caller: second.caller, connection: grant.connection };
+  snapshot = {
+    ...snapshot,
+    jobs: [second, first],
+    sessions: [...snapshot.sessions, secondSession],
+  };
+  useSshStore.setState(snapshot);
+  vi.mocked(ssh.clearHistory).mockImplementation(async (id) => {
+    snapshot = { ...snapshot, jobs: snapshot.jobs.filter((j) => j.remote_session !== id) };
+  });
+  render(<RemoteExecutionPanel />);
+  const connections = screen.getByRole("group", { name: "Remote connections" });
+  fireEvent.click(within(connections).getByRole("button", { name: /Production · Claude Code/ }));
+  expect(screen.getByText("first output")).toBeTruthy();
+  expect(screen.queryByText("second output")).toBeNull();
+  fireEvent.click(within(connections).getByRole("button", { name: /Production · Codex/ }));
+  expect(screen.queryByText("first output")).toBeNull();
+  expect(screen.getByText("second output")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+  await waitFor(() => expect(ssh.clearHistory).toHaveBeenCalledWith("ssh-two"));
+  await waitFor(() => expect(screen.queryByText("second output")).toBeNull());
+  expect(screen.getByText("No command output for this connection yet.")).toBeTruthy();
+  fireEvent.click(within(connections).getByRole("button", { name: "All output" }));
+  expect(screen.getByText("first output")).toBeTruthy();
+});
+
+it("adds new connection tabs without stealing the selected view", () => {
+  const first = command("first", 10, "first output");
+  useSshStore.setState({ jobs: [first] });
+  const view = render(<RemoteExecutionPanel />);
+  const connections = screen.getByRole("group", { name: "Remote connections" });
+  const selected = within(connections).getByRole("button", { name: /Production · Claude Code/ });
+  fireEvent.click(selected);
+  const secondSession = {
+    id: "ssh-two",
+    caller: { ...grant.caller, agent: "Codex", session_id: "codex-session" },
+    connection: { ...grant.connection, id: "staging", name: "Staging", host: "192.0.2.11" },
+  };
+  act(() => useSshStore.setState({ sessions: [...snapshot.sessions, secondSession] }));
+  const next = within(connections).getByRole("button", { name: /Staging · Codex/ });
+  expect(selected.getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByText("first output")).toBeTruthy();
+  fireEvent.click(next);
+  expect(screen.queryByText("first output")).toBeNull();
+  expect(screen.getByText("No command output for this connection yet.")).toBeTruthy();
+  act(() =>
+    useSshStore.setState({
+      jobs: [
+        first,
+        {
+          ...command("second", 20, "new output"),
+          remote_session: "ssh-two",
+          caller: secondSession.caller,
+          connection_name: "Staging",
+        },
+      ],
+    }),
+  );
+  expect(screen.getByText("new output")).toBeTruthy();
+  act(() => useSshStore.setState({ sessions: snapshot.sessions }));
+  expect(
+    within(connections)
+      .getByRole("button", { name: /Staging · Codex.*Disconnected/ })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.getByText("new output")).toBeTruthy();
+  view.unmount();
+  render(<RemoteExecutionPanel />);
+  expect(screen.getByText("new output")).toBeTruthy();
+  expect(screen.queryByText("first output")).toBeNull();
 });
