@@ -528,11 +528,11 @@ function useNotificationItem(): DockItem {
 
 function useRightPanelItem(): DockItem {
   const rightPanel = useLayoutStore.use.rightPanel();
-  const { toggleRightPanel } = useLayoutStore.use.actions();
+  const { toggleRightPanelMode } = useLayoutStore.use.actions();
 
   return {
     label: rightPanel.visible ? "Hide right panel" : "Show right panel",
-    onClick: toggleRightPanel,
+    onClick: () => toggleRightPanelMode(rightPanel.mode),
     icon: <PanelRight size={12} className={rightPanel.visible ? "" : "opacity-40"} />,
   };
 }

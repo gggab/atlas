@@ -33,9 +33,13 @@ the project's shared-memory switch. Available connections are queried only when 
 | `ssh_job_cancel` | Request cancellation |
 | `ssh_disconnect` | Disconnect this session's SSH handle |
 
-When `ssh_connect` returns `authorization_required`, approve or deny the request in
-Atlas. After approval the agent calls `ssh_connect` again. A denial or revocation
-prevents further use for that live session. Ending the Agent session revokes its
+`ssh_connect` waits while Atlas displays the authorization request. Approve or deny
+it in Atlas. Approval automatically continues the same tool call, connects and
+returns the connection handle to the requesting agent, so it can proceed without
+a manual follow-up message or another `ssh_connect` call. Denial returns an error;
+editing the connection, cancelling the request or ending the Agent session also
+ends the wait. Approval is not a guarantee that server login will succeed.
+A denial or revocation prevents further use for that live session. Ending the Agent session revokes its
 authorizations; a resumed session requires fresh approval. Discovery never grants access.
 
 Authorization covers a connection's approved configuration and the actual Agent
@@ -49,6 +53,10 @@ Each command starts independently: combine `cd` and the command in one call when
 needed. Default timeout is 300 seconds, configurable from 1 to 86400 seconds. The
 remote execution view displays a continuous transcript in command start order,
 with a server prompt, streamed output and completion status for each command.
+Open **Remote execution** from the sidebar or the right panel's tabs. It shares
+the resizable right panel with Source Control, so the central Agent conversation
+stays visible. Approval opens this panel without changing the central tab. SSH
+output remains accessible with no project open.
 It follows new output at the bottom and preserves the reading position when
 scrolling up; **Latest output** resumes following. Stopping, disconnecting and
 revoking access remain available. Output is capped at 1 MiB per job;
@@ -102,6 +110,12 @@ resolve `comctl32!TaskDialogIndirect`. This was applied only to the generated te
 executable using the Windows SDK Manifest Tool; no system DLL or registry setting
 was changed.
 
-Validated locally: 11 SSH core tests, the HTTP MCP test, the transport log-filter
-test, frontend management/layout/IPC contracts, TypeScript, lint and frontend build.
-The full app library compiled with the temporary C optimization workaround above.
+Validated locally: 13 SSH core tests, frontend management/layout/IPC contracts,
+TypeScript, lint and frontend build. The approval-continuation tests cover waiting,
+approval followed by a usable SSH handle, denial, cancellation, configuration edits
+and session termination. The app library and its test targets pass
+`cargo check -p atlas --tests` with the temporary C optimization workaround above.
+The HTTP MCP and transport log-filter tests passed for the initial implementation.
+The updated HTTP MCP approval-continuation regression was compile-checked in this
+change; its native test executable was not rerun because the running development
+app holds the default build directory lock.

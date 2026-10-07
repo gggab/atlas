@@ -66,9 +66,9 @@ export function AppLayout() {
     if (showLeft && panel.isCollapsed()) panel.expand();
     else if (!showLeft && !panel.isCollapsed()) panel.collapse();
   }, [showLeft]);
-  // Source control needs a project; team chat is org-scoped and is reachable
-  // with no project open, so the slot stays available in chat mode.
-  const showRight = rightPanel.visible && !!currentProject;
+  // SSH output is global and remains available without a project.
+  const showRight =
+    rightPanel.visible && (!!currentProject || rightPanel.mode === "remote-execution");
   const isLinux =
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 

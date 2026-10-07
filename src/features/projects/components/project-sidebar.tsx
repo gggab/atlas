@@ -655,7 +655,7 @@ export function ProjectSidebar() {
   const { addProject, toggleSidebarPinned } = useProjectStore.use.actions();
   const { addTab, toggleRightPanelMode } = useLayoutStore.use.actions();
   // Which occupant the right slot shows, or null when closed — drives the
-  // active state of the Chat / Source control items.
+  // active state of the Remote execution / Source control items.
   const rightMode = useLayoutStore((s) => (s.rightPanel.visible ? s.rightPanel.mode : null));
   // Source control needs a project (app-layout hides the slot without one), so
   // the item says so instead of toggling a panel that never appears.
@@ -1042,6 +1042,12 @@ export function ProjectSidebar() {
                   disabled={!hasProject}
                   title={hasProject ? undefined : "Open a project to see its source control"}
                   onClick={() => toggleRightPanelMode("source-control")}
+                />
+                <NavItem
+                  icon={<Server size={14} />}
+                  label="Remote execution"
+                  active={rightMode === "remote-execution"}
+                  onClick={() => toggleRightPanelMode("remote-execution")}
                 />
                 <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />
                 {/* Usage is a module, not rail chrome. It was up with the pin

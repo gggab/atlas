@@ -77,6 +77,7 @@ pub struct Runtime {
     // use per-connection locks if concurrent setup becomes a bottleneck.
     pub management: tokio::sync::Mutex<()>,
     live: Mutex<Live>,
+    approval_changes: watch::Sender<()>,
     changed: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -99,6 +100,7 @@ impl Runtime {
             credentials,
             management: tokio::sync::Mutex::new(()),
             live: Mutex::new(Live::default()),
+            approval_changes: watch::channel(()).0,
             changed,
         }
     }
@@ -151,10 +153,13 @@ impl Runtime {
             .approvals
             .remove(id)
             .ok_or("This approval is no longer pending")?;
+        self.approval_changes.send_replace(());
         let current = self.store.get(&approval.connection.id)?;
         if current.revision != approval.connection.revision
             || live.ended.contains(&approval.caller.session_id)
         {
+            drop(live);
+            self.changed();
             return Err("Connection or agent session changed; request again".into());
         }
         let k = key(&approval.caller, &current);
@@ -166,6 +171,62 @@ impl Runtime {
         drop(live);
         self.changed();
         Ok(())
+    }
+    /// Keep the agent's tool call pending until Atlas has a user decision.
+    pub async fn connect_after_approval(
+        self: &Arc<Self>,
+        caller: Identity,
+        connection_id: &str,
+    ) -> Result<serde_json::Value> {
+        // Subscribe before requesting approval so even an immediate click is observed.
+        let mut changes = self.approval_changes.subscribe();
+        let connection = self.store.get(connection_id)?;
+        let result = self.connect(caller.clone(), connection_id).await?;
+        if result["status"] != "authorization_required" {
+            return Ok(result);
+        }
+        let approval_id = result["approval_id"]
+            .as_str()
+            .ok_or("Missing SSH approval")?;
+        loop {
+            let allowed = {
+                let live = self.live.lock();
+                if live.ended.contains(&caller.session_id) {
+                    return Err("Agent session ended while awaiting SSH authorization".into());
+                }
+                if self.store.get(connection_id)?.revision != connection.revision {
+                    return Err("Connection configuration changed; request again".into());
+                }
+                if live.denied.contains(&key(&caller, &connection)) {
+                    return Err("Connection access denied or revoked for this session".into());
+                }
+                let allowed = live.allowed.contains(&key(&caller, &connection));
+                if !allowed && !live.approvals.contains_key(approval_id) {
+                    return Err("SSH authorization request was cancelled; request again".into());
+                }
+                allowed
+            };
+            if allowed {
+                let result = self.connect(caller.clone(), connection_id).await?;
+                if result["status"] == "authorization_required" {
+                    self.cancel_connection_request(&caller, connection_id);
+                    return Err("Connection authorization changed; request again".into());
+                }
+                return Ok(result);
+            }
+            changes
+                .changed()
+                .await
+                .map_err(|_| "SSH authorization wait ended")?;
+        }
+    }
+    pub fn cancel_connection_request(&self, caller: &Identity, connection_id: &str) {
+        self.live
+            .lock()
+            .approvals
+            .retain(|_, a| !(a.caller == *caller && a.connection.id == connection_id));
+        self.approval_changes.send_replace(());
+        self.changed();
     }
     pub async fn connect(
         self: &Arc<Self>,
@@ -525,6 +586,7 @@ impl Runtime {
             }
             transports
         };
+        self.approval_changes.send_replace(());
         self.changed();
         async move {
             for transport in transports {
@@ -561,6 +623,7 @@ impl Runtime {
             .iter()
             .map(|s| self.revoke(s, Some(connection_id), false))
             .collect();
+        self.approval_changes.send_replace(());
         async move {
             for close in cleanup {
                 close.await;

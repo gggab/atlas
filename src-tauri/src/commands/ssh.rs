@@ -309,7 +309,7 @@ struct Args {
 fn specs() -> ListToolsResult {
     let definitions=[
         ("ssh_connections_list","List current SSH connections, project associations and authorization state. Call only when SSH access is needed. Never contains passwords.",json!({})),
-        ("ssh_connect","Request session authorization in Atlas and connect using backend-owned credentials. If authorization_required, wait and call this tool again after user approval. Do not retry denied requests.",json!({"connection_id":{"type":"string"}})),
+        ("ssh_connect","Request session authorization in Atlas and connect using backend-owned credentials. This call waits for the user's decision in Atlas and automatically connects after approval, returning a connection_handle. No follow-up message or repeated connect call is needed. Do not retry denied requests.",json!({"connection_id":{"type":"string"}})),
         ("ssh_exec","Execute one independent command on an authorized SSH connection. Returns a job_id; poll ssh_job_status. Commands do not preserve cd/export state. sudo=true uses controlled Atlas sudo authentication; actual server permissions apply. Never automatically retry a command with unknown outcome.",json!({"connection_handle":{"type":"string"},"command":{"type":"string"},"sudo":{"type":"boolean"},"timeout_seconds":{"type":"integer","minimum":1,"maximum":86400}})),
         ("ssh_job_status","Return the redacted output and execution state of a task owned by this session. Cancellation or disconnect may leave remote side effects; unknown states must not be automatically replayed.",json!({"job_id":{"type":"string"}})),
         ("ssh_job_cancel","Request task cancellation; remote termination is best effort.",json!({"job_id":{"type":"string"}})),
@@ -402,14 +402,18 @@ impl ServerHandler for SshTools {
                     })).collect::<Vec<_>>()}))
                 }
                 "ssh_connect" => {
-                    runtime
-                        .connect(
-                            caller,
-                            args.connection_id
-                                .as_deref()
-                                .ok_or("connection_id required")?,
-                        )
-                        .await
+                    let id = args
+                        .connection_id
+                        .as_deref()
+                        .ok_or("connection_id required")?;
+                    tokio::select! {
+                        biased;
+                        _ = context.ct.cancelled() => {
+                            runtime.cancel_connection_request(&caller, id);
+                            Err("SSH connection request cancelled".into())
+                        }
+                        result = runtime.connect_after_approval(caller.clone(), id) => result,
+                    }
                 }
                 "ssh_exec" => {
                     let job = runtime
@@ -575,20 +579,39 @@ mod tests {
             )
             .await
             .is_err());
-        let pending = call(
-            &client,
-            "ssh_connect",
-            json!({"connection_id":connection.id}),
-        )
-        .await;
-        assert_eq!(pending["status"], "authorization_required");
-        let snapshot = state.runtime.snapshot().unwrap();
-        assert_eq!(snapshot.approvals[0].caller.session_id, "one");
-        assert_eq!(snapshot.approvals[0].caller.project, "/project");
-        state
-            .runtime
-            .decide(pending["approval_id"].as_str().unwrap(), true)
+        let connect_request = client.call_tool(
+            CallToolRequestParams::new("ssh_connect").with_arguments(
+                json!({"connection_id":connection.id})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        );
+        let approve = async {
+            let approval = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                loop {
+                    if let Some(approval) = state.runtime.snapshot().unwrap().approvals.first() {
+                        break approval.clone();
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+                }
+            })
+            .await
             .unwrap();
+            assert_eq!(approval.caller.session_id, "one");
+            assert_eq!(approval.caller.project, "/project");
+            state.runtime.decide(&approval.id, true).unwrap();
+        };
+        let (result, ()) = tokio::join!(connect_request, approve);
+        // No saved password in this fixture: the SAME HTTP request continues
+        // into connection setup and reports that error after approval.
+        let result = result.unwrap();
+        assert!(result.is_error.unwrap_or(false));
+        assert!(result.content.iter().any(|c| {
+            c.as_text()
+                .is_some_and(|text| text.text.contains("Credential"))
+        }));
+        assert!(state.runtime.snapshot().unwrap().approvals.is_empty());
         assert_eq!(
             call(&client, "ssh_connections_list", json!({})).await["connections"][0]["authorized"],
             true

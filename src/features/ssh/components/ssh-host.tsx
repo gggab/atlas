@@ -8,14 +8,7 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 
 export function openRemoteExecution() {
-  useLayoutStore.getState().actions.addTab({
-    id: "terminal-ssh",
-    type: "terminal",
-    title: "Remote execution",
-    closable: true,
-    dirty: false,
-    data: { remote: true },
-  });
+  useLayoutStore.getState().actions.revealRightSection("remote-execution");
 }
 
 export function SshHost() {
@@ -72,7 +65,8 @@ export function SshHost() {
           <Dialog.Title className="text-base font-semibold">Allow SSH connection?</Dialog.Title>
           <Dialog.Description className="mt-2 text-sm text-muted-foreground">
             Allow this agent session to execute commands with the remote account’s existing
-            permissions. Credentials stay in Atlas.
+            permissions. Credentials stay in Atlas. The waiting connection request resumes
+            automatically after approval.
           </Dialog.Description>
           <dl className="my-4 grid grid-cols-[90px_1fr] gap-2 text-xs break-all">
             <dt>Agent</dt>

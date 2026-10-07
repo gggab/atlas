@@ -33,7 +33,7 @@ function restorable(types: string[]) {
 }
 
 describe("global tab persistence", () => {
-  it("opens local and remote terminals independently and reuses each kind", () => {
+  it("reuses a local terminal within its split column", () => {
     const baseline = useLayoutStore.getState();
     try {
       useLayoutStore.setState({
@@ -52,25 +52,16 @@ describe("global tab persistence", () => {
         data: {},
       });
       add({
-        id: "terminal-ssh",
+        id: "terminal-other",
         type: "terminal",
-        title: "Remote",
+        title: "Terminal",
         closable: true,
         dirty: false,
-        data: { remote: true },
-      });
-      add({
-        id: "terminal-ssh",
-        type: "terminal",
-        title: "Remote",
-        closable: true,
-        dirty: false,
-        data: { remote: true },
+        data: {},
       });
       const tabs = useLayoutStore.getState().tabs;
-      expect(tabs).toHaveLength(2);
-      expect(tabs.find((t) => t.id === "terminal-ssh")?.data.remote).toBe(true);
-      expect(useLayoutStore.getState().activeTabId).toBe("terminal-ssh");
+      expect(tabs).toHaveLength(1);
+      expect(useLayoutStore.getState().activeTabId).toBe("terminal");
     } finally {
       useLayoutStore.setState(baseline, true);
     }

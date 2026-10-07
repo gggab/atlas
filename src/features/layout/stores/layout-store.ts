@@ -55,11 +55,9 @@ interface LayoutState {
   rightPanel: {
     visible: boolean;
     width: number;
-    activeSection: "changes" | "github" | "git-graph";
-    /** The right slot holds one occupant at a time: source control (⌘⇧B) or
-     *  team chat (⌘⇧C). Pressing the other one's key swaps the occupant rather
-     *  than opening a second panel. */
-    mode: "source-control";
+    activeSection: "changes" | "github" | "git-graph" | "remote-execution";
+    /** Source control and remote execution share the resizable right slot. */
+    mode: "source-control" | "remote-execution";
   };
   /** Per-app KB tab layout — survives tab switches (each KB tab gets the
    *  same panel layout, matching the global-left/right model). */
@@ -121,8 +119,7 @@ interface LayoutState {
 interface LayoutActions {
   actions: {
     toggleLeftPanel: () => void;
-    /** ⌘⇧B — source control. Closes the slot if it already holds source
-     *  control, otherwise takes the slot over from chat. */
+    /** ⌘⇧B — toggle source control, or switch to it from remote execution. */
     toggleRightPanel: () => void;
 
     /** Shared implementation: a key that owns a mode either closes the slot
@@ -426,6 +423,9 @@ export const useLayoutStore = createSelectors(
               }
               s.rightPanel.visible = true;
               s.rightPanel.mode = mode;
+              if (mode === "remote-execution") s.rightPanel.activeSection = "remote-execution";
+              else if (s.rightPanel.activeSection === "remote-execution")
+                s.rightPanel.activeSection = "changes";
             }),
           toggleRightPanel: () =>
             set((s) => {
@@ -435,6 +435,8 @@ export const useLayoutStore = createSelectors(
               }
               s.rightPanel.visible = true;
               s.rightPanel.mode = "source-control";
+              if (s.rightPanel.activeSection === "remote-execution")
+                s.rightPanel.activeSection = "changes";
             }),
 
           toggleChatSidebar: () =>
@@ -484,13 +486,14 @@ export const useLayoutStore = createSelectors(
           setRightSection: (section) =>
             set((s) => {
               s.rightPanel.activeSection = section;
+              s.rightPanel.mode =
+                section === "remote-execution" ? "remote-execution" : "source-control";
             }),
           revealRightSection: (section) =>
             set((s) => {
               s.rightPanel.visible = true;
-              // The sections are all source-control views, so revealing one has
-              // to claim the slot back from chat.
-              s.rightPanel.mode = "source-control";
+              s.rightPanel.mode =
+                section === "remote-execution" ? "remote-execution" : "source-control";
               s.rightPanel.activeSection = section;
             }),
           addTab: (tab, groupId) =>
@@ -520,10 +523,7 @@ export const useLayoutStore = createSelectors(
 
               if (!allowMultiple) {
                 const existingInGroup = s.tabs.find(
-                  (t) =>
-                    t.type === tab.type &&
-                    groupOf(t) === targetGroup &&
-                    (tab.type !== "terminal" || !!t.data.remote === !!tab.data.remote),
+                  (t) => t.type === tab.type && groupOf(t) === targetGroup,
                 );
                 if (existingInGroup) {
                   targetId = existingInGroup.id; // focus the one already in this column
@@ -900,6 +900,8 @@ export const useLayoutStore = createSelectors(
                   }
                   // Add the saved tabs into their columns.
                   for (const saved of data.tabs!) {
+                    // Remote output now lives in the right panel, never a local PTY tab.
+                    if (saved.type === "terminal" && saved.data?.remote) continue;
                     // Renamed types map forward; unknown and org-scoped
                     // types are dropped (see `restoredTabType`).
                     const type = restoredTabType(saved.type);
@@ -984,13 +986,11 @@ export const useLayoutStore = createSelectors(
           // pre-move `state.json` with "git-graph" on the left or "analysis"
           // on the right) back to a valid default so the panel isn't blank.
           const LEFT = ["files", "knowledge"];
-          const RIGHT = ["changes", "github", "git-graph"];
+          const RIGHT = ["changes", "github", "git-graph", "remote-execution"];
           if (!LEFT.includes(leftPanel.activeSection)) leftPanel.activeSection = "files";
           if (!RIGHT.includes(rightPanel.activeSection)) rightPanel.activeSection = "changes";
-          // Same coercion for the slot occupant — a persisted state predating
-          // the chat panel has no `mode` at all.
-          const RIGHT_MODES = ["source-control"];
-          if (!RIGHT_MODES.includes(rightPanel.mode)) rightPanel.mode = "source-control";
+          rightPanel.mode =
+            rightPanel.activeSection === "remote-execution" ? "remote-execution" : "source-control";
           // Tabs whose feature has since been removed (pomodoro, model-chat,
           // research…) still sit in persisted state.json; restoring them
           // yields a permanent placeholder tab. Drop them, and repoint
@@ -1005,7 +1005,7 @@ export const useLayoutStore = createSelectors(
               const id = t.id in LEGACY_TAB_TYPES ? LEGACY_TAB_TYPES[t.id] : t.id;
               return { ...t, id, type };
             })
-            .filter((t) => validTypes.has(t.type));
+            .filter((t) => validTypes.has(t.type) && !(t.type === "terminal" && t.data?.remote));
           let activeTabId = p.activeTabId ?? current.activeTabId;
           if (activeTabId !== null && !tabs.some((t) => t.id === activeTabId)) {
             activeTabId = tabs[0]?.id ?? null;

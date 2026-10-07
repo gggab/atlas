@@ -127,6 +127,101 @@ fn caller(id: &str) -> Identity {
     }
 }
 
+async fn pending_approval(runtime: &Runtime) -> Approval {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if let Some(approval) = runtime.snapshot().unwrap().approvals.first() {
+                return approval.clone();
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("SSH approval should appear while the tool waits")
+}
+
+#[tokio::test]
+async fn approval_continues_the_same_connect_call_and_returns_a_usable_handle() {
+    let (runtime, c, server) = fixture().await;
+    let who = caller("auto-connect");
+    let wait = tokio::spawn({
+        let runtime = runtime.clone();
+        let id = c.id.clone();
+        let who = who.clone();
+        async move { runtime.connect_after_approval(who, &id).await }
+    });
+    let approval = pending_approval(&runtime).await;
+    assert!(!wait.is_finished());
+    assert!(runtime.snapshot().unwrap().sessions.is_empty());
+    // Another agent's decision must not complete this caller's wait.
+    let other = runtime.connect(caller("other"), &c.id).await.unwrap();
+    runtime
+        .decide(other["approval_id"].as_str().unwrap(), false)
+        .unwrap();
+    assert!(!wait.is_finished());
+    runtime.decide(&approval.id, true).unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(3), wait)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(result["status"], "connected");
+    assert_eq!(
+        runtime
+            .connect_after_approval(who.clone(), &c.id)
+            .await
+            .unwrap(),
+        result
+    );
+    assert!(runtime.snapshot().unwrap().approvals.is_empty());
+    let handle = result["connection_handle"].as_str().unwrap();
+    let job = runtime
+        .exec(&who, handle, "echo test".into(), false, 5)
+        .await
+        .unwrap();
+    assert_eq!(job.caller, who);
+    runtime.revoke("auto-connect", None, true).await;
+    server.abort();
+}
+
+#[tokio::test]
+async fn approval_wait_ends_on_denial_cancellation_edit_or_session_end() {
+    for outcome in ["deny", "cancel", "edit", "invalidate", "end"] {
+        let (runtime, mut c, server) = fixture().await;
+        let who = caller("waiting");
+        let wait = tokio::spawn({
+            let runtime = runtime.clone();
+            let id = c.id.clone();
+            let who = who.clone();
+            async move { runtime.connect_after_approval(who, &id).await }
+        });
+        let approval = pending_approval(&runtime).await;
+        runtime.cancel_connection_request(&caller("other"), &c.id);
+        assert_eq!(runtime.snapshot().unwrap().approvals.len(), 1);
+        match outcome {
+            "deny" => runtime.decide(&approval.id, false).unwrap(),
+            "cancel" => runtime.cancel_connection_request(&who, &c.id),
+            "edit" => {
+                c.revision = "edited".into();
+                runtime.store.put(&c).unwrap();
+                runtime.invalidate(&c.id).await;
+            }
+            "invalidate" => runtime.invalidate(&c.id).await,
+            "end" => runtime.revoke(&who.session_id, None, true).await,
+            _ => unreachable!(),
+        }
+        let error = tokio::time::timeout(Duration::from_secs(3), wait)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+        assert!(!error.is_empty(), "{outcome}");
+        assert!(runtime.snapshot().unwrap().sessions.is_empty());
+        assert!(runtime.snapshot().unwrap().approvals.is_empty());
+        server.abort();
+    }
+}
+
 async fn authorize(runtime: &Arc<Runtime>, caller: Identity, c: &Connection) -> String {
     let pending = runtime.connect(caller.clone(), &c.id).await.unwrap();
     assert_eq!(pending["status"], "authorization_required");
