@@ -31,6 +31,20 @@ A browser mock validates UI and IPC wiring only. Real vendor subscription login,
 
 The Antigravity 1.3.0 standalone server unpacks its bundled runtime before it can answer ACP initialization. A local probe took 63.56 seconds and then returned `Log in with Google`; the ordinary 60-second deadline interrupted it before authentication. Windows `antigravity-acp` initialization now has a bounded 120-second deadline. Other agents retain 60 seconds. An initialization timeout occurs before vendor login and does not establish an account or subscription failure.
 
+### Windows embedded browser creation
+
+The Browser tab hosts a native WebView2 on Windows. Both `browser_embed_create`
+and `browser_open_window` use Tauri async command dispatch so creation runs
+outside the main-thread IPC callback. Synchronous dispatch can deadlock WebView2
+creation, leaving the panel blank after entering a URL. The threading contract
+is checked by `tests/browser-command-contract.test.ts`; rendering and navigation
+still require verification in `bun run dev:app`, not the browser mock.
+
+Verified on Windows in Atlas Dev on 2026-10-07: the live Google page rendered,
+address-bar navigation to `https://example.com` completed, and a separate Atlas
+Browser window loaded that page. The focused contracts / overlay tests (16
+checks), test TypeScript check, and `cargo check --locked -p atlas --lib` passed.
+
 ## Compatibility retained deliberately
 
 Old native source labels, sync-state columns and organization attribution in stored records remain readable; they cannot launch an agent or send records to a server. Old organization projects and groups migrate into the local project registry, and old cloud capture bindings become local while session rows, checkpoint links and content-addressed blobs stay in place. Pinned logs merge into the local log once without deleting originals.

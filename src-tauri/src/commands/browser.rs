@@ -195,7 +195,8 @@ fn emit_nav(
 // ---------------------------------------------------------------------------
 
 /// Open `url` in a new native browser window. Returns the window label.
-#[tauri::command]
+// WebView2 creation must run outside the main-thread IPC callback on Windows.
+#[tauri::command(async)]
 pub fn browser_open_window(app: tauri::AppHandle, url: String) -> Result<String, String> {
     let url = normalize_url(&url)?;
     let parsed = url
@@ -226,7 +227,8 @@ pub fn browser_open_window(app: tauri::AppHandle, url: String) -> Result<String,
 /// Create (or reuse) the embedded browser webview for `id`, navigate it to
 /// `url`, and position it over `rect`. Idempotent: if the webview already
 /// exists it is re-shown, re-bounded, and navigated.
-#[tauri::command]
+// Keep creation off the main thread, including the existing-webview path.
+#[tauri::command(async)]
 pub fn browser_embed_create(
     app: tauri::AppHandle,
     window: tauri::Window,
