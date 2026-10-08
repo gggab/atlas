@@ -12,6 +12,11 @@ product names, and the frontend profile together; `tests/dev-profile.test.ts`
 checks their consistency. Preserve identifiers, storage paths, native host names,
 extension IDs, and internal package names when changing display branding.
 
+For this fork's Windows packaging and GitHub releases, follow the
+[release guide](docs/reference/releases.md). Build from an exact `develop`
+commit, verify artifact provenance, and publish to `gggab/atlas` only when
+requested. Keep the desktop and companion extension release versions separate.
+
 Thanks for wanting to help. Below is how to do it, and everything here applies to every contributor equally.
 
 If you're not sure where to begin, `#dev` on [Discord](https://discord.gg/GmnFggaPfP) is the fastest way to get an answer.

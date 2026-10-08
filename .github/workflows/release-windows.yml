@@ -1,0 +1,101 @@
+name: Build Windows Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+      # NumKong's MSVC build cannot link these x86 SIMD kernels yet.
+      NK_TARGET_HASWELL: '0'
+      NK_TARGET_SKYLAKE: '0'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v2
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+          key: windows-x64-release
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify types, lint, release contracts and browser contracts
+        run: |
+          bun run typecheck
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run lint
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run test -- tests/windows-release.test.ts tests/dev-profile.test.ts
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          bun run browser:test
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build production Windows x64 MSI
+        run: bun run build:app:win
+      - name: Verify MSI and record provenance
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $config = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($package.version -ne $config.version) { throw 'Version mismatch' }
+          $packages = @(Get-ChildItem target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one MSI' }
+          $msi = $packages[0]
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase($msi.FullName, 0)
+          function Read-Property($name) {
+            $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$name'")
+            $view.Execute()
+            $record = $view.Fetch()
+            if ($null -eq $record) { throw "Missing MSI property: $name" }
+            $record.StringData(1)
+            $view.Close()
+          }
+          if ((Read-Property 'ProductVersion') -ne $package.version) { throw 'MSI version mismatch' }
+          if ((Read-Property 'ProductName') -ne $config.productName) { throw 'MSI branding mismatch' }
+          if ($database.SummaryInformation(0).Property(7) -notmatch '^x64;') { throw 'Expected x64 MSI' }
+          $view = $database.OpenView('SELECT `FileName` FROM `File`')
+          $view.Execute()
+          $files = @()
+          while ($null -ne ($record = $view.Fetch())) { $files += ($record.StringData(1) -split '\|')[-1] }
+          $view.Close()
+          foreach ($required in @('atlas.exe', 'node.exe', 'runtime.mjs', 'worker.mjs', 'manifest.json', 'Node-LICENSE.txt', 'Atlas-LICENSE.txt')) {
+            if ($required -notin $files) { throw "Missing packaged resource: $required" }
+          }
+          New-Item -ItemType Directory -Force artifacts/windows-release | Out-Null
+          $name = "Atlas-Gai-$($package.version)-windows-x64.msi"
+          Copy-Item -LiteralPath $msi.FullName -Destination "artifacts/windows-release/$name"
+          $hash = (Get-FileHash $msi.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content artifacts/windows-release/SHA256SUMS.txt -Encoding utf8NoBOM
+          @{
+            product = $config.productName
+            version = $package.version
+            commit = $env:GITHUB_SHA
+            target = 'x86_64-pc-windows-msvc'
+            node = (node --version)
+            bun = (bun --version)
+            rust = (rustc --version)
+            signature = (Get-AuthenticodeSignature $msi.FullName).Status.ToString()
+            file = $name
+            sha256 = $hash
+          } | ConvertTo-Json | Set-Content artifacts/windows-release/build-info.json -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlas-windows-x64
+          path: artifacts/windows-release/*
+          if-no-files-found: error
+          retention-days: 14

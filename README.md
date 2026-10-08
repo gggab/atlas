@@ -63,6 +63,8 @@ cargo test --locked -p atlas --lib
 
 Real vendor authentication and end-to-end paid CLI turns require the user's vendor account. ACP support for model selection and session restoration varies by CLI and is negotiated rather than assumed.
 
+For Windows MSI packaging and GitHub publication, see the [release guide](docs/reference/releases.md). The **Build Windows Release** workflow produces a verified x64 MSI, checksums and source-commit metadata; publication and desktop testing remain separate steps.
+
 ## Removed scope
 
 Atlas accounts / identity / organization permissions, cloud organization and member management, team chat and cloud Spaces, cloud recording synchronization, official model gateway, native Atlas Agent and its vendored engine, telemetry / analysis uploads / feedback uploads, and the PostHog-configured official updater are removed. Projects and recording bindings migrate to local ownership without deleting session rows, checkpoints or shared memory. Existing legacy schema columns are retained for data compatibility and have no remote uploader.
