@@ -1,5 +1,10 @@
 # Browser Use
 
+The companion desktop app is named **Atlas改** (**Atlas改 Dev** for source builds).
+The extension retains the store name **Atlas Browser**, its existing extension
+IDs and native host names; changing the app display name does not require a new
+store package.
+
 Atlas offers `atlas_browser` independently of shared memory to ACP sessions
 advertising HTTP MCP. It uses live session tokens and the external CLI's model
 subscription. No additional model API/key is needed.

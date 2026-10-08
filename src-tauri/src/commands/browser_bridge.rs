@@ -189,11 +189,7 @@ impl BrowserBridge {
             format!(
                 "export const HOST_NAME = {:?};\nexport const APP_NAME = {:?};\n",
                 browser_native::host_name(),
-                if atlas_profile::is_dev() {
-                    "Atlas Dev"
-                } else {
-                    "Atlas"
-                }
+                atlas_profile::current().product_name()
             ),
         )
         .map_err(|e| e.to_string())?;

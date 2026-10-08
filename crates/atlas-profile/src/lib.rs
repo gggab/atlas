@@ -95,8 +95,8 @@ impl Profile {
     /// the profile's Tauri config.
     pub fn product_name(self) -> &'static str {
         match self {
-            Self::Default => "Atlas",
-            Self::Dev => "Atlas Dev",
+            Self::Default => "Atlas改",
+            Self::Dev => "Atlas改 Dev",
         }
     }
 
@@ -179,7 +179,7 @@ mod tests {
         let p = Profile::Default;
         assert!(!p.is_dev());
         assert_eq!(p.identifier(), "dev.atlas.ide");
-        assert_eq!(p.product_name(), "Atlas");
+        assert_eq!(p.product_name(), "Atlas改");
         assert_eq!(p.dir_name(), ".atlas");
         assert_eq!(p.config_dir_name(), "atlas");
     }
@@ -190,7 +190,7 @@ mod tests {
         let p = Profile::Default;
         assert!(d.is_dev());
         assert_eq!(d.identifier(), "dev.atlas.ide.dev");
-        assert_eq!(d.product_name(), "Atlas Dev");
+        assert_eq!(d.product_name(), "Atlas改 Dev");
         assert_eq!(d.dir_name(), ".atlas-dev");
         assert_eq!(d.config_dir_name(), "atlas-dev");
         // The point of a profile: no name is shared.

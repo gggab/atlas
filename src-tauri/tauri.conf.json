@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
-  "productName": "Atlas",
+  "productName": "Atlas改",
   "version": "0.4.0",
   "identifier": "dev.atlas.ide",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Atlas",
+        "title": "Atlas改",
         "width": 1280,
         "height": 800,
         "minWidth": 480,
@@ -50,8 +50,8 @@
       "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },
     "category": "DeveloperTool",
-    "shortDescription": "Atlas — agent-first ideation and planning tool",
-    "longDescription": "Atlas is a Tauri-based desktop app that hosts ACP-compatible coding agents (Claude Code, Codex, OpenCode) with first-class file, knowledge, and research integration.",
+    "shortDescription": "Atlas改 — local Agent workbench",
+    "longDescription": "Atlas改 is a local Tauri desktop workbench for external ACP CLI agents, with project files, terminal and Git, shared memory, browser control, and managed SSH connections.",
     "copyright": "https://tryatlas.cc/ Report bugs to Github: https://github.com/pacifio/atlas/issues/",
     "icon": [
       "icons/32x32.png",

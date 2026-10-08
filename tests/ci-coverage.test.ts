@@ -211,6 +211,12 @@ describe("CI's Rust jobs", () => {
     expect(src).toMatch(/^ {2}CARGO_INCREMENTAL:\s*0\s*$/m);
   });
 
+  it("runs CI on develop pushes and lets manual develop runs warm the branch cache", () => {
+    const push = src.slice(src.indexOf("  push:"), src.indexOf("  pull_request:"));
+    expect(push).toMatch(/^      - develop\s*$/m);
+    expect(jobs.get("changes")).toContain('[ "$REF" = develop ]');
+  });
+
   it("writes caches only where the `changes` job's cache-write allows", () => {
     // A manual run can be on any branch, and what it saves is scoped to that
     // branch: no pull request restores it, yet it evicts what they do.

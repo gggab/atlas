@@ -1,4 +1,8 @@
-# Atlas — Context
+# Atlas改 — Context
+
+**Atlas改** is this fork's product display name; **Atlas改 Dev** is its separate
+source-build profile. Existing `atlas` package, command and storage names remain
+compatibility identifiers. The browser store extension is still **Atlas Browser**.
 
 Glossary of domain terms as this project uses them. Decisions with lasting consequences live in `docs/adr/`.
 

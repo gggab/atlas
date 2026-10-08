@@ -1,16 +1,34 @@
-# Atlas local Agent workbench
+# Atlas改
 
-Atlas is a Tauri 2 / React 19 desktop workbench for external ACP CLI agents. Open local projects and run several agent sessions in the same window. Atlas requires no Atlas account and provides no model gateway or built-in execution engine. Each CLI owns its vendor subscription, login and model availability.
+**Atlas改** is a local Agent workbench maintained in [gggab/atlas](https://github.com/gggab/atlas), based on [upstream Atlas](https://github.com/pacifio/atlas). Built with Tauri 2, React 19 and Rust, it lets you open local projects and run several external ACP CLI Agent sessions in the same window. Each CLI owns its vendor subscription, login and model availability. No Atlas account, official model gateway or built-in execution engine is required.
+
+`develop` is this fork's primary development and default branch. Start new work from `develop` and target it when opening pull requests in this repository. Upstream's version-branch workflow applies only when contributing to `pacifio/atlas`.
+
+## Getting started
+
+```sh
+git clone --branch develop https://github.com/gggab/atlas.git
+cd atlas
+bun install --frozen-lockfile
+bun run dev:app
+```
+
+Install the [platform prerequisites](#development) first. The source build appears as **Atlas改 Dev** and uses its separate development data profile. Install an external Agent in the app, or accept a detected CLI, then complete that CLI's vendor authentication before starting a chat.
+
+The display-name change preserves existing application identifiers, `.atlas/` and `.atlas-dev/` directories, configuration, sessions, checkpoints and memory. Internal package names and CLI commands remain `atlas`. This build shares the corresponding data profile with earlier Atlas builds; use `dev:app` for isolated source development.
 
 ## Retained features
 
 - Agent installation, PATH detection, process launch, vendor authentication and ACP capability / model negotiation.
 - Streaming chat, approvals, cancellation, independent parallel sessions, local transcripts and capability-dependent resume / load.
 - Project files, terminal PTYs, Git, local session capture and checkpoint history.
+- Managed SSH connections, project associations and remote execution history, with credentials kept in OS credential storage. See [SSH](docs/reference/ssh.md).
 - Shared local memory: SQLite storage, events, retrieval, import, policy controls, management UI and a session-authorized loopback MCP service.
 - Browser Use: an opt-in Chrome/Edge extension managed from Settings > Browser control, with automatic native connection, persistent pause, grouped task tabs, a JavaScript REPL and session-authorized MCP tools. Completed task pages close except necessary handoffs; daily tabs and login remain. See [Browser Use](docs/reference/browser-use.md) and [extension publishing](docs/reference/browser-extension-publishing.md).
 
 The [Atlas Browser privacy policy](PRIVACY.md) describes browser-task data handling, external Agent/model providers, retention, and user controls.
+
+The companion extension keeps the store name **Atlas Browser** and its existing Chrome/Edge IDs. Install it through **Settings > Browser control**; the extension connects to the app through native messaging. Store availability depends on approval, and local builds can load the prepared extension folder. The desktop app must be running to use browser tasks.
 
 No agent is runnable on a fresh profile until installed. Detected CLIs are installation offers. A missing agent selection stays empty. Historical Atlas Agent records remain readable, but cannot launch the removed native engine.
 
@@ -21,6 +39,13 @@ The thread catalog (`threads.db`), per-project recording (`.atlas/sessions.db` a
 Gateway-dependent automatic memory extraction is removed. Agents can still write memory explicitly through MCP. Existing optional BYOK research, session analysis and memory chat remain; they are not needed for CLI chat or ordinary memory storage and retrieval. Local embedding model downloads remain explicit network operations.
 
 ## Development
+
+Use `develop` for ongoing work in this fork:
+
+```sh
+git switch develop
+git pull --ff-only
+```
 
 Use the versions pinned in `mise.toml`, `package.json` and `rust-toolchain.toml` (Bun 1.4.0 and Rust 1.99.0). Install platform prerequisites for Tauri: MSVC C++ build tools / WebView2 on Windows, Xcode on macOS, or GTK / WebKit development packages on Linux.
 

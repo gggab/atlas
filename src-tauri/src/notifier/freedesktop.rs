@@ -41,7 +41,6 @@ use super::{
 
 const BUS_NAME: &str = "org.freedesktop.Notifications";
 const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
-const APP_NAME: &str = "Atlas";
 /// Action key servers fire for a click on the notification body.
 const DEFAULT_ACTION: &str = "default";
 /// The spec sets no limit; most shells render a handful of buttons at most.
@@ -433,7 +432,7 @@ impl NotifierBackend for FreedesktopBackend {
         let id: u32 = zbus::block_on(self.proxy.call(
             "Notify",
             &(
-                APP_NAME,
+                atlas_profile::current().product_name(),
                 replaces_id,
                 "",
                 summary.as_str(),

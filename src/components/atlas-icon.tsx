@@ -1,5 +1,6 @@
 import atlasIconUrl from "@/assets/atlas-icon.svg";
 import { cn } from "@/lib/utils";
+import { DEFAULT_APP_PROFILE } from "@/lib/app-profile";
 
 interface AtlasIconProps {
   size?: number;
@@ -7,7 +8,11 @@ interface AtlasIconProps {
   alt?: string;
 }
 
-export function AtlasIcon({ size = 32, className, alt = "Atlas" }: AtlasIconProps) {
+export function AtlasIcon({
+  size = 32,
+  className,
+  alt = DEFAULT_APP_PROFILE.productName,
+}: AtlasIconProps) {
   return (
     <img
       src={atlasIconUrl}

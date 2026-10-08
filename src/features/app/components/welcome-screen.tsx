@@ -4,8 +4,10 @@ import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcu
 import { FolderOpen, Clock, X, Folder } from "lucide-react";
 import { AtlasIcon } from "@/components/atlas-icon";
 import { Hint } from "@/ui/tooltip";
+import { useAppProfile } from "@/lib/app-profile";
 
 export function WelcomeScreen() {
+  const { productName } = useAppProfile();
   const paletteHint = useActionShortcut("nav.commandPalette")?.label ?? "⌘K";
   const allRecents = useAppStore.use.recentProjects();
 
@@ -31,9 +33,9 @@ export function WelcomeScreen() {
       <div className="w-[360px] space-y-8">
         {/* Branding */}
         <div className="text-center space-y-2">
-          <AtlasIcon size={64} className="mx-auto mb-4 rounded-2xl" />
-          <h1 className="text-xl font-semibold text-[var(--foreground)]">Atlas</h1>
-          <p className="text-sm text-[var(--secondary-foreground)]">The second brain IDE</p>
+          <AtlasIcon size={64} className="mx-auto mb-4 rounded-2xl" alt={productName} />
+          <h1 className="text-xl font-semibold text-[var(--foreground)]">{productName}</h1>
+          <p className="text-sm text-[var(--secondary-foreground)]">Local Agent workbench</p>
         </div>
 
         {/* Primary action */}

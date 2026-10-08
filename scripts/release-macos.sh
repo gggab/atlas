@@ -52,6 +52,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."  # cd to repo root
+PRODUCT_NAME="$(node -p 'JSON.parse(require("fs").readFileSync("src-tauri/tauri.conf.json", "utf8")).productName')"
 
 # ── Config ──────────────────────────────────────────────────────────────────
 # Developer ID identity. Override at the command line if you ever rotate certs.
@@ -198,39 +199,40 @@ if [[ "${UNIVERSAL}" == "1" ]]; then
   bun run tauri build --target x86_64-apple-darwin
 
   log "lipo'ing into a fat .app"
-  ARM_APP="target/aarch64-apple-darwin/release/bundle/macos/Atlas.app"
-  INTEL_APP="target/x86_64-apple-darwin/release/bundle/macos/Atlas.app"
+  ARM_APP="target/aarch64-apple-darwin/release/bundle/macos/${PRODUCT_NAME}.app"
+  INTEL_APP="target/x86_64-apple-darwin/release/bundle/macos/${PRODUCT_NAME}.app"
   UNI_DIR="target/universal-apple-darwin/release/bundle/macos"
   mkdir -p "${UNI_DIR}"
-  rm -rf "${UNI_DIR}/Atlas.app"
-  cp -R "${ARM_APP}" "${UNI_DIR}/Atlas.app"
+  rm -rf "${UNI_DIR}/${PRODUCT_NAME}.app"
+  cp -R "${ARM_APP}" "${UNI_DIR}/${PRODUCT_NAME}.app"
+  APP_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${ARM_APP}/Contents/Info.plist")"
   lipo \
     -create \
-    -output "${UNI_DIR}/Atlas.app/Contents/MacOS/Atlas" \
-    "${ARM_APP}/Contents/MacOS/Atlas" \
-    "${INTEL_APP}/Contents/MacOS/Atlas"
+    -output "${UNI_DIR}/${PRODUCT_NAME}.app/Contents/MacOS/${APP_EXECUTABLE}" \
+    "${ARM_APP}/Contents/MacOS/${APP_EXECUTABLE}" \
+    "${INTEL_APP}/Contents/MacOS/${APP_EXECUTABLE}"
 
   # Re-sign the fat binary — lipo invalidates the original signature.
   log "Re-signing the fat .app"
   codesign --force --deep --options=runtime \
     --entitlements src-tauri/entitlements.plist \
     --sign "${APPLE_SIGNING_IDENTITY}" \
-    "${UNI_DIR}/Atlas.app"
+    "${UNI_DIR}/${PRODUCT_NAME}.app"
 
   # Re-bundle a DMG against the lipo'd .app. We use `create-dmg` if it's
   # installed, otherwise hdiutil. Tauri's DMG packager won't re-run on a
   # bundle we lipo'd by hand.
   UNI_DMG_DIR="target/universal-apple-darwin/release/bundle/dmg"
   mkdir -p "${UNI_DMG_DIR}"
-  DMG_OUT="${UNI_DMG_DIR}/Atlas_universal.dmg"
+  DMG_OUT="${UNI_DMG_DIR}/${PRODUCT_NAME}_universal.dmg"
   rm -f "${DMG_OUT}"
 
   UNI_STAGING="$(mktemp -d)"
-  cp -R "${UNI_DIR}/Atlas.app" "${UNI_STAGING}/Atlas.app"
+  cp -R "${UNI_DIR}/${PRODUCT_NAME}.app" "${UNI_STAGING}/${PRODUCT_NAME}.app"
   ln -s /Applications "${UNI_STAGING}/Applications"
 
   log "Building DMG at ${DMG_OUT}"
-  bash "$(dirname "$0")/layout-dmg.sh" "${UNI_STAGING}" "${DMG_OUT}" "Atlas"
+  bash "$(dirname "$0")/layout-dmg.sh" "${UNI_STAGING}" "${DMG_OUT}" "${PRODUCT_NAME}"
   rm -rf "${UNI_STAGING}"
   bash "$(dirname "$0")/set-dmg-icon.sh" src-tauri/icons/Icon.icns "${DMG_OUT}"
   codesign --force --sign "${APPLE_SIGNING_IDENTITY}" "${DMG_OUT}"
@@ -248,8 +250,8 @@ if [[ "${UNIVERSAL}" == "1" ]]; then
     xcrun stapler staple "${DMG_OUT}"
   fi
 
-  verify_artifacts "${UNI_DIR}/Atlas.app" "${DMG_OUT}"
-  APP_PATHS+=("${UNI_DIR}/Atlas.app")
+  verify_artifacts "${UNI_DIR}/${PRODUCT_NAME}.app" "${DMG_OUT}"
+  APP_PATHS+=("${UNI_DIR}/${PRODUCT_NAME}.app")
   DMG_PATHS+=("${DMG_OUT}")
 else
   # ── One signed + notarized dmg per requested architecture ─────────────────
@@ -271,7 +273,7 @@ else
     log "Building Atlas for ${target} (.app only — Tauri's DMG packager is skipped)"
     bun run tauri build --target "${target}" --bundles app
 
-    local app_path="${bundle_root}/macos/Atlas.app"
+    local app_path="${bundle_root}/macos/${PRODUCT_NAME}.app"
     if [[ ! -d "${app_path}" ]]; then
       err ".app not found at ${app_path}"
       exit 1
@@ -288,16 +290,16 @@ else
     # The arch suffix is what makes two dmgs from one release distinguishable in
     # a downloads folder: Atlas_0.3.0_aarch64.dmg vs Atlas_0.3.0_x86_64.dmg.
     arch="$(echo "${target}" | cut -d- -f1)"
-    dmg_path="${dmg_dir}/Atlas_${version}_${arch}.dmg"
+    dmg_path="${dmg_dir}/${PRODUCT_NAME}_${version}_${arch}.dmg"
     rm -f "${dmg_path}"
 
     local staging
     staging="$(mktemp -d)"
-    cp -R "${app_path}" "${staging}/Atlas.app"
+    cp -R "${app_path}" "${staging}/${PRODUCT_NAME}.app"
     ln -s /Applications "${staging}/Applications"
 
     log "Building DMG at ${dmg_path}"
-    bash "$(dirname "$0")/layout-dmg.sh" "${staging}" "${dmg_path}" "Atlas"
+    bash "$(dirname "$0")/layout-dmg.sh" "${staging}" "${dmg_path}" "${PRODUCT_NAME}"
     rm -rf "${staging}"
 
     log "Setting DMG icon"

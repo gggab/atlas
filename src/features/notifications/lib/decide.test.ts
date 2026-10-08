@@ -51,7 +51,7 @@ describe("decideNotification", () => {
       badge: true,
       sound: true,
     });
-    expect(d?.native).toEqual({ title: "Atlas: atlas", body: "Title — Body", sound: "Ping" });
+    expect(d?.native).toEqual({ title: "Atlas改: atlas", body: "Title — Body", sound: "Ping" });
   });
 
   it("returns null when the kind is disabled", () => {
@@ -123,7 +123,7 @@ describe("decideNotification", () => {
       ...event("terminal-done"),
       target: { type: "terminal" as const, tabId: "t", terminalId: "p" },
     };
-    expect(decideNotification(e, away, {})?.native.title).toBe("Atlas: Terminal");
+    expect(decideNotification(e, away, {})?.native.title).toBe("Atlas改: Terminal");
   });
 
   it("raises the OS banner only when away, including focused-but-idle", () => {

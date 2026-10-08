@@ -1,4 +1,16 @@
-# Contributing to Atlas
+# Contributing to Atlas改
+
+This fork is maintained at [gggab/atlas](https://github.com/gggab/atlas).
+`develop` is its primary development and default branch. Start feature branches
+from `develop` and target `develop` for pull requests to this fork. CI runs on
+pushes to `develop` and on pull requests. The upstream
+issue, Discord, and version-branch process below applies only to contributions
+sent to `pacifio/atlas`.
+
+Display branding is `Atlas改` / `Atlas改 Dev`. Update `atlas-profile`, Tauri
+product names, and the frontend profile together; `tests/dev-profile.test.ts`
+checks their consistency. Preserve identifiers, storage paths, native host names,
+extension IDs, and internal package names when changing display branding.
 
 Thanks for wanting to help. Below is how to do it, and everything here applies to every contributor equally.
 
@@ -63,7 +75,7 @@ We suggest using [mise](https://mise.jdx.dev/) to manage Bun and Node — the re
 **No API keys, no `.env` file, no account.** Atlas builds and runs from a clean clone:
 
 ```bash
-git clone git@github.com:pacifio/atlas.git
+git clone --branch develop https://github.com/gggab/atlas.git
 cd atlas
 bun install
 bun run dev:app
@@ -83,7 +95,7 @@ and extension sources. Run `bun run browser:test` for contracts and
 
 There are two ways to run a source build, and they differ in whose data they use:
 
-- **`bun run dev:app`: the dev profile.** This is the normal way to work. It runs as **Atlas Dev** (bundle identifier `dev.atlas.ide.dev`, from `src-tauri/tauri.dev.conf.json`), with its own app data dir, its own `<project>/.atlas-dev/` instead of `.atlas/`, `~/.atlas-dev/` instead of `~/.atlas/`, and `~/.config/atlas-dev/` instead of `~/.config/atlas/`. It never touches an installed Atlas's data, so it is safe beside one on the same projects. It keeps `.atlas-dev/` out of git through `.git/info/exclude` rather than your projects' `.gitignore`, and it never checks for or installs updates or refreshes the `atlas` CLI helper. A fresh dev profile starts empty: no history, settings, sign-in or knowledge notes. To start it over, `bun run clean:app:dev` wipes Atlas Dev's data only; `bun run clean:app` wipes the installed Atlas's. A bundled skill both builds ship under one name (`remember`) is installed by Atlas Dev only when it is missing, so it never overwrites the installed Atlas's copy: to try a change to one, delete it from `~/.agents/skills` first.
+- **`bun run dev:app`: the dev profile.** This is the normal way to work. It runs as **Atlas改 Dev** (bundle identifier `dev.atlas.ide.dev`, from `src-tauri/tauri.dev.conf.json`), with its own app data dir, its own `<project>/.atlas-dev/` instead of `.atlas/`, `~/.atlas-dev/` instead of `~/.atlas/`, and `~/.config/atlas-dev/` instead of `~/.config/atlas/`. It never touches an installed Atlas's data, so it is safe beside one on the same projects. It keeps `.atlas-dev/` out of git through `.git/info/exclude` rather than your projects' `.gitignore`, and it never checks for or installs updates or refreshes the `atlas` CLI helper. A fresh dev profile starts empty: no history, settings, sign-in or knowledge notes. To start it over, `bun run clean:app:dev` wipes Atlas Dev's data only; `bun run clean:app` wipes the installed Atlas's. A bundled skill both builds ship under one name (`remember`) is installed by Atlas Dev only when it is missing, so it never overwrites the installed Atlas's copy: to try a change to one, delete it from `~/.agents/skills` first.
 - **`bun run tauri dev` (or `cargo run`): no overlay, so the default profile, running against your real data** — the same thread history, settings and `.atlas/` directories as an installed Atlas. Use it on purpose, for example to reproduce a user's state, and not by accident.
 
 `crates/atlas-profile` derives every name from the bundle identifier the binary was built with. New code that needs Atlas's directory goes through `atlas_profile::dir_name()` / `dir_in(root)` (and `config_dir_name()` for `~/.config/atlas`), never a literal `".atlas"` or `"atlas"` (`tests/dev-profile.test.ts` checks). Switching between `cargo check` / rust-analyzer and `bun run dev:app` reruns `tauri-build` and recompiles the `atlas` crate each time, because the two pass a different `TAURI_CONFIG`; if that gets in your way, give rust-analyzer its own target dir (`rust-analyzer.cargo.targetDir`).

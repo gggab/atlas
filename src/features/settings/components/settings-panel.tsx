@@ -605,15 +605,16 @@ function ZoomControl() {
 }
 
 function AboutSettings() {
+  const { productName } = useAppProfile();
   return (
     <div className="space-y-4">
-      <SectionTitle title="About" subtitle="Atlas IDE" />
+      <SectionTitle title="About" subtitle={productName} />
       <div className="rounded-lg border border-border bg-card p-4 space-y-2">
         <div className="flex items-center gap-2">
-          <AtlasIcon size={40} className="rounded-xl" />
+          <AtlasIcon size={40} className="rounded-xl" alt={productName} />
           <div>
-            <p className="text-sm font-semibold text-foreground">Atlas</p>
-            <p className="text-2xs text-muted-foreground">v0.4.0 — The second brain IDE</p>
+            <p className="text-sm font-semibold text-foreground">{productName}</p>
+            <p className="text-2xs text-muted-foreground">v0.4.0 — Local Agent workbench</p>
           </div>
         </div>
         <p className="text-xs text-secondary-foreground leading-relaxed pt-2">

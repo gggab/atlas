@@ -24,6 +24,7 @@ import {
   type ToastVariant,
 } from "./catalog";
 import type { SystemNotificationAction } from "./notifier-api";
+import { DEFAULT_APP_PROFILE } from "@/lib/app-profile";
 import type { PermissionBannerInfo, PermissionRef } from "./permission-actions-rules";
 
 /** A classified event — what a source (terminal, agent, …) hands the pipeline. */
@@ -108,9 +109,9 @@ const TARGET_LABEL: Record<NotificationTarget["type"], string> = {
 
   "agent-sign-in": "Agent",
 
-  settings: "Atlas",
+  settings: DEFAULT_APP_PROFILE.productName,
   "git-panel": "Git",
-  "config-file": "Atlas",
+  "config-file": DEFAULT_APP_PROFILE.productName,
 };
 
 /** Agent, app and Chat copy is already banner-shaped (title, subtitle, body); the OS shows
@@ -121,7 +122,7 @@ function nativeCopy(event: NotificationEvent, source: string) {
     return { title: event.title, subtitle: event.subtitle, body: event.body };
   }
   return {
-    title: `Atlas: ${(isTabTarget(event.target) && event.target.projectName) || TARGET_LABEL[event.target.type]}`,
+    title: `${DEFAULT_APP_PROFILE.productName}: ${(isTabTarget(event.target) && event.target.projectName) || TARGET_LABEL[event.target.type]}`,
     body: `${event.title} — ${event.body}`,
   };
 }

@@ -5,7 +5,7 @@
 // guessing from its own build mode: `import.meta.env.DEV` is true for any
 // `tauri dev`, profile or not.
 //
-// The window only needs it for names: the title ("Atlas Dev") and copy that
+// The window only needs it for names: the title ("Atlas改 Dev") and copy that
 // spells out Atlas's directory (`.atlas-dev/repos/`). Every path is still
 // resolved in Rust.
 
@@ -23,7 +23,7 @@ export interface AppProfile {
  *  backend answers (or when there is no backend to ask). */
 export const DEFAULT_APP_PROFILE: AppProfile = {
   dev: false,
-  productName: "Atlas",
+  productName: "Atlas改",
   dirName: ".atlas",
 };
 

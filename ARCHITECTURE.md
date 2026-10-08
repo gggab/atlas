@@ -1,4 +1,8 @@
-# Atlas architecture
+# Atlas改 architecture
+
+The fork's display names are `Atlas改` and `Atlas改 Dev`, sourced from
+`atlas-profile` and matching Tauri product names. Existing bundle identifiers,
+storage paths, native host names and extension IDs are retained for compatibility.
 
 Deep technical reference for Atlas. The README has the pitch and feature list; this has the file paths and invariants.
 
@@ -296,7 +300,7 @@ Everything else is per-project files under `<project-root>/.atlas/`:
 └── log/pinned.jsonl          pinned activity-log rows (survive restart)
 ```
 
-**Profiles.** Every name above belongs to the default profile. `bun run dev:app` builds with `src-tauri/tauri.dev.conf.json` (identifier `dev.atlas.ide.dev`, product name "Atlas Dev"), and `crates/atlas-profile` derives the rest from that identifier at the top of `run()`: `<app-config-dir>` moves with the identifier, `.atlas/` becomes `.atlas-dev/` (in projects and in `~`), and `~/.config/atlas/` becomes `~/.config/atlas-dev/`. One switch, read from the binary rather than the environment, so it cannot half-apply and a child process cannot inherit it; a release build is always the default profile. Other programs' stores (`~/.claude`, `~/.codex`, `CLAUDE.md`, `AGENTS.md`, `.agents/skills`) are not Atlas's and are shared by both; in `~/.agents/skills` the dev profile seeds its bundled skill as `atlas-dev-self-configure`, beside the default profile's `atlas-self-configure` rather than over it. Beyond names, the dev profile changes three behaviours: it keeps `.atlas-dev/` out of git through the repository's `info/exclude` instead of the project's `.gitignore`, it does not refresh the `atlas` CLI helper.
+**Profiles.** Every name above belongs to the default profile. `bun run dev:app` builds with `src-tauri/tauri.dev.conf.json` (identifier `dev.atlas.ide.dev`, product name "Atlas改 Dev"), and `crates/atlas-profile` derives the rest from that identifier at the top of `run()`: `<app-config-dir>` moves with the identifier, `.atlas/` becomes `.atlas-dev/` (in projects and in `~`), and `~/.config/atlas/` becomes `~/.config/atlas-dev/`. One switch, read from the binary rather than the environment, so it cannot half-apply and a child process cannot inherit it; a release build is always the default profile. Other programs' stores (`~/.claude`, `~/.codex`, `CLAUDE.md`, `AGENTS.md`, `.agents/skills`) are not Atlas's and are shared by both; in `~/.agents/skills` the dev profile seeds its bundled skill as `atlas-dev-self-configure`, beside the default profile's `atlas-self-configure` rather than over it. Beyond names, the dev profile changes three behaviours: it keeps `.atlas-dev/` out of git through the repository's `info/exclude` instead of the project's `.gitignore`, it does not refresh the `atlas` CLI helper.
 
 **IPC** is Tauri's `invoke()` for request/response, `listen()` for event streams. All payloads are JSON.
 

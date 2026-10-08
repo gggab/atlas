@@ -19,7 +19,7 @@
 # Usage:
 #   scripts/layout-dmg.sh <staging-dir> <output.dmg> [volname]
 #
-# <staging-dir> must already contain Atlas.app and an Applications symlink.
+# <staging-dir> must already contain <volname>.app and an Applications symlink.
 # ============================================================================
 
 set -euo pipefail
@@ -28,15 +28,15 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 staging="${1:?usage: layout-dmg.sh <staging-dir> <output.dmg> [volname]}"
 out_dmg="${2:?usage: layout-dmg.sh <staging-dir> <output.dmg> [volname]}"
-volname="${3:-Atlas}"
+volname="${3:-$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).productName' "${root}/src-tauri/tauri.conf.json")}"
 
 background="${root}/src-tauri/icons/dmg-background.png"
 if [[ ! -f "${background}" ]]; then
   echo "layout-dmg: background not found at ${background}" >&2
   exit 1
 fi
-if [[ ! -d "${staging}/Atlas.app" ]]; then
-  echo "layout-dmg: ${staging}/Atlas.app not found" >&2
+if [[ ! -d "${staging}/${volname}.app" ]]; then
+  echo "layout-dmg: ${staging}/${volname}.app not found" >&2
   exit 1
 fi
 
@@ -136,7 +136,7 @@ tell application "Finder"
       set arrangement to not arranged
     end tell
     set background picture of theViewOptions to file ".background:dmg-background.png"
-    set position of item "Atlas.app" of container window to {${APP_POS_X}, ${APP_POS_Y}}
+    set position of item "${volname}.app" of container window to {${APP_POS_X}, ${APP_POS_Y}}
     set position of item "Applications" of container window to {${APPS_POS_X}, ${APPS_POS_Y}}
     close
     open

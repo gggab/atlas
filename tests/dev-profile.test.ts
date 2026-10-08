@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_APP_PROFILE } from "../src/lib/app-profile";
 
 /**
  * Guards the dev profile (`crates/atlas-profile`): `bun run dev:app` runs a
@@ -55,6 +56,24 @@ function rustArms(fn: string): { default: string; dev: string } {
 }
 
 describe("dev profile switch", () => {
+  it("shows the fork name while preserving existing profile storage", () => {
+    expect(rustArms("product_name")).toEqual({ default: "Atlas改", dev: "Atlas改 Dev" });
+    expect(DEFAULT_APP_PROFILE).toEqual({
+      dev: false,
+      productName: "Atlas改",
+      dirName: ".atlas",
+    });
+    expect(rustConst("DEFAULT_IDENTIFIER")).toBe("dev.atlas.ide");
+    expect(rustConst("DEV_IDENTIFIER")).toBe("dev.atlas.ide.dev");
+    expect(rustArms("dir_name")).toEqual({ default: ".atlas", dev: ".atlas-dev" });
+    expect(rustArms("config_dir_name")).toEqual({ default: "atlas", dev: "atlas-dev" });
+    for (const file of ["src-tauri/tauri.conf.json", "src-tauri/tauri.linux.conf.json"]) {
+      const conf = readJson(file) as { app: { windows: { title: string }[] } };
+      expect(conf.app.windows[0].title).toBe("Atlas改");
+    }
+    expect(read("index.html")).toContain("<title>Atlas改</title>");
+  });
+
   it("dev:app builds with the dev overlay", () => {
     const pkg = readJson("package.json") as { scripts: Record<string, string> };
     expect(pkg.scripts["dev:app"]).toMatch(

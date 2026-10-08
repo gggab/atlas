@@ -25,6 +25,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+PRODUCT_NAME="$(node -p 'JSON.parse(require("fs").readFileSync("src-tauri/tauri.conf.json", "utf8")).productName')"
 
 case "${1:-arm}" in
   arm | arm64 | aarch64 | aarch64-apple-darwin)
@@ -69,7 +70,7 @@ bun run tauri build --target "${TARGET}" --bundles app
 # Cargo's target dir is the workspace root's `target/`, not
 # `src-tauri/target/` — the repo became a cargo workspace in #38.
 BUNDLE_ROOT="target/${TARGET}/release/bundle"
-APP_PATH="${BUNDLE_ROOT}/macos/Atlas.app"
+APP_PATH="${BUNDLE_ROOT}/macos/${PRODUCT_NAME}.app"
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "build-dmg: no .app produced at ${APP_PATH}" >&2
   exit 1
@@ -77,16 +78,16 @@ fi
 
 VERSION="$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
 DMG_DIR="${BUNDLE_ROOT}/dmg"
-DMG_PATH="${DMG_DIR}/Atlas_${VERSION}_${TARGET%%-*}.dmg"
+DMG_PATH="${DMG_DIR}/${PRODUCT_NAME}_${VERSION}_${TARGET%%-*}.dmg"
 mkdir -p "${DMG_DIR}"
 
 STAGING="$(mktemp -d)"
 trap 'rm -rf "${STAGING}"' EXIT
-cp -R "${APP_PATH}" "${STAGING}/Atlas.app"
+cp -R "${APP_PATH}" "${STAGING}/${PRODUCT_NAME}.app"
 ln -s /Applications "${STAGING}/Applications"
 
 log "Building DMG at ${DMG_PATH}"
-bash scripts/layout-dmg.sh "${STAGING}" "${DMG_PATH}" "Atlas"
+bash scripts/layout-dmg.sh "${STAGING}" "${DMG_PATH}" "${PRODUCT_NAME}"
 
 # By path, not by "newest anywhere" — see the header.
 bash scripts/set-dmg-icon.sh src-tauri/icons/Icon.icns "${DMG_PATH}"
