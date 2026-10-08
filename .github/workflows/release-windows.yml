@@ -70,20 +70,20 @@ jobs:
           $database = $installer.OpenDatabase($msi.FullName, 0)
           function Read-Property($name) {
             $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$name'")
-            $view.Execute()
+            [void]$view.Execute()
             $record = $view.Fetch()
             if ($null -eq $record) { throw "Missing MSI property: $name" }
             $record.StringData(1)
-            $view.Close()
+            [void]$view.Close()
           }
           if ((Read-Property 'ProductVersion') -ne $package.version) { throw 'MSI version mismatch' }
           if ((Read-Property 'ProductName') -ne $config.productName) { throw 'MSI branding mismatch' }
           if ($database.SummaryInformation(0).Property(7) -notmatch '^x64;') { throw 'Expected x64 MSI' }
           $view = $database.OpenView('SELECT `FileName` FROM `File`')
-          $view.Execute()
+          [void]$view.Execute()
           $files = @()
           while ($null -ne ($record = $view.Fetch())) { $files += ($record.StringData(1) -split '\|')[-1] }
-          $view.Close()
+          [void]$view.Close()
           foreach ($required in @('atlas.exe', 'node.exe', 'runtime.mjs', 'worker.mjs', 'manifest.json', 'Node-LICENSE.txt', 'Atlas-LICENSE.txt')) {
             if ($required -notin $files) { throw "Missing packaged resource: $required" }
           }

@@ -12,9 +12,12 @@ types, lint and focused release/browser contracts, and builds the production
 MSI with `bun run build:app:win`. It verifies MSI branding, version, architecture
 and required resources before uploading `atlas-windows-x64`.
 
-The MSI uses `zh-CN`: WiX's default English code page cannot represent the
+The MSI uses `zh-CN` in `src-tauri/tauri.windows.conf.json`: WiX's default English code page cannot represent the
 Chinese product name and fails with `LGHT0311`. Keep this setting while the
-product name contains Chinese characters. Verbose bundler logs and a failure
+product name contains Chinese characters. Tauri automatically merges this
+platform file over the base config, so the language must be set in the overlay.
+The overlay's initial window title must match the product name too.
+Verbose bundler logs and a failure
 artifact preserve the compiled executable and WiX sources for diagnosis.
 
 Download that artifact. Verify its MSI against `SHA256SUMS.txt` and check that

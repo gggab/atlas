@@ -35,7 +35,11 @@ describe("Windows release packaging", () => {
     const config = JSON.parse(
       readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
     );
+    const windows = JSON.parse(
+      readFileSync(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
+    );
     expect(config.productName).toBe("Atlas改");
-    expect(config.bundle.windows.wix.language).toBe("zh-CN");
+    expect(windows.bundle.windows.wix.language).toBe("zh-CN");
+    expect(windows.app.windows[0].title).toBe(config.productName);
   });
 });
