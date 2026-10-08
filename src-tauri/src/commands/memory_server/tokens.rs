@@ -164,6 +164,16 @@ impl MemoryTokens {
             .and_then(|token| table.by_token.get(token))
             .is_some_and(|current| current == grant)
     }
+
+    /// Native IPC can prepare local tools without exposing the MCP bearer token.
+    pub fn grant_for_session(&self, session_id: &str) -> Option<Grant> {
+        let table = self.table.lock();
+        table
+            .by_session
+            .get(session_id)
+            .and_then(|token| table.by_token.get(token))
+            .cloned()
+    }
 }
 
 /// A session gets its token when it starts and loses it when it ends.

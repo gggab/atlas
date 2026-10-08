@@ -82,7 +82,7 @@ impl SshState {
     }
 }
 
-async fn loopback_only(
+pub(crate) async fn loopback_only(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> std::result::Result<axum::response::Response, axum::http::StatusCode> {

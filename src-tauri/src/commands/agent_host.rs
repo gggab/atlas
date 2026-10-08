@@ -1154,7 +1154,7 @@ impl AgentHost {
     ///
     /// A session that has since been dropped counts as not current: there is
     /// nothing left to announce a failure on.
-    fn is_current_turn(&self, session_id: &str, turn_seq: u64) -> bool {
+    pub(crate) fn is_current_turn(&self, session_id: &str, turn_seq: u64) -> bool {
         lock(&self.sessions)
             .get(session_id)
             .is_some_and(|record| record.turn_seq == turn_seq)

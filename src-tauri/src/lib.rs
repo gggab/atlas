@@ -1,4 +1,5 @@
 mod app_icon;
+pub mod browser_native;
 mod commands;
 mod keep_awake;
 mod logging;
@@ -44,6 +45,9 @@ pub fn run() {
     atlas_profile::init(atlas_profile::Profile::from_identifier(
         &context.config().identifier,
     ));
+    if browser_native::run_if_requested(&context.config().identifier) {
+        return;
+    }
 
     // Pick the rustls crypto provider, once, before anything can open a TLS
     // connection.
@@ -214,6 +218,7 @@ pub fn run() {
             commands::skills::ensure_bundled_skills();
 
             commands::ssh::SshState::install(app.handle())?;
+            commands::browser_use::BrowserUseState::install(app.handle());
             commands::agents::install_manager(app.handle());
             // Silent background refresh of model pricing from models.dev — first
             // launch populates the cache; later launches update only on change.
@@ -320,6 +325,12 @@ pub fn run() {
             commands::browser::browser_embed_set_bounds,
             commands::browser::browser_embed_set_visible,
             commands::browser::browser_embed_destroy,
+            commands::browser_use::browser_use_snapshot,
+            commands::browser_use::browser_use_manage,
+            commands::browser_use::browser_use_forget,
+            commands::browser_use::browser_use_connect,
+            commands::browser_use::browser_use_pause,
+            commands::browser_use::browser_use_stop,
             commands::terminal::terminal_create,
             commands::terminal::terminal_zsh_dir,
             commands::terminal::terminal_write,
@@ -647,6 +658,11 @@ pub fn run() {
         .run(|app_handle, event| {
             match event {
                 tauri::RunEvent::ExitRequested { .. } => {
+                    if let Some(browser) =
+                        app_handle.try_state::<Arc<commands::browser_use::BrowserUseState>>()
+                    {
+                        browser.shutdown_and_wait();
+                    }
                     // Quit sweep: tear down every ACP subprocess
                     // (dropping each driver's shutdown channel closes the
                     // child's stdin; the SDK reaps it). `process::exit` skips

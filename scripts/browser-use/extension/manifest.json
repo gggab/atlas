@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Atlas Browser",
+  "version": "0.3.1",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxSIlp9ybD+RZkvPBi+73rdJ/mrg9/D3mx3oTNtqIMQBWLPk5BIxuJuPqZkTX9XoIanayqGxI14t02DqKYtuq6X7XPSoBsdQSHIyH60JMx4BDbQrJFYA9Z6ih8ziMUfCUhMDZDvsMwz80kEoTELx62uX9w53740Rtf5nStqZWdasw8Ng3mGpom0hB5vwQoeCN8EXXB3eIr0J3FmhuC+rCIH0jLKfxY04jI7B/GQIkinD3d4yhMZI9oUWNHoQS/Xh8dZNX2TFdalBKW4a7ASLVOBxHaDkspGDFEvl7OikrUC7N24Ilamc0BD0qCUp+88ox7fgOVTOparZZyDacJflb5QIDAQAB",
+  "description": "Let Atlas Agents work in dedicated task tabs in your everyday browser. Share a page, take over, and continue when ready.",
+  "minimum_chrome_version": "125",
+  "permissions": ["debugger", "tabs", "tabGroups", "storage", "nativeMessaging", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Atlas Browser",
+    "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:*"
+  }
+}

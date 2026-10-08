@@ -8,6 +8,7 @@ Atlas is a Tauri 2 / React 19 desktop workbench for external ACP CLI agents. Ope
 - Streaming chat, approvals, cancellation, independent parallel sessions, local transcripts and capability-dependent resume / load.
 - Project files, terminal PTYs, Git, local session capture and checkpoint history.
 - Shared local memory: SQLite storage, events, retrieval, import, policy controls, management UI and a session-authorized loopback MCP service.
+- Browser Use: an opt-in Chrome/Edge extension managed from Settings > Browser control, with automatic native connection, persistent pause, grouped task tabs, a JavaScript REPL and session-authorized MCP tools. Completed task pages close except necessary handoffs; daily tabs and login remain. See [Browser Use](docs/reference/browser-use.md) and [extension publishing](docs/reference/browser-extension-publishing.md).
 
 No agent is runnable on a fresh profile until installed. Detected CLIs are installation offers. A missing agent selection stays empty. Historical Atlas Agent records remain readable, but cannot launch the removed native engine.
 

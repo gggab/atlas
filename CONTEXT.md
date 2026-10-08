@@ -59,6 +59,16 @@ The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` —
 
 ## External Agent ownership
 
+**Browser automation session** is one ACP session's persistent JS REPL and
+explicitly shared daily Chrome/Edge tabs, connected through Atlas Browser.
+Browser login remains in the user's browser. Settings > Browser control owns
+installation guidance, browser choice and persistent global pause. A profile-specific
+extension connects to Atlas/Atlas Dev automatically. Native Messaging privately
+bootstraps each task relay, separately from CLI/MCP
+credentials. Tasks use grouped Agent-created tabs. Completion, stop/pause and
+session end close owned pages except required handoffs, release debugging and
+remove empty groups. Existing user tabs never close. The app connection persists.
+
 Installed ACP CLI processes own vendor login and model selection. Atlas owns local projects, approvals, transcripts, recording and shared memory. No Atlas account, official model gateway, organization service or built-in Agent is available. The literal `atlas-agent` is retained only for reading historical records. Local MCP bearer tokens authorize a session to the memory service and are unrelated to account authentication.
 
 ## Theming

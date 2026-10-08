@@ -36,6 +36,7 @@ import {
 } from "node:fs";
 import { delimiter, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import "./browser-use/bundle.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = join(root, "dist");

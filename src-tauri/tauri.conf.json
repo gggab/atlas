@@ -45,6 +45,7 @@
     "targets": ["app", "dmg"],
     "resources": {
       "resources/nvm.sh": "resources/nvm.sh",
+      "resources/browser-use/": "resources/browser-use/",
       "licenses/Atlas-LICENSE.txt": "licenses/Atlas-LICENSE.txt",
       "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },

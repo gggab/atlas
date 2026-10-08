@@ -177,6 +177,28 @@ Every delta travels an ordered `OutboundPipeline` (`atlas-bus`) of independent m
 
 The `SessionDelta` shapes those consumers pattern-match live in **`crates/atlas-agent-wire`** and are **additive-only**: consumers match concrete variants and fields, so adding an optional field or variant is ordinary work (same change as its consumers, plus the contract tests), while renaming or removing one, or changing a field's meaning, is a breaking change that updates every consumer at once. `crates/atlas-agent-wire/tests/contract.rs` (Rust) and `tests/wire-shape-contract.test.ts` (TS) are the authority: they spell the contract out and fail if the wire drifts from it. (`docs/agents/delta-wire-contract.md` is a git-ignored working note; the tests do not rely on it.) The thread model and the wire disagree about what a "message" is — the thread keeps one entry per assistant message with interleaved text and thought chunks; the wire emits one message per contiguous run of a kind — and reconciling that gap is precisely `atlas-agent-delta`'s job.
 
+### Browser Use MCP
+
+`commands/browser_use.rs` offers `atlas_browser` to HTTP-MCP-capable ACP
+sessions independently of shared memory. Rust owns live grants, worker lifecycle
+and native setup UI. Settings > Browser control owns browser choice, installation
+guidance, connection/version status and persistent pause. Startup registers the
+native host and prepares an app-profile extension copy with its fixed host config;
+the extension connects automatically without an address or host selector.
+The packaged Chrome store key fixes both local and store extension identity.
+Released-app Chrome installation opens that exact store item; Atlas Dev and
+Edge (until its store identity is supplied) explicitly use local extension setup.
+A session Node REPL connects via a loopback extension relay
+and Playwright's CDP transport to user-shared Chrome/Edge tabs. The Manifest V3
+extension uses chrome.debugger; only selected/Agent-created tabs are exposed.
+The per-worker pairing secret arrives privately over an app-level Native Messaging
+bridge; the desktop binary handles native frames before GUI/logging startup. Fixed
+extension origins, per-user host registration and an app-instance authenticated
+loopback broker bootstrap the task relay. Finished/failed turns close owned task
+tabs and remove groups; only required handoffs and existing user pages survive.
+Atlas's embedded WebView and CLI vendor authentication remain separate. See
+`docs/reference/browser-use.md` for setup, API and verification boundaries.
+
 ### Local memory MCP
 
 `commands/memory_server/` serves `/mcp` over a loopback listener. `MemorySessionOffers` offers it to sessions advertising HTTP MCP and whose project enables memory sharing. Ephemeral bearer tokens bind calls to session id, agent and cwd. They are local authorization, not Atlas account tokens. Tokens are revoked on session shutdown. Memory tools, sharing gates, scope resolution, retrieval, import and management UI remain.

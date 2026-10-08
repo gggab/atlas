@@ -37,6 +37,7 @@ import { HintGroup, HintItem } from "@/ui/hint-group";
 import { SessionSidebar } from "./session-sidebar";
 import { ChatPinnedMenu } from "./chat-pinned-menu";
 import type { ChatPin } from "../stores/chat-pins-store";
+import { BrowserUseControls } from "@/features/browser/components/browser-use-controls";
 
 export type RoleFilter = "all" | "user" | "assistant";
 
@@ -72,6 +73,7 @@ const OUTLINE = [
 
 interface ChatHeaderProps {
   tabId: string;
+  acpSessionId?: string;
   /** Shown on the picker trigger. */
   title: string;
   roleFilter: RoleFilter;
@@ -102,6 +104,7 @@ export const ChatHeader = memo(ChatHeaderImpl);
 
 function ChatHeaderImpl({
   tabId,
+  acpSessionId,
   title,
   roleFilter,
   onRoleFilterChange,
@@ -184,6 +187,7 @@ function ChatHeaderImpl({
           </Popover.Root>
 
           <div className="flex-1" />
+          <BrowserUseControls sessionId={acpSessionId} />
 
           {/* Left of Find, so the two "go back to something" controls sit
             together at the right end of the bar. Pill-shaped rather than a

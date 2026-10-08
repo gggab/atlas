@@ -1421,6 +1421,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             <div className="absolute inset-x-0 top-0 z-20">
               <ChatHeader
                 tabId={tabId}
+                acpSessionId={acpSessionId}
                 title={headerTitle}
                 roleFilter={roleFilter}
                 onRoleFilterChange={setRoleFilter}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlas Browser</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon-48.png" width="40" height="40" alt="" />
+      <div>
+        <h1>Atlas Browser</h1>
+        <p>Work together, in your browser.</p>
+      </div>
+      <span class="tag">BETA</span>
+    </header>
+    <main>
+      <section class="connection" aria-label="Connection status">
+        <div class="status-heading">
+          <span id="dot" class="dot"></span>
+          <h2 id="heading">Checking connection</h2>
+        </div>
+        <p id="status" role="status" aria-live="polite">Opening the local connection…</p>
+        <button id="reconnect" class="text-button" type="button">Reconnect to Atlas</button>
+      </section>
+      <section class="actions" aria-label="Task controls">
+        <button id="connect" class="primary" type="button">
+          <span>Share this tab</span><small>Use this page for the next Agent task</small></button
+        ><button id="disconnect" type="button">
+          <span>Take over this page</span><small>Complete login or verification yourself</small>
+        </button>
+      </section>
+      <section id="handoff" class="handoff" hidden>
+        <h2>Ready when you are</h2>
+        <p>Finish the step on the waiting page, then let your Agent continue.</p>
+        <button id="allow-resume" class="primary" type="button">Allow Agent to continue</button
+        ><button id="discard-handoff" class="text-button" type="button">
+          Release waiting task pages
+        </button>
+      </section>
+      <footer>
+        <span class="shield" aria-hidden="true">◇</span>
+        <p>
+          Agents use their own tab group. Temporary pages close when finished. Your other tabs stay
+          private.
+        </p>
+      </footer>
+      <p class="settings-note">
+        Manage installation and browser control in <strong id="app-name">Atlas</strong> Settings.
+      </p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

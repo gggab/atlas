@@ -16,6 +16,7 @@ export const SETTINGS_SECTIONS = [
   "layouts",
   "providers",
   "remote",
+  "browser",
   "skills",
   "agents",
   "models",

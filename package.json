@@ -6,11 +6,18 @@
   "types": "dist/types/index.d.ts",
   "scripts": {
     "dev": "vite",
+    "browser:bundle": "node scripts/browser-use/bundle.mjs",
+    "browser:icons": "node scripts/browser-use/icons.mjs",
+    "browser:package": "node scripts/browser-use/package.mjs",
+    "browser:store-assets": "node scripts/browser-use/store-assets.mjs",
+    "browser:test": "node --test scripts/browser-use/runtime.test.mjs scripts/browser-use/host.test.mjs scripts/browser-use/extension.test.mjs scripts/browser-use/extension/controller.test.mjs scripts/browser-use/extension/task-tabs.test.mjs scripts/browser-use/extension/native-connection.test.mjs",
+    "browser:smoke": "node scripts/browser-use/smoke.mjs",
+    "browser:worker-smoke": "node scripts/browser-use/worker-smoke.mjs",
     "build": "bun run --parallel typecheck:app build:vite",
     "build:vite": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "dev:app": "tauri dev --config src-tauri/tauri.dev.conf.json",
+    "dev:app": "bun run browser:bundle && tauri dev --config src-tauri/tauri.dev.conf.json",
     "build:app": "tauri build --target aarch64-apple-darwin --bundles app",
     "build:app:dmg": "bash scripts/build-dmg.sh arm",
     "build:app:dmg:arm": "bash scripts/build-dmg.sh arm",
@@ -38,7 +45,9 @@
     "clean:app:dev": "bash scripts/clean-atlas-config.sh --dev",
     "clean:rust": "find . crates vendor -maxdepth 2 -path ./target -prune -o -type d -name target -prune -exec sh -c 'test -f \"$1/CACHEDIR.TAG\" && du -sh \"$1\" && rm -rf \"$1\"' _ {} \\;",
     "clean:rust:stale": "find src-tauri crates -mindepth 1 -maxdepth 2 -type d -name target -prune ! -path 'crates/atlas-kb-server/*' -exec sh -c 'test -f \"$1/CACHEDIR.TAG\" && du -sh \"$1\" && rm -rf \"$1\"' _ {} \\;",
-    "prepare": "husky"
+    "prepare": "husky",
+    "browser:extension-smoke": "node scripts/browser-use/extension-smoke.mjs",
+    "browser:native-smoke": "node scripts/browser-use/native-smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
@@ -104,6 +113,7 @@
     "mermaid": "^11.17.2",
     "pdfjs-dist": "5.4.296",
     "pixi.js": "^8.20.1",
+    "playwright-core": "1.63.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

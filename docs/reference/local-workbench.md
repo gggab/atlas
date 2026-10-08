@@ -7,6 +7,7 @@ This build hosts installed external ACP CLIs using their vendor login. It has no
 - External CLI: `atlas-agent-store` → `atlas-agent-servers` → `atlas-agent-manager` → `AgentHost` / delta projector. Capability gates control authentication, models and session restoration. Tabs do not own process lifetime, so several sessions can run concurrently.
 - History: global `atlas-thread-metadata` metadata, Atlas transcripts, and per-project `atlas-checkpoint` recording / Git checkpoints remain separate from memory.
 - Memory: `atlas-memory` record and index, `SharedMemoryStore`, scope resolver, indexer and loopback MCP remain. The main worktree is the scope for all worktrees. Session tokens prevent unbound callers from reading or writing it.
+- Browser Use: HTTP-MCP-capable sessions receive a [local browser tool server](browser-use.md), independent of memory sharing. Once authorized, Atlas Browser connects automatically and creates grouped task tabs. Completion closes Agent-created pages except necessary handoffs, removes groups, and preserves existing tabs/login.
 - The gateway extraction orchestrator, jobs and UI entry points are removed. MCP active writes and local event capture remain. No replacement account, paid API or execution engine was introduced.
 - Retained historical sync columns and native source tags support existing records only; no cloud client or native launcher remains.
 

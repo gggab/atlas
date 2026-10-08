@@ -72,10 +72,15 @@ use uuid::Uuid;
 /// without touching any of this.
 pub struct TauriDeltaSink {
     pipeline: OutboundPipeline<SessionDeltaEnvelope>,
+    browser: Arc<super::browser_use::BrowserUseState>,
 }
 
 impl TauriDeltaSink {
     pub fn new(app: AppHandle) -> Self {
+        let browser = app
+            .state::<Arc<super::browser_use::BrowserUseState>>()
+            .inner()
+            .clone();
         let pipeline = OutboundPipeline::new()
             // Broadcast first so the UI updates before any heavier work.
             .with(Arc::new(BroadcastMiddleware { app: app.clone() }))
@@ -93,12 +98,17 @@ impl TauriDeltaSink {
             // unlike `capture` (opt-in, git-backed).
             .with(Arc::new(TranscriptMiddleware { app: app.clone() }))
             .with(Arc::new(MemoryIngestMiddleware { app }));
-        Self { pipeline }
+        Self { pipeline, browser }
     }
 }
 
 impl DeltaSink for TauriDeltaSink {
     fn emit(&self, envelope: SessionDeltaEnvelope) {
+        if let SessionDelta::TurnFinished { turn_seq, .. }
+        | SessionDelta::TurnFailed { turn_seq, .. } = &envelope.delta
+        {
+            self.browser.finish_turn(&envelope.session_id, *turn_seq);
+        }
         self.pipeline.run(&envelope);
     }
 }
@@ -345,6 +355,7 @@ struct SharingGatedLifecycle {
     /// terminal status (sign-out, killing an agent, quitting).
     keep_awake: Option<Arc<crate::keep_awake::KeepAwakeManager>>,
     ssh: Arc<super::ssh::SshState>,
+    browser: Arc<super::browser_use::BrowserUseState>,
 }
 
 enum LifecycleWrite {
@@ -361,6 +372,10 @@ enum LifecycleWrite {
 impl SharingGatedLifecycle {
     fn new(app: AppHandle, server: Arc<super::memory_server::MemoryServerHost>) -> Self {
         let ssh = app.state::<Arc<super::ssh::SshState>>().inner().clone();
+        let browser = app
+            .state::<Arc<super::browser_use::BrowserUseState>>()
+            .inner()
+            .clone();
         let keep_awake = app
             .try_state::<Arc<crate::keep_awake::KeepAwakeManager>>()
             .map(|state| state.inner().clone());
@@ -394,6 +409,7 @@ impl SharingGatedLifecycle {
             server,
             keep_awake,
             ssh,
+            browser,
         }
     }
 
@@ -419,6 +435,7 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     }
 
     fn session_ended(&self, session_id: &str) {
+        self.browser.stop(session_id);
         tauri::async_runtime::spawn(self.ssh.runtime.revoke(session_id, None, true));
         super::agent_host::SessionLifecycle::session_ended(&**self.server.tokens(), session_id);
         if let Some(keep_awake) = &self.keep_awake {
@@ -498,6 +515,11 @@ pub fn install_manager(app: &AppHandle) {
         app.manage(server.clone());
         let ssh = app.state::<Arc<super::ssh::SshState>>().inner().clone();
         ssh.start(server.tokens().clone());
+        let browser = app
+            .state::<Arc<super::browser_use::BrowserUseState>>()
+            .inner()
+            .clone();
+        browser.start(server.tokens().clone());
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(
             app.clone(),
             server.clone(),
@@ -507,7 +529,8 @@ pub fn install_manager(app: &AppHandle) {
             Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
         host.set_session_mcp(Arc::new(
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
-                .with_ssh(ssh),
+                .with_ssh(ssh)
+                .with_browser(browser),
         ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();

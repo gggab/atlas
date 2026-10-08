@@ -10,6 +10,8 @@ dist/
 !crates/atlas-icon-theme/vendor/material-icon-theme/dist/
 # Staging dir for scripts/build-frontend.mjs (content-aware sync into dist/).
 dist-next/
+src-tauri/resources/browser-use/
+artifacts/browser-extension/
 target/
 
 # IDE

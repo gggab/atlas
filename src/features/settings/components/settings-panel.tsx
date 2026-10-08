@@ -11,6 +11,7 @@ import {
   Shapes,
   Keyboard,
   Info,
+  Globe,
   KeyRound,
   Server,
   LayoutTemplate,
@@ -43,6 +44,7 @@ import { openConfigFile } from "../lib/atlas-config-api";
 import type { AppSettings } from "../lib/app-settings";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { NotificationsSettings } from "./notifications-settings";
+import { BrowserSettings } from "./browser-settings";
 import { SectionTitle, SettingRow, Toggle } from "./settings-controls";
 
 export { Toggle };
@@ -59,6 +61,7 @@ const SECTIONS: Array<{
   { id: "layouts", label: "Layouts", icon: LayoutTemplate },
   { id: "providers", label: "API Keys", icon: KeyRound },
   { id: "remote", label: "Remote connections", icon: Server },
+  { id: "browser", label: "Browser control", icon: Globe },
   { id: "skills", label: "Skills", icon: Zap },
   { id: "agents", label: "Agents", icon: WandSparkles },
   { id: "models", label: "Local Models", icon: Boxes },
@@ -225,6 +228,7 @@ export function SettingsPanel({ initialSection }: { initialSection?: string } = 
           <div className="max-w-[500px]">
             {activeSection === "general" && <GeneralSettings />}
             {activeSection === "layouts" && <LayoutsSettings />}
+            {activeSection === "browser" && <BrowserSettings />}
 
             {activeSection === "about" && <AboutSettings />}
           </div>

@@ -51,13 +51,14 @@ impl OfferDecision {
     }
 }
 
-/// Offers shared memory when enabled, and SSH through [`with_ssh`](Self::with_ssh)
-/// independently of that setting. Every entry shares one session token:
+/// Offers shared memory when enabled, with SSH and Browser Use independently
+/// of that setting. Every entry shares one session token:
 /// separately minted tokens would revoke each other.
 pub struct MemorySessionOffers {
     host: Arc<MemoryServerHost>,
     gate: SharingGate,
     ssh: Option<Arc<crate::commands::ssh::SshState>>,
+    browser: Option<Arc<crate::commands::browser_use::BrowserUseState>>,
 }
 
 impl MemorySessionOffers {
@@ -66,11 +67,20 @@ impl MemorySessionOffers {
             host,
             gate,
             ssh: None,
+            browser: None,
         }
     }
 
     pub fn with_ssh(mut self, ssh: Arc<crate::commands::ssh::SshState>) -> Self {
         self.ssh = Some(ssh);
+        self
+    }
+
+    pub fn with_browser(
+        mut self,
+        browser: Arc<crate::commands::browser_use::BrowserUseState>,
+    ) -> Self {
+        self.browser = Some(browser);
         self
     }
 }
@@ -97,6 +107,9 @@ impl SessionMcpServers for MemorySessionOffers {
         if request.http_mcp {
             if let Some(url) = self.ssh.as_ref().and_then(|ssh| ssh.url()) {
                 entries.push(("atlas_ssh", url));
+            }
+            if let Some(url) = self.browser.as_ref().and_then(|browser| browser.url()) {
+                entries.push(("atlas_browser", url));
             }
         }
         if entries.is_empty() {
