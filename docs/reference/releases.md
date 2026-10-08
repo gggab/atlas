@@ -12,6 +12,11 @@ types, lint and focused release/browser contracts, and builds the production
 MSI with `bun run build:app:win`. It verifies MSI branding, version, architecture
 and required resources before uploading `atlas-windows-x64`.
 
+The MSI uses `zh-CN`: WiX's default English code page cannot represent the
+Chinese product name and fails with `LGHT0311`. Keep this setting while the
+product name contains Chinese characters. Verbose bundler logs and a failure
+artifact preserve the compiled executable and WiX sources for diagnosis.
+
 Download that artifact. Verify its MSI against `SHA256SUMS.txt` and check that
 `build-info.json` names the exact commit to tag. Test installation and relevant
 desktop features before marking a version stable. The focused packaging checks

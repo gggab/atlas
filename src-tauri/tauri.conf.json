@@ -53,6 +53,11 @@
     "shortDescription": "Atlas改 — local Agent workbench",
     "longDescription": "Atlas改 is a local Tauri desktop workbench for external ACP CLI agents, with project files, terminal and Git, shared memory, browser control, and managed SSH connections.",
     "copyright": "https://tryatlas.cc/ Report bugs to Github: https://github.com/pacifio/atlas/issues/",
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      }
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

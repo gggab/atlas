@@ -30,4 +30,12 @@ describe("Windows release packaging", () => {
     expect(source).not.toContain("contents: write");
     expect(source).not.toContain("gh release create");
   });
+
+  it("uses a Chinese MSI language so the product name is representable", () => {
+    const config = JSON.parse(
+      readFileSync(new URL("../src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+    );
+    expect(config.productName).toBe("Atlas改");
+    expect(config.bundle.windows.wix.language).toBe("zh-CN");
+  });
 });

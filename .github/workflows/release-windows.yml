@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: '0'
-      CARGO_BUILD_JOBS: '2'
+      CARGO_BUILD_JOBS: '4'
       # NumKong's MSVC build cannot link these x86 SIMD kernels yet.
       NK_TARGET_HASWELL: '0'
       NK_TARGET_SKYLAKE: '0'
@@ -32,6 +32,7 @@ jobs:
         with:
           workspaces: .
           key: windows-x64-release
+          cache-on-failure: true
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Verify types, lint, release contracts and browser contracts
@@ -45,7 +46,17 @@ jobs:
           bun run browser:test
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Build production Windows x64 MSI
-        run: bun run build:app:win
+        run: bun run build:app:win -- --verbose
+      - name: Preserve bundler diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundler-diagnostics
+          path: |
+            target/x86_64-pc-windows-msvc/release/atlas.exe
+            target/x86_64-pc-windows-msvc/release/wix/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Verify MSI and record provenance
         run: |
           $ErrorActionPreference = 'Stop'
