@@ -58,7 +58,7 @@ request, only include what is necessary; do not send passwords, session tokens,
 or private page content.
 
 Atlas Browser's use and transfer of user data comply with the
-[Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/user-data),
+[Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/policies#protecting-user-privacy),
 including its [Limited Use requirements](https://developer.chrome.com/docs/webstore/program-policies/limited-use).
 Use and transfer are limited to the user-facing browser-control feature, or
 applicable legal or security obligations. Browser-task data is not provided to
