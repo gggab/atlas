@@ -62,8 +62,8 @@ user confirmation; Atlas only opens the browser/store page.
 ## Listing and review materials
 
 Prepare publisher identity, a public support address/page, an Atlas desktop
-download/setup page, and a public privacy-policy URL. Review the draft policy
-below against the shipped Atlas build and the CLI/model providers you support.
+download/setup page, and a public privacy-policy URL. Review [PRIVACY.md](../../PRIVACY.md)
+against the shipped Atlas build and the CLI/model providers you support.
 Do not submit placeholder URLs or claim that browser content never leaves the
 device: authorized page text/screenshots may be forwarded to the selected model.
 
@@ -129,34 +129,19 @@ Submit for review only after store-ID integration and installation testing.
 Chrome supports deferred publication after review; select it if you want to
 approve the release manually. Edge submission also goes through certification.
 
-## Privacy-policy draft content
+## Public privacy policy
 
-This is copy to adapt and host publicly, not a published policy. Fill in the
-operator identity, support contact, effective date, retention rules and the
-actual Atlas/Agent-provider policy links before submission.
+The standalone policy is [PRIVACY.md](../../PRIVACY.md) at the repository root.
+For this public distribution, the dashboard's privacy-policy URL is:
 
-Atlas Browser connects to the local Atlas desktop app through Native Messaging
-and authenticated loopback task connections. It does not include an analytics
-or advertising service. It stores a browser-profile identifier locally and
-session records of Agent-owned/shared pages and necessary handoff pages, to
-support connection, cleanup and resume.
+<https://github.com/gggab/atlas/blob/refactor/local-agent-workbench/PRIVACY.md>
 
-During a browser task, the extension processes URLs, page text/DOM/accessibility
-content, screenshots and user/Agent interactions on task pages or pages the user
-explicitly shares. Atlas may retain task evidence in its local conversation and
-artifact storage. The selected external Agent/model provider may receive page
-context and screenshots according to the user's Agent configuration and that
-provider's terms and privacy policy. Do not share pages containing information
-you do not want that provider to process.
+Keep this branch and file publicly accessible without login, and update the policy
+when data handling changes. If the branch is renamed or deleted, move the policy
+to a stable public location and update the store URL first.
 
-The extension does not read/copy browser profile files, cookies or stored login
-databases to create a separate automation profile. Tasks use the existing browser
-login environment. Your unrelated tabs are not exposed through Atlas's Agent
-browser interface. Browser permissions still allow the extension to identify
-tabs when needed to share a page or validate saved task ownership.
-
-Users can pause Agent browser actions in Atlas, take over a page in the popup,
-release waiting task pages, or disable/remove the extension through the browser's
-extension management page. Removing task pages does not delete website accounts,
-browser login or Atlas conversation history. Explain separately how to delete
-local Atlas data and manage provider-side retention.
+The policy covers the confirmed maintainer/contact, browser-task data, local
+storage, external Agent/model-provider transfers, retention and deletion, and
+Limited Use. Review it against the build submitted for review. A public policy
+does not replace any required prominent disclosure and affirmative consent
+within the product before sensitive data processing.

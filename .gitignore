@@ -39,6 +39,7 @@ skills-lock.json
 # ship with the app.
 *.md
 !README.md
+!PRIVACY.md
 !CONTRIBUTING.md
 !ARCHITECTURE.md
 !.github/SECURITY.md
