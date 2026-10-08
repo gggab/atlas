@@ -359,6 +359,8 @@ Opening a PR pre-fills the checklist from the [PR template](.github/PULL_REQUEST
 
 External CLI agents own their vendor credentials. Do not introduce Atlas accounts, cloud organization services, a model gateway or product uploads into this build. Preserve local thread, checkpoint and memory data when pruning code. Historical ADRs do not override the current local workbench scope.
 
+Browser store identities are fixed in `src-tauri/src/browser_native.rs`; host registration and origin validation share their exact allowlist. Run `bun run browser:test` and the Rust browser tests after changes. Store-origin unit checks and unpacked-browser fixtures do not replace testing the installed store extension with the updated desktop app.
+
 ## New markdown files
 
 `.gitignore` ignores `*.md` apart from explicit exceptions, so a new doc won't show up in `git status`. Add it with `git add -f`, or add an exception to `.gitignore`.

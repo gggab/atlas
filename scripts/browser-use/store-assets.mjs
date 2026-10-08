@@ -92,6 +92,18 @@ try {
     console.log(
       `[browser:store-assets] ${asset.name}: ${decoded.width}x${decoded.height}, JPEG, ${image.length} bytes`,
     );
+    const png = await page.screenshot({ type: "png", omitBackground: false });
+    assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(png.subarray(12, 16).toString("ascii"), "IHDR");
+    assert.equal(png.readUInt32BE(16), asset.width);
+    assert.equal(png.readUInt32BE(20), asset.height);
+    assert.equal(png[24], 8, "PNG must use 8 bits per color channel");
+    assert.equal(png[25], 2, "PNG must use RGB without an alpha channel");
+    const pngName = asset.name.replace(".jpg", ".png");
+    await writeFile(path.join(output, pngName), png);
+    console.log(
+      `[browser:store-assets] ${pngName}: ${asset.width}x${asset.height}, RGB PNG, ${png.length} bytes`,
+    );
   }
 } finally {
   await browser.close();

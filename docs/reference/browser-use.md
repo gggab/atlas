@@ -53,8 +53,9 @@ to avoid website verification. Complete CAPTCHA/login manually after disconnecti
 1. Run/restart `bun run dev:app` and create a new Agent session.
 2. Open **Settings > Browser control** (also linked from the chat header).
    Choose **Install extension** for Chrome or Edge to open that browser's
-   extension management page. Copy the folder shown in Atlas.
-3. In `chrome://extensions` or `edge://extensions`, enable Developer mode, choose
+   extension management page in Atlas Dev, or the matching store item in released
+   Atlas. For a local build, copy the folder shown in Atlas.
+3. For local loading in `chrome://extensions` or `edge://extensions`, enable Developer mode, choose
    **Load unpacked**, and select that folder. Pin **Atlas Browser** if convenient.
 4. Wait for **Connected** in Atlas. **Allow browser control** enables/pauses
    Agent access and survives app restarts. **Use this browser** selects Chrome/Edge
@@ -74,8 +75,10 @@ development identity uses a public manifest key, not a private signing key.
 One Atlas app profile can own the extension in a browser profile at a time.
 Version 0.3.1 uses Chrome's assigned public key, with extension ID
 `falkhmhmbghdjcabgojjooddbhjpmmfd`. Released Atlas's Chrome installation button
-opens its store listing (available only after publication). Atlas Dev and Edge
-keep local extension loading; Edge's assigned store ID is still pending. Remove
+opens its store listing (available only after publication). Released Atlas also
+opens Edge's assigned CRX item `dpjekhhlbnbbpcjampjnmffnpnndpcci`; both identities
+are allowed by the native host. Atlas Dev keeps local extension loading with the
+Chrome manifest key. Edge's separate Store ID is `0RDCKF6P54QV`. Remove
 the old extension and explicitly forget its selected browser profile in Atlas
 before loading the updated prepared folder. See [Extension publishing](browser-extension-publishing.md).
 If the browser is closed, Atlas starts the selected Chrome/Edge normally and
@@ -286,3 +289,26 @@ The 13-file `atlas-browser-0.3.1-chrome.zip` retains the assigned public key and
 must update the existing Chrome item. Actual store installation, reviewer access,
 public policy/support URLs, released Atlas download and Edge's assigned store
 identity remain release requirements.
+
+## Edge store identity integration (Windows, 2026-10-08)
+
+The supplied Edge CRX ID `dpjekhhlbnbbpcjampjnmffnpnndpcci` is accepted alongside
+Chrome's assigned ID. Native-host registration and runtime origin validation use
+the same exact allowlist. The Store ID `0RDCKF6P54QV`, the retired development
+origin, and other extension origins remain unauthorized. Released Atlas opens
+the matching Edge Add-ons item, while Atlas Dev continues local loading.
+The extension package remains version 0.3.1; the native-host change requires an
+updated Atlas desktop build and an app restart to refresh host registration.
+
+25 Node contracts, 21 focused frontend/IPC checks, and 12 Rust browser checks
+passed; one optional Claude discovery test stayed ignored. Typechecks, lint,
+frontend production build, and native debug build passed. A framed-stdio probe
+against the actual desktop executable and an isolated local broker accepted both
+store origins and rejected the retired ID, Store ID, and an unrelated extension.
+Real Chrome and Edge passed automatic native connection, task groups, repeated
+tasks, handoff/resume, and cleanup using unpacked fixture extensions.
+
+These fixtures use the Chrome manifest key even in Edge. They do not install
+the assigned Edge store CRX or test a released Atlas installer, the full Atlas
+GUI-to-paid-Agent flow, or macOS/Linux. Actual store installation with the updated
+desktop app and a publicly available reviewer test build remain release checks.

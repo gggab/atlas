@@ -138,7 +138,7 @@ impl BrowserBridge {
         let version = self.client.lock().as_ref().and_then(|c| c.version.clone());
         let selected = self.preferences.lock().browser.clone();
         json!({"connected":connected,"browser":browser,"selectedBrowser":selected,"version":version,"hostName":browser_native::host_name(),"error":error,
-            "browsers":[{"id":"chrome","available":browser_executable("chrome").is_some(),"storeInstall":!atlas_profile::is_dev()},{"id":"edge","available":browser_executable("edge").is_some(),"storeInstall":false}]})
+            "browsers":[{"id":"chrome","available":browser_executable("chrome").is_some(),"storeInstall":!atlas_profile::is_dev()},{"id":"edge","available":browser_executable("edge").is_some(),"storeInstall":!atlas_profile::is_dev()}]})
     }
     fn preferences_path(&self) -> Result<PathBuf, String> {
         Ok(self
@@ -471,7 +471,7 @@ impl BrowserBridge {
         Ok(())
     }
     pub fn register(&self) -> Result<(), String> {
-        let manifest = json!({"name":browser_native::host_name(),"description":"Atlas Browser local connection","path":std::env::current_exe().map_err(|e|e.to_string())?,"type":"stdio","allowed_origins":[format!("chrome-extension://{}/",browser_native::EXTENSION_ID)]});
+        let manifest = json!({"name":browser_native::host_name(),"description":"Atlas Browser local connection","path":std::env::current_exe().map_err(|e|e.to_string())?,"type":"stdio","allowed_origins":browser_native::extension_origins()});
         let path = self
             .binding_path()?
             .with_file_name("browser-native-host.json");
@@ -525,6 +525,12 @@ fn browser_management_url(browser: &str, action: &str, dev: bool) -> Option<Stri
         return Some(format!(
             "https://chromewebstore.google.com/detail/{}",
             browser_native::EXTENSION_ID
+        ));
+    }
+    if browser == "edge" && action == "install" && !dev {
+        return Some(format!(
+            "https://microsoftedge.microsoft.com/addons/detail/{}",
+            browser_native::EDGE_EXTENSION_ID
         ));
     }
     Some(
@@ -586,7 +592,7 @@ fn browser_executable(browser: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     #[test]
-    fn browser_installation_uses_the_assigned_chrome_item_and_explicit_local_edge_setup() {
+    fn browser_installation_uses_both_assigned_store_items_and_dev_loading() {
         assert_eq!(
             browser_management_url("chrome", "install", false).as_deref(),
             Some("https://chromewebstore.google.com/detail/falkhmhmbghdjcabgojjooddbhjpmmfd")
@@ -601,9 +607,18 @@ mod tests {
         );
         assert_eq!(
             browser_management_url("edge", "install", false).as_deref(),
+            Some("https://microsoftedge.microsoft.com/addons/detail/dpjekhhlbnbbpcjampjnmffnpnndpcci")
+        );
+        assert_eq!(
+            browser_management_url("edge", "install", true).as_deref(),
+            Some("edge://extensions/")
+        );
+        assert_eq!(
+            browser_management_url("edge", "manage", false).as_deref(),
             Some("edge://extensions/")
         );
         assert_eq!(browser_management_url("chrome", "reconnect", false), None);
+        assert_eq!(browser_management_url("edge", "reconnect", false), None);
     }
     #[test]
     fn browser_pause_and_selection_survive_restart_and_invalid_files_are_reported() {

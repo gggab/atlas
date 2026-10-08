@@ -12,7 +12,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
-function mount(connected = false, storeInstall = false) {
+function mount(connected = false, storeInstall = false, edgeAvailable = false) {
   mocks.invoke.mockResolvedValue({
     paused: false,
     sessions: [],
@@ -23,7 +23,7 @@ function mount(connected = false, storeInstall = false) {
       version: connected ? "0.3.0" : null,
       browsers: [
         { id: "chrome", available: true, storeInstall },
-        { id: "edge", available: false },
+        { id: "edge", available: edgeAvailable, storeInstall },
       ],
     },
   });
@@ -79,4 +79,18 @@ it("manages a connected extension and pauses browser actions from Atlas", async 
   await waitFor(() =>
     expect(mocks.invoke).toHaveBeenCalledWith("browser_use_pause", { paused: true }),
   );
+});
+it("opens Edge Add-ons with an accurate visible store label", async () => {
+  mount(false, true, true);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Install from Microsoft Edge Add-ons" }),
+  );
+  await waitFor(() =>
+    expect(mocks.invoke).toHaveBeenCalledWith("browser_use_manage", {
+      browser: "edge",
+      action: "install",
+    }),
+  );
+  expect(screen.getByText("Install from Edge Add-ons")).toBeTruthy();
+  expect(screen.queryByText(/Edge store setup is pending/)).toBeNull();
 });

@@ -21,6 +21,12 @@ test("the unpacked extension identity matches the native host allowlist", async 
     "utf8",
   );
   assert.ok(host.includes(`EXTENSION_ID: &str = "${id}"`));
+  assert.ok(host.includes('EDGE_EXTENSION_ID: &str = "dpjekhhlbnbbpcjampjnmffnpnndpcci"'));
+  const bridge = await readFile(
+    new URL("../../../src-tauri/src/commands/browser_bridge.rs", import.meta.url),
+    "utf8",
+  );
+  assert.ok(bridge.includes('"allowed_origins":browser_native::extension_origins()'));
 });
 
 test("installation connects automatically to its packaged host, ignoring old manual preferences", async () => {

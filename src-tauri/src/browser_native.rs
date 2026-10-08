@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 
 // Derived from the assigned Chrome Web Store public key in manifest.json.
 pub const EXTENSION_ID: &str = "falkhmhmbghdjcabgojjooddbhjpmmfd";
+pub const EDGE_EXTENSION_ID: &str = "dpjekhhlbnbbpcjampjnmffnpnndpcci";
 pub const MAX_MESSAGE: usize = 64 * 1024;
+
+pub fn extension_origins() -> [String; 2] {
+    [EXTENSION_ID, EDGE_EXTENSION_ID].map(|id| format!("chrome-extension://{id}/"))
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Descriptor {
@@ -70,7 +75,7 @@ pub fn write_frame(writer: &mut impl Write, value: &Value) -> Result<(), String>
     writer.flush().map_err(|e| e.to_string())
 }
 fn serve(identifier: &str, origin: &str) -> Result<(), String> {
-    if origin != format!("chrome-extension://{EXTENSION_ID}/") {
+    if !extension_origins().iter().any(|allowed| allowed == origin) {
         return Err("Extension origin is not authorized".into());
     }
     let path = descriptor_path(identifier)?;
@@ -149,11 +154,32 @@ pub fn run_if_requested(identifier: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn native_host_accepts_both_assigned_store_origins() {
+        let origins = extension_origins();
+        assert_eq!(
+            origins,
+            [
+                "chrome-extension://falkhmhmbghdjcabgojjooddbhjpmmfd/",
+                "chrome-extension://dpjekhhlbnbbpcjampjnmffnpnndpcci/",
+            ]
+        );
+        for origin in origins {
+            let identifier = format!("atlas-origin-test-{}", uuid::Uuid::new_v4());
+            assert_eq!(
+                serve(&identifier, &origin).unwrap_err(),
+                "Open Atlas before connecting its browser extension"
+            );
+        }
+    }
+    #[test]
     fn native_host_rejects_the_retired_development_origin_and_other_extensions() {
         for origin in [
             "chrome-extension://mfppkokdebmgaigclpffjjafpicgapbj/",
             "chrome-extension://other/",
             "chrome-extension://falkhmhmbghdjcabgojjooddbhjpmmfd/extra",
+            "chrome-extension://dpjekhhlbnbbpcjampjnmffnpnndpcci/extra",
+            "chrome-extension://dpjekhhlbnbbpcjampjnmffnpnndpcci",
+            "chrome-extension://0RDCKF6P54QV/",
         ] {
             assert_eq!(
                 serve("atlas-origin-test", origin).unwrap_err(),

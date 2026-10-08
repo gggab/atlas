@@ -89,7 +89,9 @@ export function BrowserSettings() {
                         connected
                           ? `Manage ${name} extension`
                           : storeInstall
-                            ? `Install from ${name} Web Store`
+                            ? id === "edge"
+                              ? "Install from Microsoft Edge Add-ons"
+                              : `Install from ${name} Web Store`
                             : `Install in ${name}`
                       }
                       onClick={() =>
@@ -105,7 +107,9 @@ export function BrowserSettings() {
                       {connected
                         ? "Manage extension"
                         : storeInstall
-                          ? "Install from Chrome Web Store"
+                          ? id === "edge"
+                            ? "Install from Edge Add-ons"
+                            : "Install from Chrome Web Store"
                           : "Install extension"}
                     </button>
                     <button
@@ -160,11 +164,10 @@ export function BrowserSettings() {
               </button>
             </div>
             <p className="text-2xs text-muted-foreground">
-              Browser approval is required to install or remove an extension. Chrome's store listing
-              becomes available after publication; Edge store setup is pending. When switching from
-              the old extension ID, remove the old extension and forget its selected browser profile
-              in Atlas before loading this folder. Only one Atlas app profile can own the extension
-              in a browser profile.
+              Browser approval is required to install or remove an extension. Store listings become
+              available after publication. When switching from the old extension ID, remove the old
+              extension and forget its selected browser profile in Atlas before loading this folder.
+              Only one Atlas app profile can own the extension in a browser profile.
             </p>
           </div>
           {data.connection?.browser && (

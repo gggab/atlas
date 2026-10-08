@@ -186,8 +186,9 @@ guidance, connection/version status and persistent pause. Startup registers the
 native host and prepares an app-profile extension copy with its fixed host config;
 the extension connects automatically without an address or host selector.
 The packaged Chrome store key fixes both local and store extension identity.
-Released-app Chrome installation opens that exact store item; Atlas Dev and
-Edge (until its store identity is supplied) explicitly use local extension setup.
+The native host accepts the exact Chrome and Edge store origins through a shared
+allowlist. Released-app installation opens the chosen browser's assigned store
+item; Atlas Dev explicitly uses local extension setup with the Chrome manifest key.
 A session Node REPL connects via a loopback extension relay
 and Playwright's CDP transport to user-shared Chrome/Edge tabs. The Manifest V3
 extension uses chrome.debugger; only selected/Agent-created tabs are exposed.
