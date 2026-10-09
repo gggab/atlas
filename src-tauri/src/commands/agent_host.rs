@@ -315,9 +315,11 @@ pub struct AgentHost {
     /// `None` only when the store could not be opened — a corrupt or
     /// newer-schema database. The failure is logged, history is unavailable,
     /// and the app still runs: losing the sidebar must not lose the agent.
-    /// Nothing surfaces this in the UI yet; the sidebar re-point (#21) is where
-    /// an empty history gets a reason attached to it.
     history: Option<ThreadRecorder>,
+    /// The history-open failure surfaced by commands and the sidebar.
+    history_error: Option<String>,
+    /// Only the latest asynchronous branch probe may update a session.
+    branch_probes: Arc<Mutex<BranchProbes>>,
     /// Request-scoped elicitations, announced by every connection.
     ///
     /// These belong to no session — they are the ones raised during sign-in,
@@ -330,6 +332,34 @@ pub struct AgentHost {
     lifecycle: Mutex<Option<Arc<dyn SessionLifecycle>>>,
     /// What each session is offered in its MCP server list.
     session_mcp: Arc<SessionMcpSlot>,
+}
+
+/// Which branch probe is the newest for each session (see
+/// [`AgentHost::refresh_branch`]).
+#[derive(Default)]
+struct BranchProbes {
+    next: u64,
+    latest: HashMap<acp::SessionId, u64>,
+}
+
+impl BranchProbes {
+    /// Number a new probe for `session_id`, making it the latest.
+    fn start(&mut self, session_id: &acp::SessionId) -> u64 {
+        self.next += 1;
+        self.latest.insert(session_id.clone(), self.next);
+        self.next
+    }
+
+    /// Retire `probe`, answering whether it may write: only the newest one
+    /// started for its session may. The newest also clears the entry, so the
+    /// map holds only sessions with a probe in flight.
+    fn finish(&mut self, session_id: &acp::SessionId, probe: u64) -> bool {
+        if self.latest.get(session_id) != Some(&probe) {
+            return false;
+        }
+        self.latest.remove(session_id);
+        true
+    }
 }
 
 /// The plumbing for elicitations that belong to a connection, not a session.
@@ -349,13 +379,14 @@ impl AgentHost {
         registry: Arc<AgentRegistryStore>,
     ) -> Arc<Self> {
         let projector = DeltaProjector::new(sink);
-        let history = match ThreadMetadataStore::open(atlas_thread_metadata::db_path(&config_dir)) {
-            Ok(store) => Some(ThreadRecorder::new(store)),
-            Err(e) => {
-                tracing::error!(error = %e, "session history unavailable");
-                None
-            }
-        };
+        let (history, history_error) =
+            match ThreadMetadataStore::open(atlas_thread_metadata::db_path(&config_dir)) {
+                Ok(store) => (Some(ThreadRecorder::new(store)), None),
+                Err(e) => {
+                    tracing::error!(error = %e, "session history unavailable");
+                    (None, Some(e.to_string()))
+                }
+            };
         let (elicitation_tx, elicitation_rx) = mpsc::unbounded_channel();
         let session_mcp = Arc::new(SessionMcpSlot::default());
         let options = ConnectOptions {
@@ -396,6 +427,8 @@ impl AgentHost {
             sessions: Mutex::new(HashMap::new()),
             detected: Mutex::new(Vec::new()),
             history,
+            history_error,
+            branch_probes: Arc::default(),
             request_elicitations: RequestElicitations {
                 stream: Mutex::new(Some(elicitation_rx)),
                 answered_by: Mutex::new(HashMap::new()),
@@ -869,6 +902,7 @@ impl AgentHost {
                 snapshot_of(&thread),
             );
         }
+        self.refresh_branch(&session_id, &cwd.to_string_lossy());
         self.projector.attach(agent_id, thread.clone());
 
         let (current_mode, available_modes) = self.modes_of(&thread, &session_id);
@@ -1119,14 +1153,15 @@ impl AgentHost {
     /// long gone.
     pub fn send(self: &Arc<Self>, key: &SessionKey, content: Vec<acp::ContentBlock>) -> Result<()> {
         let session_id = acp::SessionId::new(key.session_id.as_str());
-        let turn_seq = {
+        let (turn_seq, cwd) = {
             let mut sessions = lock(&self.sessions);
             let record = sessions
                 .get_mut(&key.session_id)
                 .ok_or_else(HostError::unknown_session)?;
             record.turn_seq = record.turn_seq.wrapping_add(1);
-            record.turn_seq
+            (record.turn_seq, record.cwd.clone())
         };
+        self.refresh_branch(&session_id, &cwd);
         // Before the turn opens, so the `status: running` that `begin_turn`
         // emits already carries this turn's identity.
         self.projector.set_turn_seq(&session_id, turn_seq);
@@ -1160,6 +1195,48 @@ impl AgentHost {
             }
         });
         Ok(())
+    }
+
+    /// Read the git branch `cwd` is on and record it on the session's history
+    /// row, off the async runtime.
+    ///
+    /// Fire-and-forget by design: a thread's branch is a label on a sidebar
+    /// card, and neither binding a session nor sending a turn may wait on, or
+    /// fail because of, a git process. A detached HEAD, a folder outside any
+    /// repository, or git missing altogether all read as "no branch", and
+    /// "no branch" writes nothing — the row keeps the last branch Atlas
+    /// actually saw (or stays unknown). The store skips the write, and the
+    /// sidebar event, when the branch has not changed.
+    fn refresh_branch(&self, session_id: &acp::SessionId, cwd: &str) {
+        if cwd.is_empty() {
+            return;
+        }
+        let Some(history) = self.history().cloned() else {
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            tracing::debug!(%session_id, "no async runtime; thread branch not refreshed");
+            return;
+        };
+        let session_id = session_id.clone();
+        let cwd = PathBuf::from(cwd);
+        let probes = Arc::clone(&self.branch_probes);
+        let probe = lock(&probes).start(&session_id);
+        // `Handle::spawn_blocking` is `tokio::task::spawn_blocking` on the
+        // runtime we were called from; the handle is only how this stays a
+        // no-op instead of a panic for a caller outside one.
+        runtime.spawn_blocking(move || {
+            let branch = atlas_checkpoint::git::current_branch(&cwd);
+            // Checked and written under one lock, so a newer probe cannot
+            // start and finish between the check and the write.
+            let mut probes = lock(&probes);
+            if !probes.finish(&session_id, probe) {
+                return;
+            }
+            if let Some(branch) = branch {
+                history.note_branch(&session_id, Arc::from(branch));
+            }
+        });
     }
 
     /// Whether `turn_seq` is still the turn this session is running.
@@ -1844,8 +1921,13 @@ impl AgentHost {
     }
 
     fn history_or_err(&self) -> Result<&ThreadRecorder> {
-        self.history()
-            .ok_or_else(|| HostError::new("session history is unavailable", ErrorClass::Fatal))
+        self.history().ok_or_else(|| {
+            let message = match &self.history_error {
+                Some(cause) => format!("session history is unavailable: {cause}"),
+                None => "session history is unavailable".to_string(),
+            };
+            HostError::new(message, ErrorClass::Fatal)
+        })
     }
 
     // ---- the agent's own session store -----------------------------------
@@ -2034,6 +2116,8 @@ pub struct ThreadRow {
     /// outside its project's group.
     pub project_name: String,
     pub folder_paths: Vec<String>,
+    /// Last branch observed at bind or turn start; absent for older or unknown rows.
+    pub branch: Option<String>,
 }
 
 /// One project's threads, as the sidebar groups them.
@@ -2062,6 +2146,7 @@ fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
         archived: thread.archived,
         project_name: project_name(thread.main_worktree_paths()),
         folder_paths: paths_of(thread.folder_paths()),
+        branch: thread.branch.as_deref().map(str::to_string),
     }
 }
 
@@ -2595,6 +2680,100 @@ mod auth_method_wire_tests {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn branch_history_records_bind_and_turn_start_against_real_git() {
+        let (host, _dir) = fresh_host_with_external(Arc::new(RebindingAgent {
+            fresh_id: "branch-history",
+        }))
+        .await;
+        let repo = tempfile::tempdir().unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .current_dir(repo.path())
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "git failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "--initial-branch=main"]);
+        let agent = host.spawn(TEST_AGENT_ID).await.unwrap().agent_id;
+        let init = host
+            .new_session(agent, repo.path().to_owned(), Vec::new())
+            .await
+            .unwrap();
+        async fn wait_for_branch(host: &AgentHost, branch: &str) {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    if host
+                        .history()
+                        .unwrap()
+                        .store()
+                        .threads()
+                        .iter()
+                        .any(|row| row.branch.as_deref() == Some(branch))
+                    {
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("branch probe completes");
+        }
+        wait_for_branch(&host, "main").await;
+        git(&["checkout", "-b", "feature/history"]);
+        host.send(
+            &init.key,
+            vec![acp::ContentBlock::Text(acp::TextContent::new(
+                "check branch",
+            ))],
+        )
+        .unwrap();
+        wait_for_branch(&host, "feature/history").await;
+        let row = host
+            .history()
+            .unwrap()
+            .store()
+            .threads()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(thread_row(&row).branch.as_deref(), Some("feature/history"));
+        host.history().unwrap().store().flush().unwrap();
+    }
+
+    #[tokio::test]
+    async fn branch_history_surfaces_the_original_store_open_error() {
+        let (host, _dir) = fresh_host();
+        let mut host = Arc::try_unwrap(host).ok().expect("sole host owner");
+        host.history = None;
+        host.history_error = Some("migration backup could not be written".into());
+        let error = host.thread_history(false).unwrap_err().to_string();
+        assert!(error.contains("migration backup could not be written"));
+    }
+
+    #[test]
+    fn only_the_newest_branch_probe_for_a_session_may_write() {
+        let mut probes = super::BranchProbes::default();
+        let a = agent_client_protocol::schema::v1::SessionId::new("a");
+        let b = agent_client_protocol::schema::v1::SessionId::new("b");
+
+        let first = probes.start(&a);
+        let second = probes.start(&a);
+        let other = probes.start(&b);
+        // The second turn's probe finishes first; the first one, slower, must
+        // not overwrite the branch it recorded.
+        assert!(probes.finish(&a, second));
+        assert!(!probes.finish(&a, first));
+        // Another session's probes are their own.
+        assert!(probes.finish(&b, other));
+        assert!(probes.latest.is_empty(), "nothing in flight, nothing kept");
+    }
+
     use super::test_support::{fresh_host, fresh_host_with_external};
     use super::*;
     const TEST_AGENT_ID: &str = "test-agent";

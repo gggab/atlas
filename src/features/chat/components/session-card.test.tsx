@@ -50,6 +50,20 @@ afterEach(() => {
 });
 
 describe("history card", () => {
+  it("shows only a recorded branch and includes it in the accessible description", () => {
+    renderCard({ branch: "feature/history" });
+    expect(screen.getByTitle("Last recorded branch: feature/history").textContent).toBe(
+      "feature/history",
+    );
+    const button = screen.getByRole("button", { name: "Fix model selection" });
+    expect(
+      document.getElementById(button.getAttribute("aria-describedby")!)?.textContent,
+    ).toContain("feature/history");
+    cleanup();
+    renderCard({ branch: null });
+    expect(screen.queryByTitle(/Last recorded branch/)).toBeNull();
+  });
+
   it("shows a title and agent, and names only a different project", () => {
     renderCard();
     expect(screen.getByText("Fix model selection")).toBeTruthy();

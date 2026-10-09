@@ -55,9 +55,12 @@ Favorites use local `config.toml` preferences. See [Model picker](model-picker.m
 The same upstream commit also supplies the [basic history cards](history-cards.md):
 title, live status, current-turn timing, Agent marks, project-name placement and
 explicit history read errors. Existing session restoration and archive/delete
-paths are retained. Timing is temporary frontend state; the thread database is
-unchanged. Branch recording, PR lookup, thread-database migrations, a native
-agent and gateway model refresh remain outside these selective ports.
+paths are retained. Timing is temporary frontend state. The approved branch
+metadata port records the last observed Git branch and upgrades the history
+catalog to named migrations at epoch 5, with verified pre-migration SQLite
+snapshots. Completed V3 data cleanup is not replayed. See [History migrations](history-migrations.md)
+for compatibility and rollback. PR lookup, a native agent and gateway model
+refresh remain outside these selective ports.
 
 The fork selectively carries these upstream fixes without restoring account,
 organization or native-agent functionality:

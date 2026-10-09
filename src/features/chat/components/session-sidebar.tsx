@@ -56,6 +56,7 @@ function itemFromThread(thread: ThreadRow, projectName: string, isCurrent: boole
     elsewhere: !isCurrent,
     // The thread's own directory — where it resumes.
     cwd: thread.folderPaths[0] ?? "",
+    branch: thread.branch ?? null,
   };
 }
 
@@ -78,6 +79,7 @@ interface SidebarItem {
   /** The thread's own working directory — where it resumes, which is not
    *  necessarily the project that happens to be open. */
   cwd: string;
+  branch: string | null;
 }
 
 interface SessionSidebarProps {
@@ -673,6 +675,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 title={item.title}
                 projectName={item.projectName}
                 showProject={showProject}
+                branch={item.branch}
                 lastUpdated={item.lastUpdated}
                 status={live?.status ?? null}
                 liveTabId={live?.tabId ?? null}

@@ -38,6 +38,8 @@ export interface ThreadRow {
   archived: boolean;
   projectName: string;
   folderPaths: string[];
+  /** Last branch Atlas observed; older or imported history can omit it. */
+  branch?: string | null;
 }
 
 /** One project's threads, as the sidebar groups them. */

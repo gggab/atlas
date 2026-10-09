@@ -93,6 +93,14 @@ afterEach(() => {
 });
 
 describe("history card integration", () => {
+  it("uses the thread's recorded branch rather than the open project's state", async () => {
+    vi.mocked(threadProjects).mockResolvedValue([
+      project("atlas", [{ ...row("one", "Fix model selection"), branch: "recorded-branch" }]),
+    ]);
+    mount();
+    expect(await screen.findByTitle("Last recorded branch: recorded-branch")).toBeTruthy();
+  });
+
   it.each(["sidebar", "dropdown"] as const)(
     "shows cards, waiting status and title search in the %s",
     async (variant) => {

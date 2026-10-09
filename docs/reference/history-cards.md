@@ -5,6 +5,11 @@ as cards. A title occupies up to two lines; the current conversation is marked,
 and each card shows its original Agent. Historical native Agent marks identify
 old records only and do not restore the removed engine.
 
+Cards also show the last Git branch Atlas observed for that session. Older or
+imported rows can have no branch; the current project's checkout is never used
+to guess their past branch. See [History migrations](history-migrations.md) for
+recording behavior, backups, compatibility and rollback.
+
 ## Status and duration
 
 An open session's `running` status displays a working ring and the duration of
@@ -53,8 +58,9 @@ A refresh failure is displayed even when an earlier list is still available.
 
 ## Integration boundary and development
 
-This is a selective frontend port from upstream `6e910c7e`. It adds no schema
-or data migration, branch recording, PR lookup, new CLI history readers, cloud
+This selectively ports cards and branch metadata from upstream `6e910c7e`.
+Branch recording now includes a nullable column, named migrations and verified
+pre-migration snapshots. It adds no PR lookup, new CLI history readers, cloud
 sync or shared-memory behavior. All history still uses the existing store.
 The All history dialog keeps its existing list and import behavior.
 

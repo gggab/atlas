@@ -208,6 +208,8 @@ export interface SessionCardProps {
   /** Name the project on the card: the thread belongs to a project other than
    *  the one the list is scoped to. */
   showProject: boolean;
+  /** Last branch the host observed, never inferred from the current project. */
+  branch?: string | null;
   lastUpdated: string | null;
   status: SessionLiveStatus;
   /** The open tab hosting this thread, if any — the timer reads its turn. */
@@ -225,6 +227,7 @@ export const SessionCard = memo(function SessionCard({
   title,
   projectName,
   showProject,
+  branch,
   lastUpdated,
   status,
   liveTabId,
@@ -239,6 +242,7 @@ export const SessionCard = memo(function SessionCard({
   const description = [
     showProject ? projectName : null,
     statusDescription(status, lastUpdated),
+    branch,
     agentLabel,
   ]
     .filter(Boolean)
@@ -298,7 +302,16 @@ export const SessionCard = memo(function SessionCard({
         {!showProject && statusSlot}
       </div>
 
-      <div className="pointer-events-none flex min-w-0 items-center justify-end">
+      <div className="pointer-events-none flex min-w-0 items-center justify-end gap-2">
+        {branch && (
+          <span
+            aria-hidden
+            title={`Last recorded branch: ${branch}`}
+            className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground"
+          >
+            {branch}
+          </span>
+        )}
         <span
           aria-hidden
           className="flex shrink-0 items-center text-secondary-foreground"

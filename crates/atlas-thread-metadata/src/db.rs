@@ -19,15 +19,16 @@ use crate::schema;
 
 const LIST_QUERY: &str = "SELECT thread_id, session_id, agent_id, title, title_override, \
      updated_at, created_at, interacted_at, folder_paths, folder_paths_order, \
-     main_worktree_paths, main_worktree_paths_order, remote_connection, archived \
+     main_worktree_paths, main_worktree_paths_order, remote_connection, archived, \
+     branch \
      FROM threads \
      ORDER BY updated_at DESC";
 
 const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title, \
          title_override, updated_at, created_at, interacted_at, folder_paths, \
          folder_paths_order, main_worktree_paths, main_worktree_paths_order, \
-         remote_connection, archived) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+         remote_connection, archived, branch) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15) \
      ON CONFLICT(thread_id) DO UPDATE SET \
          session_id = excluded.session_id, \
          agent_id = excluded.agent_id, \
@@ -41,7 +42,8 @@ const UPSERT: &str = "INSERT INTO threads(thread_id, session_id, agent_id, title
          main_worktree_paths = excluded.main_worktree_paths, \
          main_worktree_paths_order = excluded.main_worktree_paths_order, \
          remote_connection = excluded.remote_connection, \
-         archived = excluded.archived";
+         archived = excluded.archived, \
+         branch = excluded.branch";
 
 /// The durable half of the store.
 pub(crate) struct Db {
@@ -57,11 +59,17 @@ impl Db {
         }
         let conn = Connection::open(db_path)
             .map_err(|e| Error::Storage(format!("{}: {e}", db_path.display())))?;
+        // Refuse newer data before even changing its journal mode.
+        let version = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        schema::check_epoch(version)?;
         // WAL so a read never blocks the write queue and vice versa; NORMAL
         // because a lost final upsert costs a stale sidebar row, not a record.
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
+        if schema::needs_migration(&conn)? {
+            backup_before_migrating(&conn, db_path)?;
+        }
         schema::migrate(&conn)?;
         let db = Self { conn };
         db.prune_drafts()?;
@@ -106,6 +114,7 @@ impl Db {
                 mains.as_ref().map(|s| &s.order),
                 remote,
                 row.archived,
+                row.branch.as_deref(),
             ],
         )?;
         Ok(())
@@ -168,6 +177,72 @@ fn optional(list: &PathList) -> Option<SerializedPathList> {
     }
 }
 
+/// Copy the database aside before a migration changes it, so no build is
+/// ever the only holder of a user's history.
+///
+/// `VACUUM INTO` rather than a file copy: the database runs in WAL mode, and
+/// copying `threads.db` alone would miss whatever sits in the `-wal` file. One
+/// copy per starting version (`threads.db.bak-v5`): the first one is the
+/// state before anything touched it, and a later open from the same version
+/// keeps it rather than overwriting it. Failing to take the copy fails the
+/// open — the error reaches the sidebar — rather than migrating without one.
+fn backup_before_migrating(conn: &Connection, db_path: &Path) -> Result<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let mut name = db_path.as_os_str().to_owned();
+    name.push(format!(".bak-v{version}"));
+    let backup = std::path::PathBuf::from(name);
+    if backup.exists() {
+        return validate_backup(&backup, version).map_err(|e| {
+            Error::Storage(format!(
+                "history backup {} is unusable: {e}",
+                backup.display()
+            ))
+        });
+    }
+    let mut temporary_name = backup.as_os_str().to_owned();
+    temporary_name.push(format!(".tmp-{}", uuid::Uuid::new_v4()));
+    let temporary = std::path::PathBuf::from(temporary_name);
+    let result = (|| {
+        conn.execute("VACUUM INTO ?1", [temporary.to_string_lossy()])?;
+        validate_backup(&temporary, version)?;
+        // Publish only a complete snapshot, without replacing an earlier backup.
+        match std::fs::hard_link(&temporary, &backup) {
+            Ok(()) => Ok(()),
+            Err(_) if backup.exists() => validate_backup(&backup, version),
+            Err(e) => Err(Error::Storage(format!(
+                "could not publish history backup {}: {e}",
+                backup.display()
+            ))),
+        }
+    })();
+    if temporary.exists() {
+        if let Err(e) = std::fs::remove_file(&temporary) {
+            tracing::warn!(path = %temporary.display(), error = %e, "could not remove temporary history backup");
+        }
+    }
+    result.map_err(|e: Error| {
+        Error::Storage(format!(
+            "could not back up {} before migrating it: {e}",
+            db_path.display()
+        ))
+    })
+}
+
+/// Existing files can be interrupted copies; never mistake their presence for a backup.
+fn validate_backup(path: &Path, expected_version: i64) -> Result<()> {
+    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let check: String = conn.query_row("PRAGMA quick_check(1)", [], |r| r.get(0))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    let _: i64 = conn.query_row("SELECT COUNT(*) FROM threads", [], |r| r.get(0))?;
+    if check != "ok" || version != expected_version {
+        return Err(Error::Storage(format!(
+            "history backup {} is invalid or has the wrong schema version",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
     let thread_id: Vec<u8> = row.get(0)?;
     let thread_id = uuid::Uuid::from_slice(&thread_id)
@@ -189,6 +264,7 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
     let main_paths_order: Option<String> = row.get(11)?;
     let remote_connection: Option<String> = row.get(12)?;
     let archived: bool = row.get(13)?;
+    let branch: Option<String> = row.get(14)?;
 
     let folder_paths = path_list(serialized(folder_paths, folder_paths_order));
     let main_paths = path_list(serialized(main_paths, main_paths_order));
@@ -215,6 +291,9 @@ fn decode(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {
         interacted_at: timestamp(interacted_at),
         worktree_paths,
         remote_connection: remote_connection.and_then(|s| serde_json::from_str(&s).ok()),
+        branch: branch
+            .filter(|b| !b.trim().is_empty())
+            .map(|b| Arc::from(b.as_str())),
         archived,
     })
 }
