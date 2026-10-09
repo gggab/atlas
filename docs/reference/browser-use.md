@@ -5,6 +5,21 @@ The extension retains the store name **Atlas Browser**, its existing extension
 IDs and native host names; changing the app display name does not require a new
 store package.
 
+The 0.3.2 extension popup requires explicit page-data consent before any Agent
+task, existing-tab sharing or handoff resume. Its disclosure covers URLs, page
+text, screenshots, input and network details, possible sensitive content, and
+transfer through local Atlas to the selected external Agent/model provider.
+Native metadata connects automatically without granting page access. Consent is
+stored locally with a disclosure version; older preferences do not grant it.
+`bun run browser:package` produces separate `-chrome.zip` and `-edge.zip` files:
+Chrome keeps its assigned manifest key, while Edge omits `key` for Partner Center
+validation. Source/unpacked identity and native-host store IDs stay unchanged.
+**Withdraw page data consent and stop control** stops active control immediately,
+clears the next shared tab, and blocks access until a new affirmative decision.
+Existing conversation/provider records are not erased. Release/install tests must
+exercise both acceptance and withdrawal; passing a fixture does not prove store
+certification or real CLI integration.
+
 Atlas offers `atlas_browser` independently of shared memory to ACP sessions
 advertising HTTP MCP. It uses live session tokens and the external CLI's model
 subscription. No additional model API/key is needed.

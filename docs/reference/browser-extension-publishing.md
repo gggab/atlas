@@ -13,7 +13,7 @@ store installation still needs verification with the updated desktop build.
 
 1. Run `bun run browser:icons` after editing the SVG, then `bun run browser:test`.
 2. Run `bun run browser:package`. Upload
-   `artifacts/browser-extension/atlas-browser-0.3.1-chrome.zip` as a new package
+   `artifacts/browser-extension/atlas-browser-0.3.2-chrome.zip` as a new package
    on the **existing Chrome draft item**, not a new item. The ZIP puts
    `manifest.json` at its root, retains the assigned Chrome public key,
    excludes tests, SDK/Node binaries and runtime secrets, and targets released Atlas.
@@ -28,8 +28,30 @@ store installation still needs verification with the updated desktop build.
    under the Microsoft Edge program (currently no registration fee), then open the
    existing Atlas Browser item to upload a package update. Its supplied CRX ID is integrated in
    the desktop native host; the Store ID is not a native extension origin.
+   Use `artifacts/browser-extension/atlas-browser-0.3.2-edge.zip` produced by
+   `browser:package`. The Edge ZIP omits the manifest `key` field, which Partner
+   Center rejects. Do not rename or copy the Chrome ZIP for Edge. The Chrome ZIP
+   and source/unpacked manifest retain the assigned Chrome key; Edge's store
+   identity is assigned by the store, not derived from the keyless upload ZIP.
    See [account registration](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/create-dev-account)
    and [Edge publishing](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension).
+
+Version 0.3.2 adds explicit, versioned page-data consent in the extension popup.
+Native metadata connection remains automatic, but tasks, tab sharing and resume
+require consent. The disclosure names page data, possible sensitive content,
+the local app and the selected external Agent/model provider. Withdrawal stops
+active control before persistence, clears the next shared tab, and blocks further
+page access; it does not delete prior Atlas/provider records. Existing 0.3.1
+preferences do not count as consent. Upload 0.3.2 to the existing Edge item rather
+than submitting the previously uploaded 0.3.1 package. No native protocol or
+store identity changes are required in the desktop companion.
+
+Windows reviewers can download the published desktop companion from
+[Atlas改 v0.4.0](https://github.com/gggab/atlas/releases/tag/v0.4.0).
+The MSI is unsigned and the release is a prerelease. Full Agent tasks require an
+independently configured external CLI and its vendor authentication; disclose
+this dependency and do not invent review credentials. Browser fixture checks do
+not establish store-installed behavior or a paid Agent's end-to-end operation.
 
 ## Integrate store identity before submission
 

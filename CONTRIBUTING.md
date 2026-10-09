@@ -17,6 +17,16 @@ For this fork's Windows packaging and GitHub releases, follow the
 commit, verify artifact provenance, and publish to `gggab/atlas` only when
 requested. Keep the desktop and companion extension release versions separate.
 
+For companion extension releases, follow the [publishing guide](docs/reference/browser-extension-publishing.md).
+Run `bun run browser:test` and the isolated `bun run browser:native-smoke edge`
+fixture after changes to page-data consent, connection or task cleanup. The
+fixture must cover consent refusal/acceptance, withdrawal during a task and
+preservation of daily tabs. Store-installed behavior and real CLI turns remain
+separate checks. Increment the extension version for a new store package.
+`browser:package` generates separate Chrome and Edge ZIPs. Use the matching file;
+Edge uploads must omit `manifest.key`, while Chrome and unpacked copies retain it.
+`browser:test` also opens both generated archives to verify manifests and assets.
+
 Thanks for wanting to help. Below is how to do it, and everything here applies to every contributor equally.
 
 If you're not sure where to begin, `#dev` on [Discord](https://discord.gg/GmnFggaPfP) is the fastest way to get an answer.

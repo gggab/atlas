@@ -36,7 +36,7 @@ const server = createServer((socket) => {
     if (!admitted) {
       assert.equal(message.secret, secret);
       assert.match(message.clientId, /^[a-f0-9-]{36}$/);
-      assert.equal(message.version, "0.3.1");
+      assert.equal(message.version, "0.3.2");
       admitted = true;
       peer = socket;
       socket.write('{"type":"bridgeReady"}\n');
@@ -109,8 +109,16 @@ try {
   const authorized = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }));
   assert.equal(authorized.error ?? undefined, undefined, JSON.stringify(authorized));
   assert.equal(authorized.appConnected, true, JSON.stringify(authorized));
+  assert.equal(authorized.dataConsent, false);
   const screenshots = path.join(root, "artifacts/browser-extension");
   await mkdir(screenshots, { recursive: true });
+  await popup
+    .locator("body")
+    .screenshot({ path: path.join(screenshots, `popup-${browser}-consent.png`) });
+  await popup.getByRole("button", { name: "Agree to page data sharing" }).click();
+  await popup
+    .getByRole("button", { name: "Withdraw page data consent and stop control" })
+    .waitFor();
   await popup.getByRole("heading", { name: "Atlas connected" }).waitFor();
   await popup.emulateMedia({ colorScheme: "light" });
   await popup
@@ -122,7 +130,7 @@ try {
     .screenshot({ path: path.join(screenshots, `popup-${browser}-dark.png`) });
   await popup.emulateMedia({ colorScheme: "light" });
   const baseline = context.pages().length;
-  async function start(title) {
+  async function start(title, expectedError) {
     host = new ExtensionHost({ check: async () => {} });
     await host.start();
     const id = String(++sequence);
@@ -143,6 +151,12 @@ try {
     } finally {
       clearTimeout(timer);
       pending.delete(id);
+    }
+    if (expectedError) {
+      assert.match(reply.error, expectedError);
+      await host.close();
+      host = null;
+      return;
     }
     assert.equal(reply.error, undefined, JSON.stringify(reply));
     await host.connect();
@@ -196,8 +210,18 @@ try {
   assert.equal(context.pages().length, baseline);
   assert.equal(personal.isClosed(), false);
   assert.equal((await popup.evaluate(() => chrome.tabGroups.query({}))).length, 0);
+  await start("Consent withdrawal task");
+  await popup.getByRole("button", { name: "Withdraw page data consent and stop control" }).click();
+  await popup.getByRole("button", { name: "Agree to page data sharing" }).waitFor();
+  await host.close();
+  await runtime.close();
+  runtime = null;
+  assert.equal(context.pages().length, baseline);
+  assert.equal(personal.isClosed(), false);
+  assert.equal((await popup.evaluate(() => chrome.tabGroups.query({}))).length, 0);
+  await start("Blocked after withdrawal", /consent/i);
   console.log(
-    "[native:smoke] PASS: native authorization, automatic grouped tabs, repeated tasks, handoff/resume and cleanup",
+    "[native:smoke] PASS: native authorization, consent/revocation, automatic grouped tabs, repeated tasks, handoff/resume and cleanup",
   );
 } finally {
   console.log("[native:smoke] Releasing fixture host, browser and broker");

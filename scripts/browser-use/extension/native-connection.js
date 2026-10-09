@@ -10,7 +10,8 @@ export class NativeConnection {
     });
   }
   async restore() {
-    const settings = await this.api.storage.local.get("clientId");
+    const settings = await this.api.storage.local.get(["clientId", "browserDataConsent"]);
+    this.dataConsent = settings.browserDataConsent === 1;
     this.enabled = true;
     this.hostName = HOST_NAME;
     this.clientId = settings.clientId ?? crypto.randomUUID();
@@ -18,6 +19,41 @@ export class NativeConnection {
     const { shareNextTab } = await this.api.storage.session.get("shareNextTab");
     this.shareNextTab = Number.isInteger(shareNextTab) ? shareNextTab : undefined;
     if (this.enabled) await this.connect();
+  }
+  requireConsent() {
+    if (!this.dataConsent)
+      throw new Error("Open Atlas Browser and give consent before sharing page data.");
+  }
+  async setConsent(accepted) {
+    if (typeof accepted !== "boolean") throw new Error("Consent must be a boolean");
+    const decision = (this.consentDecision = (this.consentDecision ?? 0) + 1);
+    let stopped;
+    if (!accepted) {
+      this.dataConsent = false;
+      this.shareNextTab = undefined;
+      // Cancel in-flight attachments and close the relay before storage writes.
+      stopped = this.controller.disconnect();
+    }
+    const previous = this.consentPending;
+    const update = (async () => {
+      // Each caller receives its own error; serialize retries and decisions from multiple popups.
+      if (previous) await Promise.allSettled([previous]);
+      await Promise.all([
+        stopped,
+        this.api.storage.local.set({ browserDataConsent: accepted ? 1 : null }),
+        accepted ? undefined : this.api.storage.session.set({ shareNextTab: null }),
+      ]);
+      if (accepted && decision === this.consentDecision) {
+        this.dataConsent = true;
+        this.error = null;
+      }
+    })();
+    this.consentPending = update;
+    try {
+      await update;
+    } finally {
+      if (this.consentPending === update) this.consentPending = null;
+    }
   }
   async reconnect() {
     this.port?.disconnect();
@@ -80,12 +116,14 @@ export class NativeConnection {
     if (message.type !== "start" || typeof message.id !== "string") return;
     try {
       if (!this.connected || !this.enabled) throw new Error("Automatic connection is disabled");
+      this.requireConsent();
       await this.controller.connect(
         message.endpoint,
         this.shareNextTab,
         message.title,
         message.sessionId,
       );
+      this.requireConsent();
       this.shareNextTab = undefined;
       await this.api.storage.session.set({ shareNextTab: null });
       this.error = null;
@@ -96,7 +134,9 @@ export class NativeConnection {
     }
   }
   async share(tabId) {
+    this.requireConsent();
     const tab = await this.api.tabs.get(tabId);
+    this.requireConsent();
     if (!/^https?:\/\//.test(tab.url ?? "")) throw new Error("Choose an HTTP(S) web page first");
     if (this.controller.socket)
       throw new Error("Take over the active task before sharing another tab");
@@ -106,6 +146,7 @@ export class NativeConnection {
   status() {
     return {
       automatic: !!this.enabled,
+      dataConsent: !!this.dataConsent,
       appConnected: this.connected,
       hostName: this.hostName,
       connectionError: this.error,

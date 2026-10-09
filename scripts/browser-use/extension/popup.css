@@ -113,6 +113,18 @@ main {
   gap: 9px;
   margin-top: 14px;
 }
+.disclosure {
+  margin-top: 14px;
+}
+.disclosure p {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.disclosure a {
+  display: block;
+  margin: 10px 0;
+  color: var(--accent);
+}
 button {
   width: 100%;
   padding: 11px 14px;

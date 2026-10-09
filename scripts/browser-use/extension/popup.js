@@ -18,19 +18,32 @@ function render(result) {
     result.connectionError ??
     (result.handoff
       ? "Complete the waiting step, then allow your Agent to continue."
-      : result.shareNextTab
-        ? "This page is shared with the next task."
-        : result.connected
-          ? `${result.tabs} task tab${result.tabs === 1 ? "" : "s"} under Agent control.`
-          : result.appConnected
-            ? "Ready. New tasks open a dedicated tab group."
-            : `Connection starts automatically. Check ${APP_NAME} Settings > Browser control if it stays offline.`);
+      : result.appConnected && !result.dataConsent
+        ? "Connected. Review page data sharing below to enable tasks."
+        : result.shareNextTab
+          ? "This page is shared with the next task."
+          : result.connected
+            ? `${result.tabs} task tab${result.tabs === 1 ? "" : "s"} under Agent control.`
+            : result.appConnected
+              ? "Ready. New tasks open a dedicated tab group."
+              : `Connection starts automatically. Check ${APP_NAME} Settings > Browser control if it stays offline.`);
   document.querySelector("#handoff").hidden = !result.handoff;
-  document.querySelector(".actions").hidden = !!result.handoff;
+  document.querySelector("#consent").hidden = !!result.dataConsent;
+  document.querySelector("#withdraw-consent").hidden = !result.dataConsent;
+  document.querySelector(".actions").hidden = !!result.handoff || !result.dataConsent;
+  document.querySelector("#allow-resume").disabled = busy || !result.dataConsent;
   document.querySelector("#disconnect").disabled = busy || !result.connected;
-  document.querySelector("#connect").disabled = busy || !!result.connected || !!result.handoff;
+  document.querySelector("#connect").disabled =
+    busy || !result.dataConsent || !!result.connected || !!result.handoff;
   document.querySelector("#reconnect").hidden = !!result.appConnected;
 }
+for (const [id, accepted] of [
+  ["accept-consent", true],
+  ["withdraw-consent", false],
+])
+  document.querySelector(`#${id}`).addEventListener("click", () => {
+    void request({ action: "setConsent", accepted });
+  });
 async function request(message) {
   if (busy) return;
   busy = true;

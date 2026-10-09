@@ -23,7 +23,32 @@
         <p id="status" role="status" aria-live="polite">Opening the local connection…</p>
         <button id="reconnect" class="text-button" type="button">Reconnect to Atlas</button>
       </section>
-      <section class="actions" aria-label="Task controls">
+      <section id="consent" class="connection disclosure" aria-labelledby="consent-heading">
+        <h2 id="consent-heading">Before your Agent uses pages</h2>
+        <p>
+          Authorized page URLs, text, screenshots, form input and network details are sent to the
+          local Atlas app and may be sent to your selected external AI Agent/model provider.
+          Signed-in pages can contain personal or sensitive information. Only authorize pages you
+          are willing to share with that provider.
+        </p>
+        <p>
+          You can withdraw below at any time to stop page access. Existing Atlas/provider records
+          are not deleted.
+        </p>
+        <a
+          href="https://github.com/gggab/atlas/blob/refactor/local-agent-workbench/PRIVACY.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Read the privacy policy</a
+        >
+        <button id="accept-consent" class="primary" type="button">
+          Agree to page data sharing
+        </button>
+      </section>
+      <button id="withdraw-consent" class="text-button" type="button" hidden>
+        Withdraw page data consent and stop control
+      </button>
+      <section class="actions" aria-label="Task controls" hidden>
         <button id="connect" class="primary" type="button">
           <span>Share this tab</span><small>Use this page for the next Agent task</small></button
         ><button id="disconnect" type="button">
@@ -41,8 +66,8 @@
       <footer>
         <span class="shield" aria-hidden="true">◇</span>
         <p>
-          Agents use their own tab group. Temporary pages close when finished. Your other tabs stay
-          private.
+          Agents use authorized pages in their own tab group. Temporary pages close when finished.
+          Your other tabs stay private.
         </p>
       </footer>
       <p class="settings-note">
