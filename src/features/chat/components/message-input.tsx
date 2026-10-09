@@ -13,7 +13,6 @@ import {
   Database,
   Cpu,
   ChevronDown,
-  Search,
   Plus,
   AtSign,
 } from "lucide-react";
@@ -42,6 +41,10 @@ import {
 import { AgentMark } from "@/components/agent-mark";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { modelLabel } from "../lib/model-label";
+import { ModelPicker } from "./model-picker";
+import { onModelPickerRequest } from "../lib/model-picker-events";
+import { providerDisplay } from "../lib/model-provider";
+import { ProviderLogo } from "@/components/provider-logo";
 // `ChatInput` pulls in CodeMirror (~870 KB) via `cm-mention-extension`.
 // We import it dynamically so the chunk is not in the initial preload set.
 // The import is kicked off at module-evaluation time (below, outside the
@@ -366,7 +369,6 @@ function ComposerGroupsMenu({
 
   const [openGroup, setOpenGroup] = useState<ComposerGroup | null>(null);
   const [dir, setDir] = useState(1);
-  const [q, setQ] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   // Measured content height driving the shared panel's height tween — group
   // switches (and async rows landing) morph the container instead of snapping.
@@ -406,7 +408,6 @@ function ComposerGroupsMenu({
   useEffect(() => {
     const onOpen = (e: Event) => {
       if ((e as CustomEvent<{ tabId?: string }>).detail?.tabId !== tabId) return;
-      setQ("");
       setOpenGroup("mode");
       // Mutual exclusion with the + menu — see atlas:composer-menu-open.
       window.dispatchEvent(new CustomEvent("atlas:composer-menu-open", { detail: "groups" }));
@@ -424,24 +425,25 @@ function ComposerGroupsMenu({
     if (availableModels && availableModels.length > 0) return availableModels;
     return loadCachedAcpModels(agentType)?.availableModels ?? [];
   }, [availableModels, agentType]);
-  const filteredModels = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return models;
-    return models.filter(
-      (m) =>
-        m.name.toLowerCase().includes(s) ||
-        m.id.toLowerCase().includes(s) ||
-        (m.description ?? "").toLowerCase().includes(s),
-    );
-  }, [models, q]);
 
   const isClaude = agentType === "claude-code";
   const hasAcpModes = !!availableModes && availableModes.length > 0;
   const showMode = isClaude || hasAcpModes || modesPending;
   const showModel = models.length > 0;
 
+  useEffect(
+    () =>
+      onModelPickerRequest(tabId, () => {
+        setOpenGroup((cur) => {
+          if (cur === "model") return null;
+          window.dispatchEvent(new CustomEvent("atlas:composer-menu-open", { detail: "groups" }));
+          return "model";
+        });
+      }),
+    [tabId],
+  );
+
   const toggle = (g: ComposerGroup) => {
-    setQ("");
     setOpenGroup((cur) => {
       if (cur === g) return null;
       if (cur) setDir(GROUP_ORDER.indexOf(g) > GROUP_ORDER.indexOf(cur) ? 1 : -1);
@@ -454,6 +456,7 @@ function ComposerGroupsMenu({
 
   const currentAcpMode = availableModes?.find((m) => m.id === currentMode);
   const currentModelInfo = models.find((m) => m.id === currentModel);
+  const currentProvider = providerDisplay(currentModelInfo?.provider);
 
   // Labels stay visible on every pill — the reference folds unselected tabs
   // to icon-only, but on a toolbar whose pills are real controls that reads
@@ -474,7 +477,10 @@ function ComposerGroupsMenu({
           the same surface — the reference's shared-layout feel. */}
       <div
         aria-hidden={!openGroup}
-        className="absolute bottom-full left-0 z-popover mb-1.5 w-[300px] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md"
+        className={cn(
+          "absolute bottom-full left-0 z-popover mb-1.5 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md",
+          openGroup === "model" ? "w-[340px]" : "w-[300px]",
+        )}
         style={{
           height: openGroup ? panelHeight : 0,
           opacity: openGroup ? 1 : 0,
@@ -612,60 +618,15 @@ function ComposerGroupsMenu({
             )}
 
             {openGroup === "model" && (
-              <>
-                <div className="flex h-8 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2.5">
-                  <Search size={12} className="shrink-0 text-[var(--muted-foreground)]" />
-                  <input
-                    autoFocus
-                    value={q}
-                    onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search models…"
-                    spellCheck={false}
-                    className="min-w-0 flex-1 bg-transparent text-xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
-                  />
-                </div>
-                <div className="max-h-[280px] overflow-y-auto hide-scrollbar p-1">
-                  {filteredModels.length === 0 ? (
-                    <div className="px-2.5 py-2 text-xs text-[var(--muted-foreground)]">
-                      No models
-                    </div>
-                  ) : (
-                    filteredModels.map((m) => {
-                      const active = m.id === currentModel;
-                      return (
-                        <button
-                          key={m.id}
-                          onClick={() => {
-                            setAcpModel(tabId, m.id);
-                            close();
-                          }}
-                          className={cn(
-                            "flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors cursor-pointer",
-                            active
-                              ? "bg-[var(--atlas-element-selected)]"
-                              : "hover:bg-[var(--atlas-element-hover)]",
-                          )}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5 label">
-                              <span className="truncate">{modelLabel(m)}</span>
-                              {active && (
-                                <Check size={11} className="shrink-0 text-[var(--primary)]" />
-                              )}
-                            </span>
-                            {m.description &&
-                              m.description.trim().toLowerCase() !== "recommended" && (
-                                <span className="mt-0.5 block text-3xs leading-snug text-[var(--muted-foreground)] line-clamp-2">
-                                  {m.description}
-                                </span>
-                              )}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </>
+              <ModelPicker
+                agentType={agentType}
+                models={models}
+                currentModel={currentModel}
+                onPick={(id) => {
+                  setAcpModel(tabId, id);
+                  close();
+                }}
+              />
             )}
           </div>
         </div>
@@ -720,7 +681,11 @@ function ComposerGroupsMenu({
           className={pillCls(openGroup === "model")}
           title="Model"
         >
-          <Cpu size={11} className="shrink-0 text-[var(--muted-foreground)]" />
+          {currentProvider ? (
+            <ProviderLogo id={currentProvider.logo} size={11} className="-mx-0.75" />
+          ) : (
+            <Cpu size={11} className="shrink-0 text-[var(--muted-foreground)]" />
+          )}
           <span
             className={cn(composerPillLabelClass(), "max-w-[80px] truncate @[460px]:max-w-[120px]")}
           >

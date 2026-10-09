@@ -48,6 +48,13 @@ checks), test TypeScript check, and `cargo check --locked -p atlas --lib` passed
 
 ## Selected upstream fixes
 
+The model picker selectively ports `6e910c7e`: search, favorites, provider
+groups and keyboard controls. Rust snapshots and live ACP config updates keep
+the Agent's stated group names; no provider is guessed from a model id.
+Favorites use local `config.toml` preferences. See [Model picker](model-picker.md).
+This port does not include history cards, thread-database migrations, a native
+agent or gateway model refresh.
+
 The fork selectively carries these upstream fixes without restoring account,
 organization or native-agent functionality:
 

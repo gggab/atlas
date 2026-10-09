@@ -180,6 +180,10 @@ notifyKindsMigrated = false
 # quiet; failures and requests for you are never held back. 0 turns it
 # off. Must be between 0 and 3600000. (default: 0)
 notifyAgentMinDurationMs = 0
+
+# Models starred in the composer's picker, keyed as agentType:modelId.
+# These local preferences do not make an unavailable model runnable.
+favoriteModels = []
 ```
 
 Note `updaterIgnoredVersion`: a key that serializes to nothing still gets its
@@ -230,6 +234,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `notifyDisabledKinds` | array of strings | `[]` | — |
 | `notifyKindsMigrated` | boolean | `false` | — |
 | `notifyAgentMinDurationMs` | integer | `0` | 0 ≤ n ≤ 3600000 |
+| `favoriteModels` | array of strings | `[]` | agent-scoped model identifiers |
 
 Any other key under `[settings]` is left on disk untouched and reported as an
 `unknownKeys` entry in `get_atlas_config_info` — never treated as an error,

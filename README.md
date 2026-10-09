@@ -21,6 +21,7 @@ The display-name change preserves existing application identifiers, `.atlas/` an
 
 - Agent installation, PATH detection, process launch, vendor authentication and ACP capability / model negotiation.
 - Streaming chat, approvals, cancellation, independent parallel sessions, local transcripts and capability-dependent resume / load.
+- [Model picker](docs/reference/model-picker.md): ranked search, per-Agent favorites, Agent-stated provider groups and rebindable keyboard controls over the external CLI's available models.
 - Project files, terminal PTYs, Git, local session capture and checkpoint history.
 - Managed SSH connections, project associations and remote execution history, with credentials kept in OS credential storage. See [SSH](docs/reference/ssh.md).
 - Shared local memory: SQLite storage, events, retrieval, import, policy controls, management UI and a session-authorized loopback MCP service.

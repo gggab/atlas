@@ -90,6 +90,16 @@ bound that way as conflicting. `cmd+ctrl+x` means Ctrl+Super/Win there.
 
 ### When contexts
 
+The model picker uses its own `modelPicker` context while it has focus. Its
+`cmd+1` through `cmd+9` actions choose the corresponding visible model instead
+of focusing a tab. `cmd+shift+m` opens the picker in the focused chat;
+`cmd+shift+s` stars the highlighted model, and `cmd+shift+up` / `down` change
+groups when no search is active. These actions can be rebound normally.
+Arrow keys and Enter navigate and select models. With no search active,
+Shift+Tab or Left (on an empty input) moves to the group rail, and Right returns
+to search. Shift+Tab inside this picker does not cycle the session's permission
+mode. IME composition keeps its keys. See [Model picker](model-picker.md).
+
 Most actions are global. Some only fire while a surface has focus — for a
 surface that lives in a tab, while that tab is the active tab of the focused
 split — and are shown in the editor's When column: `terminalFocus`, `chatFocus`,

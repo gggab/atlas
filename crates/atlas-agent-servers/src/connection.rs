@@ -1592,14 +1592,17 @@ fn model_select_of(options: &[acp::SessionConfigOption]) -> Option<ModelSelect> 
         let acp::SessionConfigKind::Select(select) = &option.kind else {
             return None;
         };
-        // Groups flatten, exactly as `build_snapshot` flattens a grouped
-        // `AgentModelList`: the composer's picker is one list, and a nested
-        // menu would be a new visual pattern.
-        let choices: Vec<&acp::SessionConfigSelectOption> = match &select.options {
-            acp::SessionConfigSelectOptions::Ungrouped(choices) => choices.iter().collect(),
+        // Keep the group the agent stated when flattening its model choices.
+        let choices: Vec<(&acp::SessionConfigSelectOption, Option<&str>)> = match &select.options {
+            acp::SessionConfigSelectOptions::Ungrouped(choices) => {
+                choices.iter().map(|choice| (choice, None)).collect()
+            }
             acp::SessionConfigSelectOptions::Grouped(groups) => groups
                 .iter()
-                .flat_map(|group| group.options.iter())
+                .flat_map(|group| {
+                    let name = Some(group.name.as_str()).filter(|name| !name.is_empty());
+                    group.options.iter().map(move |choice| (choice, name))
+                })
                 .collect(),
             // `#[non_exhaustive]`: a shape this build does not know is not a
             // list we can render.
@@ -1614,7 +1617,7 @@ fn model_select_of(options: &[acp::SessionConfigOption]) -> Option<ModelSelect> 
             current: select.current_value.clone(),
             models: choices
                 .into_iter()
-                .map(|choice| AgentModelInfo {
+                .map(|(choice, group)| AgentModelInfo {
                     id: AgentModelId::new(choice.value.0.as_ref()),
                     // An unnamed choice shows its id rather than a blank row —
                     // the same fallback the frontend's parser makes, so a list
@@ -1629,6 +1632,7 @@ fn model_select_of(options: &[acp::SessionConfigOption]) -> Option<ModelSelect> 
                     is_latest: false,
                     cost: None,
                     disabled: None,
+                    provider: group.map(Into::into),
                 })
                 .collect(),
         })
@@ -2179,6 +2183,12 @@ mod model_select_tests {
             .map(|model| model.id.as_str().to_string())
             .collect();
         assert_eq!(ids, vec!["gpt-5".to_string(), "qwen".to_string()]);
+        let providers: Vec<_> = select
+            .models
+            .iter()
+            .map(|model| model.provider.as_deref())
+            .collect();
+        assert_eq!(providers, vec![Some("OpenAI"), Some("Local")]);
     }
 
     /// Gating is on the advertised category, never on who the agent is. An

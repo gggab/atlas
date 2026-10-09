@@ -101,6 +101,8 @@ export interface SessionModeInfo {
   id: string;
   name: string;
   description?: string | null;
+  /** The model's provider or group as stated by the ACP agent; never inferred. */
+  provider?: string | null;
 }
 
 /** What `native_agent_refresh_models` returns — the picker's Refresh for the

@@ -76,6 +76,21 @@ describe("notification settings migration on hydrate", () => {
 });
 
 describe("settings side effects", () => {
+  it("persists model favorites through the configuration API without reapplying appearance", async () => {
+    const favoriteModels = ["codex:example", "claude-code:example"];
+    updateAtlasConfig.mockImplementation(async () => ({
+      kind: "applied",
+      settings: fromRust({ ...useSettingsStore.getState().settings, favoriteModels }),
+      generation: 2,
+    }));
+    useSettingsStore.getState().actions.updateSettings({ favoriteModels });
+    await vi.waitFor(() => expect(useSettingsStore.getState().configGeneration).toBe(2));
+    expect(updateAtlasConfig.mock.calls[0]?.[0]).toEqual({ favoriteModels });
+    expect(useSettingsStore.getState().settings.favoriteModels).toEqual(favoriteModels);
+    expect(applyConfiguredTheme).not.toHaveBeenCalled();
+    expect(applyConfiguredIconTheme).not.toHaveBeenCalled();
+  });
+
   /**
    * Every IPC result is a freshly parsed object, so a reference test on
    * `themeOverrides` re-applied the whole theme on every settings write —

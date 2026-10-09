@@ -5,6 +5,8 @@ import {
 } from "@/features/notifications/lib/agent-notifier";
 import { copyText } from "@/lib/clipboard";
 import { matchesAction } from "@/features/keybindings/lib/use-scoped-hotkeys";
+import { requestModelPicker } from "../lib/model-picker-events";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
@@ -858,6 +860,21 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // any agent seen before; one that has not been opened this session fills its
   // picker when it is.
 
+  // Only the focused chat panel opens its composer's model picker.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.isComposing || e.keyCode === 229 || !matchesAction(e, "chat.toggleModelPicker")) return;
+      if (useLayoutStore.getState().activeTabId !== tabId) return;
+      const active = document.activeElement;
+      if (!active || !rootRef.current?.contains(active)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      requestModelPicker(tabId);
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [tabId]);
+
   // Shift+Tab → cycle the agent permission mode. Registered on the window in
   // capture phase so the browser's default focus traversal never steals it.
   useEffect(() => {
@@ -867,6 +884,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       const active = document.activeElement as HTMLElement | null;
       // Only intercept when focus is somewhere inside this chat panel.
       if (!root || !active || !root.contains(active)) return;
+      // Shift+Tab belongs to the model picker's focus navigation while it is open.
+      if (active.closest("[data-model-picker]")) return;
       e.preventDefault();
       e.stopPropagation();
       // The store action both cycles the mode AND propagates it to the bound

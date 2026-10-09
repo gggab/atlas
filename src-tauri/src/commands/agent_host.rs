@@ -77,6 +77,9 @@ pub struct SessionModeInfo {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    /// The model's provider or group stated by the agent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -915,6 +918,7 @@ impl AgentHost {
                     id: mode.id.to_string(),
                     name: mode.name.clone(),
                     description: mode.description,
+                    provider: None,
                 })
                 .collect(),
         )
@@ -1016,13 +1020,20 @@ impl AgentHost {
                 futures::executor::block_on(async { selector.list_models().await.ok() })
             })
             .map(|list| {
-                // Grouped lists flatten: the composer's picker is one list, and
-                // the group is cosmetic in a dropdown Atlas does not render.
+                // Flatten grouped lists while preserving the agent's group names.
                 let models = match list {
                     atlas_acp_thread::AgentModelList::Flat(models) => models,
-                    atlas_acp_thread::AgentModelList::Grouped(groups) => {
-                        groups.into_iter().flat_map(|(_, models)| models).collect()
-                    }
+                    atlas_acp_thread::AgentModelList::Grouped(groups) => groups
+                        .into_iter()
+                        .flat_map(|(group, models)| {
+                            models.into_iter().map(move |mut model| {
+                                if model.provider.is_none() && !group.0.is_empty() {
+                                    model.provider = Some(group.0.clone());
+                                }
+                                model
+                            })
+                        })
+                        .collect(),
                 };
                 models
                     .into_iter()
@@ -1030,6 +1041,7 @@ impl AgentHost {
                         id: model.id.as_str().to_string(),
                         name: model.name.to_string(),
                         description: model.description.map(|d| d.to_string()),
+                        provider: model.provider.map(|p| p.to_string()),
                     })
                     .collect()
             })
@@ -2628,6 +2640,7 @@ mod tests {
                     is_latest: true,
                     cost: None,
                     disabled: None,
+                    provider: None,
                 })
             }
             .boxed()

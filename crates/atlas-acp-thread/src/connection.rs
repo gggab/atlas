@@ -628,6 +628,8 @@ pub struct AgentModelInfo {
     /// Zed carries `language_model::DisabledReason`; that enum is about Zed's
     /// own plan/billing states, so the port carries the reason as text.
     pub disabled: Option<Arc<str>>,
+    /// The provider or group stated by the agent; never inferred from the model id.
+    pub provider: Option<Arc<str>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

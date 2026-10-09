@@ -405,6 +405,9 @@ pub struct AppSettings {
     /// An agent turn that finished faster than this stays quiet (milliseconds); 0 = off.
     #[serde(default)]
     pub notify_agent_min_duration_ms: u32,
+    /// Models starred in the composer, keyed as `agentType:modelId`.
+    #[serde(default)]
+    pub favorite_models: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -476,6 +479,7 @@ impl Default for AppSettings {
             notify_disabled_kinds: Vec::new(),
             notify_kinds_migrated: false,
             notify_agent_min_duration_ms: 0,
+            favorite_models: Vec::new(),
         }
     }
 }
@@ -710,6 +714,11 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
         "# An agent turn that finished faster than this many milliseconds stays\n\
          # quiet; failures and requests for you are never held back. 0 turns it\n\
          # off. Must be between 0 and 3600000. (default: 0)",
+    ),
+    (
+        "favoriteModels",
+        "# Models starred in the composer's model picker, as agentType:modelId.\n\
+         # Favorites are local preferences; unavailable models stay hidden. (default: [])",
     ),
 ];
 
@@ -994,6 +1003,7 @@ pub struct SettingsPatch {
     pub notify_disabled_kinds: Option<Vec<String>>,
     pub notify_kinds_migrated: Option<bool>,
     pub notify_agent_min_duration_ms: Option<u32>,
+    pub favorite_models: Option<Vec<String>>,
 }
 
 impl SettingsPatch {
@@ -1106,6 +1116,9 @@ impl SettingsPatch {
         if let Some(v) = self.notify_agent_min_duration_ms {
             settings.notify_agent_min_duration_ms = v;
         }
+        if let Some(v) = &self.favorite_models {
+            settings.favorite_models = v.clone();
+        }
     }
 
     /// Mutate only the touched keys of `doc["settings"]` — everything else
@@ -1172,6 +1185,13 @@ impl SettingsPatch {
         }
         if let Some(v) = self.notify_agent_min_duration_ms {
             table["notifyAgentMinDurationMs"] = toml_edit::value(i64::from(v));
+        }
+        if let Some(v) = &self.favorite_models {
+            let mut arr = toml_edit::Array::new();
+            for model in v {
+                arr.push(model.as_str());
+            }
+            table["favoriteModels"] = toml_edit::value(arr);
         }
         if let Some(v) = self.terminal_notify_min_duration_ms {
             table["terminalNotifyMinDurationMs"] = toml_edit::value(i64::from(v));
@@ -2219,6 +2239,33 @@ someFutureKey = \"left alone\"
     }
 
     #[test]
+    fn model_picker_favorites_survive_reopen_without_replacing_other_config() {
+        let (_dir, path) = tmp_config_path();
+        let raw = "# keep this comment\nschemaVersion = 1\n[settings]\nenterToSend = false\nsomeFutureKey = 'keep'\n";
+        fs::write(&path, raw).unwrap();
+        let mut manager = ConfigManager::from_raw(path.clone(), raw).unwrap();
+        let favorites = vec![
+            "codex:example".to_string(),
+            "claude-code:example".to_string(),
+        ];
+        manager
+            .apply_patch(
+                &SettingsPatch {
+                    favorite_models: Some(favorites.clone()),
+                    ..Default::default()
+                },
+                None,
+            )
+            .unwrap();
+        let disk = fs::read_to_string(&path).unwrap();
+        assert!(disk.contains("# keep this comment"));
+        let reopened = ConfigManager::from_raw(path, &disk).unwrap();
+        assert_eq!(reopened.effective().favorite_models, favorites);
+        assert!(!reopened.effective().enter_to_send);
+        assert_eq!(reopened.unknown_keys(), &["someFutureKey".to_string()]);
+    }
+
+    #[test]
     fn invalid_ui_scale_is_rejected_and_does_not_touch_disk() {
         let (_dir, path) = tmp_config_path();
         let raw = "schemaVersion = 1\n\n[settings]\nenterToSend = true\n";
@@ -2559,6 +2606,7 @@ someFutureKey = \"left alone\"
             ]),
             notify_kinds_migrated: Some(!defaults.notify_kinds_migrated),
             notify_agent_min_duration_ms: Some(defaults.notify_agent_min_duration_ms + 1),
+            favorite_models: Some(vec!["codex:example-model".to_string()]),
         };
         let mut expected = defaults.clone();
         patch.apply_to(&mut expected);
