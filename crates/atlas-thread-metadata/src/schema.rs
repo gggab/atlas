@@ -65,6 +65,17 @@
 //! `branch` alone. Stamping 6 would have refused every such build for no
 //! change it could not read.
 //!
+//! The session-discovery work adds two more, both plain tables:
+//! `deleted_sessions` — the session ids whose rows the user deleted, so that
+//! "delete" outlasts the next sync (an agent that could not or would not
+//! forget the session keeps listing it, and without a durable record the row
+//! would be back within seconds) — and `session_aliases` — on-disk session
+//! ids confirmed to be another transcript of a session Atlas ran (an adapter
+//! that writes a conversation's continuation under a fresh id). Only
+//! confirmed aliases are written; the provisional guess that precedes
+//! confirmation is never persisted. Before the ledger these were that
+//! branch's linear V4 and V5.
+//!
 //! Every migration first leaves a copy behind (`Db::open`, via
 //! [`needs_migration`]), so no build is ever the only holder of a history.
 
@@ -110,6 +121,14 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         name: "threads_branch",
         apply: add_branch_column,
+    },
+    Migration {
+        name: "deleted_sessions",
+        apply: |conn| Ok(conn.execute_batch(DELETED_SESSIONS)?),
+    },
+    Migration {
+        name: "session_aliases",
+        apply: |conn| Ok(conn.execute_batch(SESSION_ALIASES)?),
     },
 ];
 
@@ -299,6 +318,33 @@ DELETE FROM threads WHERE agent_id = 'cersei';
 DELETE FROM backfilled_agents WHERE agent_id = 'cersei';
 ";
 
+/// Session ids the user deleted, so no import brings them back.
+///
+/// Keyed by session id, not thread id: the thread id is Atlas's and is gone
+/// with the row, while the session id is what an agent's `session/list` and the
+/// session watcher both name. A row Atlas itself writes again for the session
+/// (its conversation is still open, and continued) removes the entry.
+const DELETED_SESSIONS: &str = "
+CREATE TABLE IF NOT EXISTS deleted_sessions(
+    session_id TEXT PRIMARY KEY,
+    at         TEXT NOT NULL
+) STRICT;
+";
+
+/// Transcript ids confirmed to belong to another session, alias → owner.
+///
+/// Both columns are agent session ids, not thread ids: the alias never has a
+/// row of its own, and the owner's row is found through its session id. A
+/// row's delete removes its aliases (and records each alias id as deleted, so
+/// the continuation is not imported in the owner's place).
+const SESSION_ALIASES: &str = "
+CREATE TABLE IF NOT EXISTS session_aliases(
+    alias_id         TEXT PRIMARY KEY,
+    owner_session_id TEXT NOT NULL,
+    at               TEXT NOT NULL
+) STRICT;
+";
+
 /// The git branch the thread ran on. Existing rows read `NULL` — unknown —
 /// rather than being back-filled with whatever the folder is on today, which
 /// would be a claim about the past Atlas never observed.
@@ -378,6 +424,8 @@ mod tests {
         migrate(&conn).unwrap();
         assert_eq!(version_of(&conn), SCHEMA_EPOCH);
         assert!(has_table(&conn, "backfilled_agents"));
+        assert!(has_table(&conn, "deleted_sessions"));
+        assert!(has_table(&conn, "session_aliases"));
         let rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM threads", [], |r| r.get(0))
             .unwrap();

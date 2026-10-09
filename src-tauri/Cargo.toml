@@ -130,9 +130,11 @@ atlas-embed = { path = "../crates/atlas-embed" }
 atlas-memory = { path = "../crates/atlas-memory" }
 # CLAUDE.md + .claude/rules mirrored into AGENTS.md (commands::instruction_sync).
 atlas-instruction-sync = { path = "../crates/atlas-instruction-sync" }
-# Deterministic codebase scanner (tree-sitter). Feeds the Memory-Chat RAG
-# with up-to-date source structure. Drives `commands::codebase_index`.
+# The per-project code index (tree-sitter → SQLite + FTS5), updated per file
+# from the watchers. Drives `commands::code_index` and the atlas_code symbol tools.
 atlas-codeindex = { path = "../crates/atlas-codeindex" }
+# The sparse n-gram grep prefilter for large git projects (Phase 5).
+atlas-grepindex = { path = "../crates/atlas-grepindex" }
 # Structured side-by-side git diff engine (vendors delta's word-diff). Drives
 # `commands::gitdiff` (diff viewer + editor gutter).
 atlas-gitdiff = { path = "../crates/atlas-gitdiff" }
@@ -148,6 +150,9 @@ atlas-git = { path = "../crates/atlas-git" }
 # (from ATL-83 on) commit linkage. Tauri-free, so its whole surface is
 # testable against a real database and a real git repository.
 atlas-checkpoint = { path = "../crates/atlas-checkpoint" }
+# In-process code search (ripgrep engine): the `atlas_code` tool server and
+# the project search overlay (`commands::code_server`). Tauri-free.
+atlas-search = { path = "../crates/atlas-search" }
 dirs = "6"
 # `canonicalize` without Windows' `\\?\` verbatim prefix, which would otherwise
 # leak into workspace paths, capture ids and asset scopes. Already in the

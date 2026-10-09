@@ -416,7 +416,7 @@ function GeneralSettings() {
       </SettingRow>
       <NotificationsSettings />
 
-      <SectionTitle title="Behaviour" subtitle="Files, logs and the editor" />
+      <SectionTitle title="Behavior" subtitle="Files, logs and the editor" />
       <SettingRow
         label={devProfile ? `Keep ${atlasDir} out of git` : `Auto-add ${atlasDir} to .gitignore`}
         description={
@@ -513,6 +513,15 @@ function GeneralSettings() {
         />
       </SettingRow>
 
+      <SettingRow
+        label="Let agents search code with Atlas"
+        description="Agents get Atlas's code tools for this project: grep and find-files, symbols, callers and callees, and search by meaning. All in-process, respecting .gitignore and never reading secret files such as .env. Off: they search with their own tools instead."
+      >
+        <Toggle
+          checked={settings.agentCodeTools}
+          onChange={(next) => updateSettings({ agentCodeTools: next })}
+        />
+      </SettingRow>
       <SettingRow
         label="Atlas CLI"
         description={`Adds an \`atlas\` command to your shell — type \`atlas .\` in any terminal to open the current folder as a project. Refreshed automatically on every launch so an older copy never lingers. ${cliInstalledLine}.`}

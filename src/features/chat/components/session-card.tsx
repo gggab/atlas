@@ -216,6 +216,9 @@ export interface SessionCardProps {
   liveTabId: string | null;
   active: boolean;
   agent: SidebarAgent;
+  /** Another process (typically a terminal) is writing this session — the
+   *  live dot, and the composer's "Send anyway" hold once it is opened. */
+  liveElsewhere: boolean;
   /** Stable across renders (the card is memoised); called with `threadId`. */
   onOpen: (threadId: string) => void;
   onArchive: (threadId: string) => void;
@@ -233,6 +236,7 @@ export const SessionCard = memo(function SessionCard({
   liveTabId,
   active,
   agent,
+  liveElsewhere,
   onOpen,
   onArchive,
   onDelete,
@@ -241,6 +245,7 @@ export const SessionCard = memo(function SessionCard({
   const agentLabel = agentMeta(AGENT_TYPE_BY_SIDEBAR[agent] ?? agent).label;
   const description = [
     showProject ? projectName : null,
+    liveElsewhere ? "Active in another process" : null,
     statusDescription(status, lastUpdated),
     branch,
     agentLabel,
@@ -251,7 +256,14 @@ export const SessionCard = memo(function SessionCard({
   // least as wide as they are (two 20px buttons and their gap, less the 4px
   // they sit further right): a short "2h" must not leave them over the title.
   const statusSlot = (
-    <span className="flex min-w-10 shrink-0 justify-end transition-opacity duration-fast group-hover:opacity-0 group-focus-within:opacity-0">
+    <span className="flex min-w-10 shrink-0 items-center justify-end gap-1 transition-opacity duration-fast group-hover:opacity-0 group-focus-within:opacity-0">
+      {liveElsewhere && (
+        <span
+          title="Active in another process"
+          data-testid="live-elsewhere-dot"
+          className="size-1.5 shrink-0 rounded-full bg-success"
+        />
+      )}
       <StatusLabel status={status} tabId={liveTabId} lastUpdated={lastUpdated} />
     </span>
   );

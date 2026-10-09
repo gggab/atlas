@@ -27,6 +27,7 @@ function renderCard(props: Partial<SessionCardProps> = {}) {
       liveTabId={null}
       active={false}
       agent="codex"
+      liveElsewhere={false}
       {...handlers}
       {...props}
     />,
@@ -50,6 +51,11 @@ afterEach(() => {
 });
 
 describe("history card", () => {
+  it("marks activity in another process", () => {
+    renderCard({ liveElsewhere: true });
+    expect(screen.getByTestId("live-elsewhere-dot")).toBeTruthy();
+    expect(document.body.textContent).toContain("Active in another process");
+  });
   it("shows only a recorded branch and includes it in the accessible description", () => {
     renderCard({ branch: "feature/history" });
     expect(screen.getByTitle("Last recorded branch: feature/history").textContent).toBe(

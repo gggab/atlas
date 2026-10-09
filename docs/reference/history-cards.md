@@ -17,6 +17,11 @@ its current turn. `waiting` displays `Needs input` for permission or plan
 approval. A card with no busy live session displays its last update; that does
 not certify task success.
 
+A separate live dot marks recent activity attributed to another process.
+Opening its card keeps the marker and the composer holds sends until "Send
+anyway" or until the activity window expires. This is a file-time heuristic,
+not proof that a process has exited. See [Session discovery](session-discovery.md).
+
 `turnStartedAt` is temporary chat-store state. Entering running/waiting stamps
 it once, moving between those two preserves it, and leaving them clears it.
 The waiting interval therefore counts toward elapsed time when execution
@@ -46,10 +51,16 @@ trigger opening. Existing handlers remain responsible for all operations:
   directory. A busy current tab is preserved by opening another tab. ACP
   capability negotiation still determines load/resume support.
 - Archive removes a thread from the active list but keeps it in All history.
-  Reopening unarchives it; archive does not cancel an active turn.
+  Reopening or new activity within the discovery window unarchives it; archive
+  does not cancel an active turn.
 - Delete removes Atlas's history row and asks the Agent to delete its copy only
   when it advertises that capability. It does not guarantee erasing all CLI
   data or checkpoints. A still-running conversation may be recorded again.
+  A session marked live in another process cannot be deleted. Deleted IDs are
+  remembered so discovery does not re-import them.
+
+Rows keep their order while pointer or keyboard focus is in the list; their
+content still updates. Leaving restores activity order.
 
 Loading, an empty project, no title matches and a history read error have
 different messages. Failed reads display the error without automatic query
@@ -60,8 +71,9 @@ A refresh failure is displayed even when an earlier list is still available.
 
 This selectively ports cards and branch metadata from upstream `6e910c7e`.
 Branch recording now includes a nullable column, named migrations and verified
-pre-migration snapshots. It adds no PR lookup, new CLI history readers, cloud
-sync or shared-memory behavior. All history still uses the existing store.
+pre-migration snapshots. The approved `a335ec9c` port adds metadata-only terminal
+discovery; replay remains protocol-based. There is no PR lookup or cloud sync.
+All history still uses the existing store.
 The All history dialog keeps its existing list and import behavior.
 
 ```sh

@@ -246,6 +246,37 @@ fn elicitation_response(
 /// launch rather than marked done.
 const BACKFILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+/// How long the project sync waits on one agent, connect included. Far shorter
+/// than [`BACKFILL_TIMEOUT`]: this runs every time the sidebar opens or the
+/// window regains focus, so a wedged agent must cost the user seconds, not
+/// minutes. It is simply tried again on the next trigger.
+const SYNC_AGENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// A project synced less than this long ago is not synced again.
+///
+/// The sidebar fires a sync on mount, on a cwd change and on every window
+/// focus; this is what makes that cheap. Short enough that a session started in
+/// a terminal is picked up by the next alt-tab back.
+const SYNC_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How recent an agent-listed session must be to land in the sidebar rather
+/// than History.
+const SYNC_UNARCHIVE_DAYS: i64 = 7;
+
+/// The recency window of ADR-0001 amendment Rule 5, as an instant: activity at
+/// or after it lands a session in the sidebar (and brings an archived one
+/// back); anything older stays in History. The project sync and the session
+/// watcher both ask this, so they cannot disagree about what "recent" is.
+pub(crate) fn sync_unarchive_cutoff(now: DateTime<Utc>) -> DateTime<Utc> {
+    now - chrono::Duration::days(SYNC_UNARCHIVE_DAYS)
+}
+
+/// How long after one of Atlas's own turns ends a write to that session's
+/// transcript is still put down to Atlas. An agent adapter (the Claude one, for
+/// one) flushes its transcript a beat after the prompt response; that trailing
+/// write is not another process.
+const ATLAS_WRITE_SLACK: chrono::Duration = chrono::Duration::seconds(5);
+
 /// Told when a session starts and when it ends — shared memory's sessions
 /// table (`shared_memory::SharedMemoryStore`).
 ///
@@ -316,7 +347,37 @@ pub struct AgentHost {
     /// newer-schema database. The failure is logged, history is unavailable,
     /// and the app still runs: losing the sidebar must not lose the agent.
     history: Option<ThreadRecorder>,
-    /// The history-open failure surfaced by commands and the sidebar.
+    /// What Atlas itself has been doing in each session, by session id: turns
+    /// in flight and when the last one ended. This, not membership of
+    /// [`AgentHost::sessions`], is what "Atlas is hosting it" means for the
+    /// live-elsewhere rule (Rule 7). A session is bound the moment a sidebar
+    /// row is opened, while a terminal may well still be writing it; only
+    /// Atlas's own turns explain Atlas's own writes. Entries outlive the
+    /// binding — a tab closed right after its turn still owns that turn's
+    /// trailing write — and are a few bytes per session Atlas has prompted.
+    activity: Mutex<HashMap<String, AtlasActivity>>,
+    /// **Provisional** transcript aliases: on-disk session ids guessed to be
+    /// another transcript of one of Atlas's own sessions, keyed by the alias.
+    /// An ACP adapter may keep one ACP session id while writing its
+    /// continuation to a transcript under a fresh id — the Claude adapter does
+    /// exactly that when plan mode's "clear context" restarts its private
+    /// conversation, and announces nothing on the wire. Without this the
+    /// watcher saw "a new session", the sync imported it as a terminal one, it
+    /// showed live elsewhere while Atlas was the writer, and opening it ran a
+    /// second agent process on the same file.
+    ///
+    /// A guess lives here, in memory only, until the file's writes settle it
+    /// ([`AgentHost::review_aliases`]): a write outside its owner's turns
+    /// revokes it, a later owner turn that writes only the alias confirms it,
+    /// and a confirmed alias moves to the history store, which persists it.
+    /// Nothing provisional is ever written to disk.
+    aliases: Mutex<HashMap<String, ProvisionalAlias>>,
+    /// When each project directory was last synced, for the debounce in
+    /// [`AgentHost::sync_project`]. In memory only: a restart syncing once more
+    /// is the right behaviour.
+    last_project_sync: Mutex<HashMap<String, std::time::Instant>>,
+    /// Why `history` is `None`, carried into every history command's error so
+    /// the sidebar can say it instead of reading as an empty list.
     history_error: Option<String>,
     /// Only the latest asynchronous branch probe may update a session.
     branch_probes: Arc<Mutex<BranchProbes>>,
@@ -427,6 +488,9 @@ impl AgentHost {
             sessions: Mutex::new(HashMap::new()),
             detected: Mutex::new(Vec::new()),
             history,
+            activity: Mutex::new(HashMap::new()),
+            aliases: Mutex::new(HashMap::new()),
+            last_project_sync: Mutex::new(HashMap::new()),
             history_error,
             branch_probes: Arc::default(),
             request_elicitations: RequestElicitations {
@@ -1165,11 +1229,18 @@ impl AgentHost {
         // Before the turn opens, so the `status: running` that `begin_turn`
         // emits already carries this turn's identity.
         self.projector.set_turn_seq(&session_id, turn_seq);
+        // Before the agent can write a byte of this turn to its transcript, so
+        // the session watcher never mistakes that write for another process.
+        self.begin_atlas_turn(&key.session_id);
 
         let this = self.clone();
         let session_key = key.session_id.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = this.manager.send(&session_id, content).await {
+            let sent = this.manager.send(&session_id, content).await;
+            // Every way out of the turn ends it, a superseded one included:
+            // each send counted itself in, so each counts itself out.
+            this.end_atlas_turn(&session_key);
+            if let Err(e) = sent {
                 // A send that was superseded reports back late, and its failure
                 // belongs to a turn that is already over. Announcing it anyway
                 // stamps the error with whatever turn is current — so the
@@ -1195,6 +1266,127 @@ impl AgentHost {
             }
         });
         Ok(())
+    }
+
+    fn begin_atlas_turn(&self, session_id: &str) {
+        let mut activity = lock(&self.activity);
+        let entry = activity.entry(session_id.to_owned()).or_default();
+        entry.in_flight += 1;
+        entry.turns_started += 1;
+    }
+
+    fn end_atlas_turn(&self, session_id: &str) {
+        let mut activity = lock(&self.activity);
+        let entry = activity.entry(session_id.to_owned()).or_default();
+        entry.in_flight = entry.in_flight.saturating_sub(1);
+        entry.last_turn_end = Some(Utc::now());
+    }
+
+    /// What Atlas has been doing in each session it has prompted — the input
+    /// the live-elsewhere rule and the session watcher read to tell Atlas's own
+    /// transcript writes from another process's. An alias, provisional or
+    /// confirmed, carries its owner's activity: its writes are the owner's
+    /// turn.
+    pub(crate) fn atlas_activity(&self) -> HashMap<String, AtlasActivity> {
+        let mut activity = lock(&self.activity).clone();
+        let mut aliases: Vec<(String, String)> = lock(&self.aliases)
+            .iter()
+            .map(|(alias, p)| (alias.clone(), p.owner.clone()))
+            .collect();
+        if let Some(history) = self.history() {
+            aliases.extend(
+                history
+                    .store()
+                    .session_aliases()
+                    .into_iter()
+                    .map(|(alias, owner)| (alias.to_string(), owner.to_string())),
+            );
+        }
+        for (alias, owner) in aliases {
+            if let Some(owned) = activity.get(&owner).copied() {
+                activity.insert(alias, owned);
+            }
+        }
+        activity
+    }
+
+    /// Settle provisional aliases against one watcher batch. `written` is
+    /// every session id whose transcript moved in the batch, with its new
+    /// time. Answers the aliases revoked, which the caller must now treat as
+    /// unknown sessions — due a sync at once, and recomputed for liveness.
+    ///
+    /// Decided per alias by [`review_alias`], from activity and file times
+    /// alone. A confirmed alias is handed to the history store, which
+    /// persists it, and leaves this map; one whose owner has no row any more
+    /// (deleted) is simply dropped.
+    pub(crate) fn review_aliases(&self, written: &HashMap<String, DateTime<Utc>>) -> Vec<String> {
+        let activity = lock(&self.activity).clone();
+        let verdicts: Vec<(String, String, AliasVerdict)> = lock(&self.aliases)
+            .iter()
+            .filter_map(|(alias, p)| {
+                let verdict = review_alias(
+                    written.get(alias).copied(),
+                    written.contains_key(&p.owner),
+                    p.claimed_turn,
+                    activity.get(&p.owner),
+                );
+                (verdict != AliasVerdict::Keep).then(|| (alias.clone(), p.owner.clone(), verdict))
+            })
+            .collect();
+        let mut revoked = Vec::new();
+        for (alias, owner, verdict) in verdicts {
+            lock(&self.aliases).remove(&alias);
+            if verdict == AliasVerdict::Revoke {
+                tracing::info!(%alias, %owner, "transcript alias revoked: written outside Atlas's turn");
+                revoked.push(alias);
+                continue;
+            }
+            let recorded = self.history().is_some_and(|history| {
+                history.store().record_session_alias(
+                    &acp::SessionId::new(alias.as_str()),
+                    &acp::SessionId::new(owner.as_str()),
+                )
+            });
+            tracing::info!(%alias, %owner, recorded, "transcript alias confirmed");
+        }
+        revoked
+    }
+
+    /// Attribute a session id that just appeared on disk to one of Atlas's own
+    /// turns, if one explains it. Answers whether `new_id` is (now) Atlas's.
+    ///
+    /// The session watcher asks this about every id it sees for the first
+    /// time. The rule ([`alias_owner`]): an Atlas turn is in flight in a
+    /// session whose own transcript is in the same directory (`on_disk`). The
+    /// directory is per project and per storage format, so that is "same cwd,
+    /// same kind of agent" read from what is on disk rather than from an agent
+    /// id (ADR-0002). It is a guess, because the adapter that does this says
+    /// nothing on the wire: a terminal session started in the same project
+    /// during one of Atlas's turns is claimed too. So the claim is
+    /// provisional, and [`AgentHost::review_aliases`] revokes it the first
+    /// time that file is written outside its owner's turn.
+    pub(crate) fn claim_for_atlas_turn(
+        &self,
+        new_id: &str,
+        on_disk: &std::collections::HashSet<String>,
+    ) -> bool {
+        if lock(&self.aliases).contains_key(new_id) {
+            return true;
+        }
+        let activity = lock(&self.activity).clone();
+        let Some(owner) = alias_owner(new_id, on_disk, &activity) else {
+            return false;
+        };
+        let claimed_turn = activity.get(&owner).map_or(0, |a| a.turns_started);
+        tracing::info!(alias = new_id, %owner, "on-disk session provisionally attributed to an Atlas turn");
+        lock(&self.aliases).insert(
+            new_id.to_owned(),
+            ProvisionalAlias {
+                owner,
+                claimed_turn,
+            },
+        );
+        true
     }
 
     /// Read the git branch `cwd` is on and record it on the session's history
@@ -1651,11 +1843,39 @@ impl AgentHost {
     /// live feed keeps its binding on purpose. That is Zed's behaviour and it
     /// is the honest one: history records conversations, and this one has not
     /// finished. Archive is the action for "out of my way but keep it".
-    pub async fn delete_thread(&self, thread_id: ThreadId) -> Result<()> {
+    ///
+    /// Deleting a session that is **live elsewhere** (Rule 7 — another
+    /// process, typically `claude` in a terminal, is writing it now) is
+    /// refused outright. The agent-side delete would remove the transcript out
+    /// from under that process. `modified` is the session watcher's file times,
+    /// the same input the sidebar's dot is computed from, so the refusal and
+    /// the dot agree.
+    ///
+    /// The delete is durable against re-import: the store records the session
+    /// as deleted, and no sync, backfill or manual import brings it back even
+    /// when the agent could not forget it.
+    pub async fn delete_thread(
+        &self,
+        thread_id: ThreadId,
+        modified: &HashMap<String, DateTime<Utc>>,
+    ) -> Result<()> {
         let history = self.history_or_err()?;
         let Some(thread) = history.store().thread(thread_id) else {
             return Ok(());
         };
+        if let Some(session_id) = thread.session_id.as_ref() {
+            let id = session_id.0.as_ref();
+            if live_elsewhere(
+                modified.get(id).copied(),
+                self.atlas_activity().get(id),
+                Utc::now(),
+            ) {
+                return Err(HostError::new(
+                    "This session is still active in another process; close it there first.",
+                    ErrorClass::Fatal,
+                ));
+            }
+        }
         history.store().delete(thread_id);
 
         let Some(session_id) = thread.session_id else {
@@ -1690,8 +1910,13 @@ impl AgentHost {
     /// this side has it. The UI comparing its own raw path string silently
     /// matched nothing whenever the two spellings differed (symlink,
     /// `/private` prefix, trailing slash).
-    pub fn thread_projects(&self, cwd: Option<&str>) -> Result<Vec<ThreadProjectWire>> {
+    pub fn thread_projects(
+        &self,
+        cwd: Option<&str>,
+        modified: &HashMap<String, DateTime<Utc>>,
+    ) -> Result<Vec<ThreadProjectWire>> {
         let projects = self.history_or_err()?.store().projects();
+        let live = self.live_context(modified);
 
         // Basenames collide: two checkouts both called `web` are one label. Any
         // name shared by more than one project gets qualified with its parent
@@ -1735,14 +1960,23 @@ impl AgentHost {
                     // Everything that survives the filter is the open project,
                     // except when nothing was scoped to in the first place.
                     is_current: here.is_some(),
-                    threads: project.threads.iter().map(thread_row).collect(),
+                    threads: project
+                        .threads
+                        .iter()
+                        .map(|t| thread_row(t, &live))
+                        .collect(),
                 }
             })
             .collect())
     }
 
     /// Every thread, archived or not, newest-started first — the history view.
-    pub fn thread_history(&self, archived_only: bool) -> Result<Vec<ThreadRow>> {
+    pub fn thread_history(
+        &self,
+        archived_only: bool,
+        modified: &HashMap<String, DateTime<Utc>>,
+    ) -> Result<Vec<ThreadRow>> {
+        let live = self.live_context(modified);
         let filter = if archived_only {
             ThreadFilter::ArchivedOnly
         } else {
@@ -1753,8 +1987,20 @@ impl AgentHost {
             .store()
             .history(filter)
             .iter()
-            .map(thread_row)
+            .map(|t| thread_row(t, &live))
             .collect())
+    }
+
+    /// Snapshot what `thread_row` needs to decide `live_elsewhere`: the
+    /// watcher's file times, what Atlas's own turns have been doing, and the
+    /// clock. The watcher is passed in rather than held, since it already
+    /// holds the host.
+    fn live_context<'a>(&self, modified: &'a HashMap<String, DateTime<Utc>>) -> LiveContext<'a> {
+        LiveContext {
+            modified,
+            activity: self.atlas_activity(),
+            now: Utc::now(),
+        }
     }
 
     /// Take a thread out of the active list, keeping it in history.
@@ -1778,11 +2024,16 @@ impl AgentHost {
         let mut out = Vec::new();
         for plugin_id in self.store.external_agents() {
             let plugin_id = plugin_id.to_string();
-            let status = match self.list_sessions_of(&plugin_id).await {
+            let status = match self.list_sessions_of(&plugin_id, None).await {
                 Ok(None) => ImportStatus::Unsupported,
                 Ok(Some(sessions)) => ImportStatus::Ready {
-                    importable: importable_threads(sessions, &plugin_id.as_str().into(), &known)
-                        .len(),
+                    importable: importable_threads(
+                        sessions,
+                        &plugin_id.as_str().into(),
+                        &known,
+                        None,
+                    )
+                    .len(),
                 },
                 Err(e) => ImportStatus::Error { message: e.message },
             };
@@ -1878,7 +2129,7 @@ impl AgentHost {
     /// cannot drift apart on what "importable" means.
     async fn import_from(&self, plugin_id: &str) -> Result<usize> {
         let history = self.history_or_err()?;
-        let Some(sessions) = self.list_sessions_of(plugin_id).await? else {
+        let Some(sessions) = self.list_sessions_of(plugin_id, None).await? else {
             return Ok(0);
         };
         // Read what is known *now*, not when the modal was opened: two imports
@@ -1887,19 +2138,30 @@ impl AgentHost {
         let rows = importable_threads(
             sessions,
             &plugin_id.into(),
-            &history.store().known_session_ids(),
+            &self.known_or_atlas_owned(history),
+            None,
         );
-        let imported = rows.len();
-        history.store().save_all(rows);
-        Ok(imported)
+        // The filter above is a snapshot; the insert re-checks under the
+        // store's write lock, so a sync or backfill landing in between cannot
+        // leave two rows for one session.
+        Ok(history.store().insert_new_sessions(rows))
     }
 
     /// Every session an agent will list, or `None` when it has no listable
     /// history — which is to say, when it did not advertise
     /// `sessionCapabilities.list`.
+    ///
+    /// `cwd` narrows the listing to one directory, honoured by the agent. The
+    /// import flows pass `None` — Zed scopes its import to a workspace because
+    /// its connections are per-project; Atlas has one connection per agent and
+    /// an app-level store whose rows carry their own paths, so "everything this
+    /// agent knows" is both simpler and more useful there. The project sync
+    /// passes the open project, because it runs often and wants the cheap
+    /// answer.
     async fn list_sessions_of(
         &self,
         plugin_id: &str,
+        cwd: Option<PathBuf>,
     ) -> Result<Option<Vec<atlas_acp_thread::AgentSessionInfo>>> {
         let agent = self.agent_for(plugin_id)?;
         let connection = self
@@ -1910,14 +2172,136 @@ impl AgentHost {
         let Some(list) = connection.session_list() else {
             return Ok(None);
         };
-        // No cwd filter. Zed scopes its import to a workspace because its
-        // connections are per-project; Atlas has one connection per agent and
-        // an app-level store whose rows carry their own paths, so "everything
-        // this agent knows" is both simpler and more useful.
-        collect_all_sessions(list.as_ref(), None)
+        collect_all_sessions(list.as_ref(), cwd)
             .await
             .map(Some)
             .map_err(HostError::from)
+    }
+
+    /// Bring the recent sessions an agent holds for one project into the
+    /// sidebar, so one started outside Atlas (a Claude Code run in a terminal)
+    /// is there when the sidebar opens. Answers how many rows were added.
+    ///
+    /// ADR-0001 amendment (2026-10-05, ATL-421/ATL-422): the history store is
+    /// still the only thing the sidebar reads and Atlas still never scrapes an
+    /// agent's storage, but "imported once, at boot" no longer holds. The agent
+    /// is asked over ACP `session/list`, filtered to `cwd`, whenever the
+    /// sidebar is shown for that project. Rows whose `updated_at` is within the
+    /// last week land unarchived; older ones land in History, as an import does.
+    ///
+    /// Only agents that already have a row in the store are asked. The sync is
+    /// automatic, and an automatic action must not be the reason an installed
+    /// agent the user has never used gets spawned (ADR-0002); a row is the
+    /// evidence the user has used it. Which agents those are is read from the
+    /// rows' `agent_id`, never from a list of names.
+    ///
+    /// One agent being slow, signed out or broken costs only its own rows: each
+    /// is bounded by [`SYNC_AGENT_TIMEOUT`] and a failure is logged and skipped.
+    /// A project synced within [`SYNC_DEBOUNCE`] answers `0` without asking,
+    /// unless `force` (the session watcher saw an unknown transcript appear):
+    /// that skips the check but still records the time.
+    ///
+    /// Sessions the store already knows are not skipped outright. The
+    /// first-run backfill lands every session archived, so a session from
+    /// before that, picked up again in a terminal, would otherwise never reach
+    /// the sidebar. Their agent-reported `updated_at` goes through
+    /// [`ThreadMetadataStore::touch_sessions`] with the same cutoff: new
+    /// activity inside the window unarchives the row, and nothing else touches
+    /// an archived one.
+    ///
+    /// `cwd` must already be canonical (`threads_sync_project` does that): it
+    /// is the debounce key and the `session/list` filter, and two spellings of
+    /// one directory would be two projects to both.
+    ///
+    /// [`ThreadMetadataStore::touch_sessions`]: atlas_thread_metadata::ThreadMetadataStore::touch_sessions
+    pub async fn sync_project(&self, cwd: &str, force: bool) -> Result<usize> {
+        let history = self.history_or_err()?;
+        {
+            let mut last = lock(&self.last_project_sync);
+            let now = std::time::Instant::now();
+            if !force
+                && last
+                    .get(cwd)
+                    .is_some_and(|at| now.duration_since(*at) < SYNC_DEBOUNCE)
+            {
+                return Ok(0);
+            }
+            last.insert(cwd.to_owned(), now);
+        }
+
+        let used: std::collections::HashSet<String> = history
+            .store()
+            .threads()
+            .into_iter()
+            .map(|thread| thread.agent_id.as_str().to_owned())
+            .collect();
+        let cutoff = sync_unarchive_cutoff(Utc::now());
+
+        let mut added = 0;
+        for plugin_id in self.store.external_agents() {
+            let plugin_id = plugin_id.to_string();
+            if !used.contains(&plugin_id) {
+                continue;
+            }
+            if self.connect_has_failed(&plugin_id) {
+                tracing::warn!(%plugin_id, "project sync skipped: the agent's connect failed");
+                continue;
+            }
+            let listed = tokio::time::timeout(
+                SYNC_AGENT_TIMEOUT,
+                self.list_sessions_of(&plugin_id, Some(PathBuf::from(cwd))),
+            )
+            .await;
+            let sessions = match listed {
+                Ok(Ok(Some(sessions))) => sessions,
+                Ok(Ok(None)) => continue,
+                Ok(Err(e)) => {
+                    tracing::warn!(error = %e.message, %plugin_id, "project sync found nothing");
+                    continue;
+                }
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        %plugin_id,
+                        timeout_secs = SYNC_AGENT_TIMEOUT.as_secs(),
+                        "project sync timed out"
+                    );
+                    continue;
+                }
+            };
+            // Read what is known *now*, after the (slow) listing, not before
+            // the loop: a thread started in Atlas, or a concurrent import,
+            // while this agent was answering must not get a second row.
+            let known = self.known_or_atlas_owned(history);
+            let activity: Vec<_> = sessions
+                .iter()
+                .filter(|s| known.contains(&s.session_id))
+                .filter_map(|s| Some((s.session_id.clone(), s.updated_at?)))
+                .collect();
+            history.store().touch_sessions(&activity, Some(cutoff));
+            let rows =
+                importable_threads(sessions, &plugin_id.as_str().into(), &known, Some(cutoff));
+            added += history.store().insert_new_sessions(rows);
+        }
+        Ok(added)
+    }
+
+    /// What an import must skip: every session the store knows (rows, and
+    /// those the user deleted), plus every on-disk session id attributed to
+    /// one of Atlas's own sessions ([`AgentHost::claim_for_atlas_turn`]). The
+    /// last is what keeps an adapter's internal continuation of a session
+    /// Atlas is running from being listed back in as somebody else's.
+    fn known_or_atlas_owned(
+        &self,
+        history: &ThreadRecorder,
+    ) -> std::collections::HashSet<acp::SessionId> {
+        // Confirmed aliases are already in the store's known set.
+        let mut known = history.store().known_session_ids();
+        known.extend(
+            lock(&self.aliases)
+                .keys()
+                .map(|id| acp::SessionId::new(id.as_str())),
+        );
+        known
     }
 
     fn history_or_err(&self) -> Result<&ThreadRecorder> {
@@ -2118,6 +2502,129 @@ pub struct ThreadRow {
     pub folder_paths: Vec<String>,
     /// Last branch observed at bind or turn start; absent for older or unknown rows.
     pub branch: Option<String>,
+    /// Another process (typically `claude` in a terminal) wrote this session
+    /// within the liveness window and Atlas is not hosting it (Rule 7).
+    pub live_elsewhere: bool,
+}
+
+/// What `thread_row` needs to decide [`ThreadRow::live_elsewhere`].
+struct LiveContext<'a> {
+    modified: &'a HashMap<String, DateTime<Utc>>,
+    activity: HashMap<String, AtlasActivity>,
+    now: DateTime<Utc>,
+}
+
+/// What Atlas's own turns have been doing in one session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct AtlasActivity {
+    /// Turns Atlas has sent that have not come back yet.
+    pub in_flight: u32,
+    /// When the last of Atlas's turns in this session came back.
+    pub last_turn_end: Option<DateTime<Utc>>,
+    /// How many turns Atlas has started here, ever — a turn's identity, so a
+    /// provisional alias can tell "a later turn" from the one it was claimed
+    /// in.
+    pub turns_started: u64,
+}
+
+/// A transcript id guessed to be another file of one of Atlas's sessions,
+/// not yet settled ([`AgentHost::review_aliases`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ProvisionalAlias {
+    /// The session id Atlas holds.
+    pub owner: String,
+    /// The owner's `turns_started` when the alias was claimed: the turn it
+    /// first appeared in.
+    pub claimed_turn: u64,
+}
+
+/// What one watcher batch says about a provisional alias.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AliasVerdict {
+    /// Nothing decisive happened.
+    Keep,
+    /// The file was written when its owner had no Atlas turn to explain it:
+    /// another process (a terminal) is writing it, so it is that process's
+    /// session.
+    Revoke,
+    /// A later turn of the owner wrote the alias and not the owner's own
+    /// transcript: the conversation really moved there.
+    Confirm,
+}
+
+/// Settle a provisional alias against one batch. `alias_written` is the
+/// alias file's new time if it moved in this batch; `owner_written`, whether
+/// the owner's own transcript moved too.
+///
+/// A real continuation is only ever written while Atlas is driving its owner,
+/// so a write that [`explained_by_atlas`] cannot put down to the owner's turn
+/// (none in flight, and not within [`ATLAS_WRITE_SLACK`] of the last one
+/// ending) revokes. Confirmation needs a turn *after* the claiming one —
+/// within the claiming turn both files are written, which proves nothing —
+/// that writes the alias while leaving the owner's file alone.
+pub(crate) fn review_alias(
+    alias_written: Option<DateTime<Utc>>,
+    owner_written: bool,
+    claimed_turn: u64,
+    owner: Option<&AtlasActivity>,
+) -> AliasVerdict {
+    let Some(at) = alias_written else {
+        return AliasVerdict::Keep;
+    };
+    if !explained_by_atlas(at, owner) {
+        return AliasVerdict::Revoke;
+    }
+    let later_turn = owner.is_some_and(|a| a.turns_started > claimed_turn);
+    if later_turn && !owner_written {
+        AliasVerdict::Confirm
+    } else {
+        AliasVerdict::Keep
+    }
+}
+
+/// Whether a write to a session's transcript at `modified` is Atlas's own:
+/// one of its turns is running there, or the write landed no more than
+/// [`ATLAS_WRITE_SLACK`] after its last turn ended.
+pub(crate) fn explained_by_atlas(
+    modified: DateTime<Utc>,
+    activity: Option<&AtlasActivity>,
+) -> bool {
+    activity.is_some_and(|a| {
+        a.in_flight > 0
+            || a.last_turn_end
+                .is_some_and(|ended| modified <= ended + ATLAS_WRITE_SLACK)
+    })
+}
+
+/// Which of Atlas's sessions a transcript id that has just appeared belongs
+/// to, if any: one with an Atlas turn in flight whose own transcript is in the
+/// same directory. Several candidates (two concurrent turns in one project)
+/// cannot be told apart from disk; the lowest id is chosen so the answer is at
+/// least stable, and either way the write is Atlas's.
+pub(crate) fn alias_owner(
+    new_id: &str,
+    on_disk: &std::collections::HashSet<String>,
+    activity: &HashMap<String, AtlasActivity>,
+) -> Option<String> {
+    activity
+        .iter()
+        .filter(|(id, a)| a.in_flight > 0 && id.as_str() != new_id && on_disk.contains(*id))
+        .map(|(id, _)| id.clone())
+        .min()
+}
+
+/// The liveness rule (ADR-0001 amendment, Rule 7): the transcript was written
+/// within the live window, and not by Atlas. Being *bound* in Atlas — the row
+/// was opened — says nothing either way; a terminal can be writing a session
+/// Atlas has open, and that is exactly the fork this guards against.
+pub(crate) fn live_elsewhere(
+    modified: Option<DateTime<Utc>>,
+    activity: Option<&AtlasActivity>,
+    now: DateTime<Utc>,
+) -> bool {
+    modified.is_some_and(|at| {
+        atlas_agent_transcript::discovery::is_live(at, now) && !explained_by_atlas(at, activity)
+    })
 }
 
 /// One project's threads, as the sidebar groups them.
@@ -2132,13 +2639,21 @@ pub struct ThreadProjectWire {
     pub threads: Vec<ThreadRow>,
 }
 
-fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
+fn thread_row(thread: &ThreadMetadata, live: &LiveContext<'_>) -> ThreadRow {
+    let session_id = thread
+        .session_id
+        .as_ref()
+        .map(std::string::ToString::to_string);
+    let live_elsewhere = session_id.as_deref().is_some_and(|id| {
+        live_elsewhere(
+            live.modified.get(id).copied(),
+            live.activity.get(id),
+            live.now,
+        )
+    });
     ThreadRow {
         thread_id: thread.thread_id.to_key_string(),
-        session_id: thread
-            .session_id
-            .as_ref()
-            .map(std::string::ToString::to_string),
+        session_id,
         agent_id: thread.agent_id.to_string(),
         title: display_title(thread),
         updated_at: thread.updated_at.to_rfc3339(),
@@ -2146,6 +2661,7 @@ fn thread_row(thread: &ThreadMetadata) -> ThreadRow {
         archived: thread.archived,
         project_name: project_name(thread.main_worktree_paths()),
         folder_paths: paths_of(thread.folder_paths()),
+        live_elsewhere,
         branch: thread.branch.as_deref().map(str::to_string),
     }
 }
@@ -2742,7 +3258,12 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        assert_eq!(thread_row(&row).branch.as_deref(), Some("feature/history"));
+        let modified = HashMap::new();
+        let live = host.live_context(&modified);
+        assert_eq!(
+            thread_row(&row, &live).branch.as_deref(),
+            Some("feature/history")
+        );
         host.history().unwrap().store().flush().unwrap();
     }
 
@@ -2752,7 +3273,10 @@ mod tests {
         let mut host = Arc::try_unwrap(host).ok().expect("sole host owner");
         host.history = None;
         host.history_error = Some("migration backup could not be written".into());
-        let error = host.thread_history(false).unwrap_err().to_string();
+        let error = host
+            .thread_history(false, &HashMap::new())
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("migration backup could not be written"));
     }
 
@@ -3155,6 +3679,51 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The host half of the live-elsewhere fix: binding a session records no
+    /// Atlas activity (opening a row must not hide a terminal's writes), and a
+    /// sent turn is counted in and out, leaving the time it ended behind.
+    #[tokio::test]
+    async fn only_a_sent_turn_counts_as_atlas_activity() {
+        let native = Arc::new(RebindingAgent {
+            fresh_id: "s-activity",
+        });
+        let (host, dir) = fresh_host_with_external(native).await;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.expect("spawn").agent_id;
+        let init = host
+            .new_session(agent_id, PathBuf::from("/tmp/atlas"), Vec::new())
+            .await
+            .expect("a session opens");
+        let id = init.key.session_id.clone();
+
+        assert!(
+            !host.atlas_activity().contains_key(&id),
+            "bound is not active"
+        );
+        let opened = Utc::now();
+        assert!(live_elsewhere(
+            Some(opened),
+            host.atlas_activity().get(&id),
+            opened
+        ));
+
+        host.send(&init.key, Vec::new()).expect("send");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let ended = loop {
+            let activity = host.atlas_activity().get(&id).copied().unwrap_or_default();
+            if let (0, Some(ended)) = (activity.in_flight, activity.last_turn_end) {
+                break ended;
+            }
+            assert!(std::time::Instant::now() < deadline, "the turn never ended");
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        };
+        let activity = host.atlas_activity();
+        assert!(!live_elsewhere(Some(ended), activity.get(&id), ended));
+        let later = ended + chrono::Duration::seconds(30);
+        assert!(live_elsewhere(Some(later), activity.get(&id), later));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[tokio::test]
     async fn a_resume_that_comes_back_under_a_new_id_rebinds_the_row() {
         let native = Arc::new(RebindingAgent {
@@ -3253,11 +3822,54 @@ mod tests {
         let thread_id = thread.thread_id;
         history.store().save_all(vec![thread]);
 
-        host.delete_thread(thread_id)
+        host.delete_thread(thread_id, &HashMap::new())
             .await
             .expect("delete is local");
 
         assert!(history.store().thread(thread_id).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The review finding: deleting a row whose session a terminal is still
+    /// writing asked the agent to delete the transcript under it. Refused,
+    /// with the row left as it was; once the terminal is quiet, it goes.
+    #[tokio::test]
+    async fn a_session_live_elsewhere_cannot_be_deleted() {
+        let (host, dir) = fresh_host();
+        let history = host.history().expect("a fresh host has history");
+        let thread = atlas_thread_metadata::ThreadMetadata {
+            session_id: Some(acp::SessionId::new("ses-live")),
+            ..atlas_thread_metadata::ThreadMetadata::new(
+                atlas_thread_metadata::ThreadId::new(),
+                "an-uninstalled-agent".into(),
+                atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
+            )
+        };
+        let thread_id = thread.thread_id;
+        history.store().save_all(vec![thread]);
+
+        let written_just_now = HashMap::from([("ses-live".to_owned(), Utc::now())]);
+        let err = host
+            .delete_thread(thread_id, &written_just_now)
+            .await
+            .expect_err("a session another process is writing is not deleted");
+        assert!(err.message.contains("still active in another process"));
+        assert!(history.store().thread(thread_id).is_some(), "row untouched");
+
+        let quiet = HashMap::from([(
+            "ses-live".to_owned(),
+            Utc::now() - chrono::Duration::minutes(10),
+        )]);
+        host.delete_thread(thread_id, &quiet)
+            .await
+            .expect("a quiet session deletes");
+        assert!(history.store().thread(thread_id).is_none());
+        assert!(
+            history
+                .store()
+                .is_session_deleted(&acp::SessionId::new("ses-live")),
+            "and stays deleted against the next sync"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -3394,6 +4006,272 @@ mod tests {
         );
     }
 
+    /// A liveness snapshot in which nothing is live.
+    fn no_live() -> LiveContext<'static> {
+        static EMPTY: std::sync::LazyLock<HashMap<String, DateTime<Utc>>> =
+            std::sync::LazyLock::new(HashMap::new);
+        LiveContext {
+            modified: &EMPTY,
+            activity: HashMap::new(),
+            now: Utc::now(),
+        }
+    }
+
+    fn running() -> AtlasActivity {
+        AtlasActivity {
+            in_flight: 1,
+            last_turn_end: None,
+            ..Default::default()
+        }
+    }
+
+    /// The review finding: the Claude adapter's plan-mode "clear context"
+    /// keeps the ACP session id but writes on under a fresh transcript id. An
+    /// id that appears beside a session Atlas is mid-turn in is Atlas's.
+    #[test]
+    fn a_transcript_appearing_during_an_atlas_turn_beside_its_own_is_atlas() {
+        let on_disk: std::collections::HashSet<String> =
+            ["hosted".to_owned(), "fresh".to_owned()].into();
+        let activity = HashMap::from([("hosted".to_owned(), running())]);
+        assert_eq!(
+            alias_owner("fresh", &on_disk, &activity).as_deref(),
+            Some("hosted")
+        );
+    }
+
+    #[test]
+    fn a_transcript_is_not_attributed_without_a_matching_atlas_turn() {
+        let on_disk: std::collections::HashSet<String> =
+            ["hosted".to_owned(), "fresh".to_owned()].into();
+        // Atlas's session is idle: the new transcript is someone else's.
+        let idle = HashMap::from([(
+            "hosted".to_owned(),
+            AtlasActivity {
+                in_flight: 0,
+                last_turn_end: Some(Utc::now()),
+                ..Default::default()
+            },
+        )]);
+        assert_eq!(alias_owner("fresh", &on_disk, &idle), None);
+        // Mid-turn, but in another project (its transcript is not here).
+        let elsewhere = HashMap::from([("other-project".to_owned(), running())]);
+        assert_eq!(alias_owner("fresh", &on_disk, &elsewhere), None);
+    }
+
+    fn turn(turns_started: u64, in_flight: u32, ended: Option<DateTime<Utc>>) -> AtlasActivity {
+        AtlasActivity {
+            in_flight,
+            last_turn_end: ended,
+            turns_started,
+        }
+    }
+
+    /// A terminal `claude` started during an Atlas turn was claimed as an
+    /// alias and hidden until restart. Its next write, with the owner idle,
+    /// gives it back.
+    #[test]
+    fn a_provisional_alias_written_outside_its_owners_turn_is_revoked() {
+        let now = Utc::now();
+        let idle = turn(1, 0, Some(now - chrono::Duration::minutes(2)));
+        assert_eq!(
+            review_alias(Some(now), false, 1, Some(&idle)),
+            AliasVerdict::Revoke
+        );
+        assert_eq!(
+            review_alias(Some(now), false, 1, None),
+            AliasVerdict::Revoke,
+            "an owner Atlas never prompted explains nothing"
+        );
+        assert_eq!(
+            review_alias(None, false, 1, Some(&idle)),
+            AliasVerdict::Keep
+        );
+    }
+
+    #[test]
+    fn a_write_within_the_slack_after_the_owners_turn_does_not_revoke() {
+        let ended = Utc::now() - chrono::Duration::seconds(30);
+        let just_ended = turn(1, 0, Some(ended));
+        let trailing = ended + chrono::Duration::seconds(2);
+        assert_eq!(
+            review_alias(Some(trailing), true, 1, Some(&just_ended)),
+            AliasVerdict::Keep
+        );
+    }
+
+    #[test]
+    fn a_later_owner_turn_writing_only_the_alias_confirms_it() {
+        let now = Utc::now();
+        // The claiming turn writes both files: proves nothing.
+        assert_eq!(
+            review_alias(Some(now), true, 1, Some(&turn(1, 1, None))),
+            AliasVerdict::Keep
+        );
+        assert_eq!(
+            review_alias(Some(now), false, 1, Some(&turn(1, 1, None))),
+            AliasVerdict::Keep,
+            "still the claiming turn"
+        );
+        // A later turn that also wrote the owner's own file: not yet.
+        assert_eq!(
+            review_alias(Some(now), true, 1, Some(&turn(2, 1, None))),
+            AliasVerdict::Keep
+        );
+        // A later turn writing only the alias.
+        assert_eq!(
+            review_alias(Some(now), false, 1, Some(&turn(2, 1, None))),
+            AliasVerdict::Confirm
+        );
+    }
+
+    /// End to end through the host: claim, revoke on a stray write; claim,
+    /// confirm on a later turn, and the confirmed alias is in the store.
+    #[tokio::test]
+    async fn aliases_are_revoked_or_confirmed_by_what_writes_them() {
+        let (host, dir) = fresh_host();
+        let history = host.history().expect("history");
+        let mut owner_row = atlas_thread_metadata::ThreadMetadata::new(
+            atlas_thread_metadata::ThreadId::new(),
+            "some-agent".into(),
+            atlas_thread_metadata::PathList::new(&[PathBuf::from("/tmp/atlas")]),
+        );
+        owner_row.session_id = Some(acp::SessionId::new("hosted"));
+        history.store().save_all(vec![owner_row]);
+        let on_disk: std::collections::HashSet<String> = [
+            "hosted".to_owned(),
+            "terminal".to_owned(),
+            "fresh".to_owned(),
+        ]
+        .into();
+
+        // A terminal session appearing mid-turn is claimed...
+        host.begin_atlas_turn("hosted");
+        assert!(host.claim_for_atlas_turn("terminal", &on_disk));
+        host.end_atlas_turn("hosted");
+        // ...and revoked by its own write a minute later.
+        let stray = HashMap::from([(
+            "terminal".to_owned(),
+            Utc::now() + chrono::Duration::minutes(1),
+        )]);
+        assert_eq!(host.review_aliases(&stray), ["terminal".to_owned()]);
+        assert!(!host.atlas_activity().contains_key("terminal"));
+        assert!(!host
+            .known_or_atlas_owned(history)
+            .contains(&acp::SessionId::new("terminal")));
+
+        // The real continuation: claimed in turn 2, written alone in turn 3.
+        host.begin_atlas_turn("hosted");
+        assert!(host.claim_for_atlas_turn("fresh", &on_disk));
+        host.end_atlas_turn("hosted");
+        host.begin_atlas_turn("hosted");
+        let only_alias = HashMap::from([("fresh".to_owned(), Utc::now())]);
+        assert!(host.review_aliases(&only_alias).is_empty());
+        assert_eq!(
+            history
+                .store()
+                .session_aliases()
+                .get(&acp::SessionId::new("fresh")),
+            Some(&acp::SessionId::new("hosted")),
+            "confirmed, and persisted"
+        );
+        assert!(
+            host.atlas_activity().contains_key("fresh"),
+            "a confirmed alias still carries its owner's activity"
+        );
+        host.end_atlas_turn("hosted");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn an_alias_carries_its_owners_activity() {
+        let (host, dir) = fresh_host();
+        host.begin_atlas_turn("hosted");
+        let on_disk: std::collections::HashSet<String> =
+            ["hosted".to_owned(), "fresh".to_owned()].into();
+        assert!(host.claim_for_atlas_turn("fresh", &on_disk));
+        let now = Utc::now();
+        assert!(
+            !live_elsewhere(Some(now), host.atlas_activity().get("fresh"), now),
+            "Atlas's own continuation is not live elsewhere"
+        );
+        // And an import skips it.
+        let history = host.history().expect("history");
+        assert!(host
+            .known_or_atlas_owned(history)
+            .contains(&acp::SessionId::new("fresh")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn live_elsewhere_needs_a_recent_write() {
+        let now = Utc::now();
+        let recent = Some(now - chrono::Duration::seconds(5));
+        let old = Some(now - chrono::Duration::seconds(600));
+        assert!(live_elsewhere(recent, None, now));
+        assert!(!live_elsewhere(old, None, now));
+        assert!(!live_elsewhere(None, None, now));
+    }
+
+    /// The review finding: opening a row binds the session, and binding used
+    /// to count as "hosted", so the guard went away the moment the user could
+    /// act on it. Bound with no Atlas turn is still a terminal's session.
+    #[test]
+    fn a_bound_but_idle_session_with_a_fresh_write_is_live_elsewhere() {
+        let now = Utc::now();
+        let written = Some(now - chrono::Duration::seconds(10));
+        // Opened in Atlas, never prompted from it: no activity recorded.
+        assert!(live_elsewhere(
+            written,
+            Some(&AtlasActivity::default()),
+            now
+        ));
+        // Prompted from Atlas long before the terminal's write.
+        let idle = AtlasActivity {
+            in_flight: 0,
+            last_turn_end: Some(now - chrono::Duration::minutes(10)),
+            ..Default::default()
+        };
+        assert!(live_elsewhere(written, Some(&idle), now));
+    }
+
+    #[test]
+    fn a_session_with_an_atlas_turn_in_flight_is_not_live_elsewhere() {
+        let now = Utc::now();
+        let running = AtlasActivity {
+            in_flight: 1,
+            last_turn_end: None,
+            ..Default::default()
+        };
+        assert!(!live_elsewhere(Some(now), Some(&running), now));
+    }
+
+    #[test]
+    fn a_write_just_after_atlas_turn_ended_is_atlas_own() {
+        let now = Utc::now();
+        let ended = now - chrono::Duration::seconds(20);
+        let done = AtlasActivity {
+            in_flight: 0,
+            last_turn_end: Some(ended),
+            ..Default::default()
+        };
+        let trailing = ended + chrono::Duration::seconds(2);
+        assert!(!live_elsewhere(Some(trailing), Some(&done), now));
+        assert!(!live_elsewhere(Some(ended), Some(&done), now));
+    }
+
+    #[test]
+    fn a_write_well_after_atlas_turn_ended_is_live_elsewhere() {
+        let now = Utc::now();
+        let ended = now - chrono::Duration::seconds(60);
+        let done = AtlasActivity {
+            in_flight: 0,
+            last_turn_end: Some(ended),
+            ..Default::default()
+        };
+        let later = ended + chrono::Duration::seconds(30);
+        assert!(live_elsewhere(Some(later), Some(&done), now));
+    }
+
     /// Rows recorded before the fix kept only the marker line. They read as
     /// the default title rather than as scaffolding, and a clean title is left
     /// alone.
@@ -3407,12 +4285,15 @@ mod tests {
 
         row.title = Some("--- SHARED MEMORY ---".into());
         assert_eq!(
-            thread_row(&row).title,
+            thread_row(&row, &no_live()).title,
             atlas_thread_metadata::DEFAULT_THREAD_TITLE
         );
 
         row.title = Some("Origin dropdown cleanup".into());
-        assert_eq!(thread_row(&row).title, "Origin dropdown cleanup");
+        assert_eq!(
+            thread_row(&row, &no_live()).title,
+            "Origin dropdown cleanup"
+        );
     }
     #[tokio::test]
     async fn a_fresh_install_has_no_builtin_agent_or_connection() {

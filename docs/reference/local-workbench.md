@@ -62,6 +62,20 @@ snapshots. Completed V3 data cleanup is not replayed. See [History migrations](h
 for compatibility and rollback. PR lookup, a native agent and gateway model
 refresh remain outside these selective ports.
 
+The approved ports of `a335ec9c` and `bb8eb6ac` add
+[terminal session discovery](session-discovery.md) and [local code search](code-search.md).
+History discovery reads file metadata only; ACP still owns replay and capability
+negotiation. The code service joins the existing session token and preserves
+SSH / Browser Use permissions. New history tables are additive named migrations
+at epoch 5. Code embeddings are downloaded explicitly and remain separate from
+memory embeddings. No native engine, account, organization or gateway is restored.
+
+Compatible low-priority upstream changes include US-English visible copy and
+generic browser-mock recording / scenario hooks. The upstream company's landing
+page address, cloud-organization Northwind demo and native-only plugin setting
+do not match this fork. The architecture document stays at the root, preserving
+the project's documented entry point.
+
 The fork selectively carries these upstream fixes without restoring account,
 organization or native-agent functionality:
 

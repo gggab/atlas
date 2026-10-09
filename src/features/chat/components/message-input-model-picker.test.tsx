@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MessageInput } from "./message-input";
 import { useChatStore } from "../stores/chat-store";
 import { requestModelPicker } from "../lib/model-picker-events";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: async () => () => {}, emit: async () => {} }));
@@ -28,7 +29,12 @@ it("opens only for its tab and switches models through the existing chat action"
   const original = useChatStore.getState().actions.setAcpModel;
   useChatStore.setState((state) => ({ actions: { ...state.actions, setAcpModel: setModel } }));
   try {
-    render(<MessageInput tabId={TAB} onSend={vi.fn()} />);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MessageInput tabId={TAB} onSend={vi.fn()} />
+      </QueryClientProvider>,
+    );
     act(() => requestModelPicker("another-tab"));
     expect(screen.queryByRole("combobox", { name: "Search models" })).toBeNull();
     act(() => requestModelPicker(TAB));

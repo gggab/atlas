@@ -16,6 +16,44 @@ use serde_json::json;
 use support::custom;
 use support::spawning::{manager_offering_mcp, session_requests};
 
+struct LocalServices;
+
+impl SessionMcpServers for LocalServices {
+    fn offer(&self, _request: &SessionMcpRequest) -> SessionMcpOffer {
+        let servers = ["atlas_memory", "atlas_code", "atlas_ssh", "atlas_browser"]
+            .into_iter()
+            .map(|name| {
+                acp::McpServer::Http(acp::McpServerHttp::new(name, "http://127.0.0.1:4321/mcp"))
+            })
+            .collect();
+        SessionMcpOffer::new(servers, |_| {})
+    }
+}
+
+#[tokio::test]
+async fn only_code_search_is_preapproved_on_the_actual_session_wire() {
+    let Some((manager, pid_file)) = manager_offering_mcp(
+        "code-preapproval",
+        http_capable(json!({})),
+        Arc::new(LocalServices),
+    ) else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    manager
+        .new_session(custom("fake-agent"), vec![std::env::temp_dir()])
+        .await
+        .expect("a session opens on the real scripted agent");
+    let requests = session_requests(&pid_file);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].1["_meta"]["claudeCode"]["options"]["allowedTools"],
+        json!(["mcp__atlas_code"]),
+    );
+    assert_eq!(requests[0].1["mcpServers"].as_array().unwrap().len(), 4);
+    manager.shutdown();
+}
+
 /// Offers one HTTP server with a fresh bearer token per request, and records
 /// what it was asked and how each offer settled.
 /// `(token, bound session)` per settled offer — `None` for one that was

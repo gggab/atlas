@@ -290,7 +290,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
         }
 
         if is_turn_finished {
-            // Background reindex nudge: the FS watcher only watches `*.md`/docs.json,
+            // Background reindex nudge: the FS watcher watches markdown files.
             // not session transcripts, so a finished turn needs an explicit nudge to
             // make chat-derived corpus searchable. Fire-and-forget — `enqueue_index`
             // `try_send`s and drops on a full queue, so `emit` never blocks here.
@@ -495,6 +495,10 @@ pub fn install_manager(app: &AppHandle) {
         AgentHost::new(sink, config_dir, store.clone(), registry.clone())
     };
     app.manage(host.clone());
+    app.manage(super::session_watcher::SessionWatcher::new(
+        host.clone(),
+        app.clone(),
+    ));
 
     // Shared memory: every write is announced to the webview (the Shared tab
     // re-pulls on it), session start/end are recorded in the scope's sessions
@@ -527,10 +531,29 @@ pub fn install_manager(app: &AppHandle) {
         let gate_app = app.clone();
         let gate: super::memory_server::SharingGate =
             Arc::new(move |cwd: &str| gate_app.state::<MemorySharingState>().is_enabled(cwd));
+        // The code tool server (ADR-0015): grep and find_files over the
+        // session's directory, for every agent that speaks HTTP MCP. Its
+        // setting is read on every offer and every call, like the two
+        // above; the shared-memory toggle does not gate it.
+        let code_app = app.clone();
+        let code_tools: super::code_server::CodeToolsGate = Arc::new(move || {
+            code_app
+                .try_state::<crate::state::AtlasConfigHandle>()
+                .is_some_and(|config| config.lock().effective().agent_code_tools)
+        });
+        // The code index (Phase 2) serves the symbol tools and names grep
+        // hits by their enclosing symbol; it is managed in `setup` before
+        // this runs.
+        let mut code_server_tools = super::code_server::CodeTools::new(code_tools.clone());
+        if let Some(registry) = app.try_state::<Arc<super::code_index::CodeIndexRegistry>>() {
+            code_server_tools = code_server_tools.with_index(registry.inner().clone());
+        }
+        let code_router = super::code_server::router(code_server_tools);
         host.set_session_mcp(Arc::new(
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
                 .with_ssh(ssh)
-                .with_browser(browser),
+                .with_browser(browser)
+                .with_code(super::code_server::CodeOffer::new(code_tools)),
         ));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
@@ -576,6 +599,7 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
+            vec![code_router],
         );
     }
 
@@ -670,8 +694,14 @@ pub fn install_manager(app: &AppHandle) {
         });
     }
 
-    // The sidebar refreshes from store changes, not from watching anyone's
-    // files (ADR-0001). One task forwards them to the webview.
+    // The sidebar refreshes from store changes; one task forwards them to the
+    // webview. Since the ADR-0001 amendment ("discovery is not replay") one of
+    // the store's writers watches files: the session watcher
+    // (`session_watcher.rs`) lists the open project's Claude transcript
+    // directory and reads file times — never contents — bumping or adding rows
+    // through the store, so its changes arrive here like any other. Liveness
+    // ("running in a terminal") is not stored; the watcher emits the same event
+    // itself when the live set changes.
     if let Some(history) = host.history() {
         let app = app.clone();
         let mut changes = history.store().subscribe();
@@ -1116,8 +1146,12 @@ pub async fn threads_resume(
 pub async fn threads_delete(
     thread_id: String,
     host: State<'_, Arc<AgentHost>>,
+    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<(), CmdError> {
-    host.delete_thread(parse_thread_id(&thread_id)?)
+    // The watcher's file times decide "live elsewhere", which refuses the
+    // delete — the same input the sidebar's dot reads.
+    let modified = watcher.last_modified();
+    host.delete_thread(parse_thread_id(&thread_id)?, &modified)
         .await
         .map_err(CmdError::from)
 }
@@ -1127,8 +1161,10 @@ pub async fn threads_delete(
 pub fn threads_projects(
     cwd: Option<String>,
     host: State<'_, Arc<AgentHost>>,
+    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadProjectWire>, CmdError> {
-    host.thread_projects(cwd.as_deref()).map_err(CmdError::from)
+    host.thread_projects(cwd.as_deref(), &watcher.last_modified())
+        .map_err(CmdError::from)
 }
 
 /// Every thread, archived or not, newest-started first — the history view.
@@ -1136,8 +1172,10 @@ pub fn threads_projects(
 pub fn threads_history(
     archived_only: bool,
     host: State<'_, Arc<AgentHost>>,
+    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadRow>, CmdError> {
-    host.thread_history(archived_only).map_err(CmdError::from)
+    host.thread_history(archived_only, &watcher.last_modified())
+        .map_err(CmdError::from)
 }
 
 /// Take a thread out of the active list, keeping it in history.
@@ -1167,6 +1205,50 @@ pub async fn threads_import(
     host.import_threads(plugin_ids)
         .await
         .map_err(CmdError::from)
+}
+
+/// Sync one project's recent agent sessions into the sidebar (ADR-0001
+/// amendment, ATL-422). Debounced in the host; answers how many rows landed.
+#[tauri::command]
+pub async fn threads_sync_project(
+    cwd: String,
+    host: State<'_, Arc<AgentHost>>,
+    watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
+) -> Result<usize, CmdError> {
+    // One spelling of the project for everything below: the watcher's slug
+    // directory (Claude Code names it after its physical `getcwd`), the
+    // `session/list` cwd filter, and the sync debounce key. The UI's path is
+    // not canonical — a symlink, macOS's `/private` prefix, a trailing slash —
+    // and each of those uses would silently miss on a different spelling.
+    // `canonicalize` touches the disk, so it runs off the async workers.
+    let cwd = tauri::async_runtime::spawn_blocking(move || canonical_project_dir(&cwd))
+        .await
+        .map_err(|e| CmdError::new(e.to_string(), ErrorClass::Fatal))?;
+    // Arm first: the watcher keeps the sidebar current between these calls.
+    if !cwd.is_empty() {
+        watcher.arm(&cwd);
+    }
+    host.sync_project(&cwd, false).await.map_err(CmdError::from)
+}
+
+/// The physical path of a project directory as the UI named it: resolved
+/// through symlinks when it exists, else the raw path with surrounding
+/// whitespace and any trailing slash removed (the root stays `/`). Empty in,
+/// empty out.
+fn canonical_project_dir(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if let Ok(canonical) = std::fs::canonicalize(trimmed) {
+        return canonical.to_string_lossy().into_owned();
+    }
+    let without_slash = trimmed.trim_end_matches('/');
+    if without_slash.is_empty() {
+        "/".to_owned()
+    } else {
+        without_slash.to_owned()
+    }
 }
 
 fn parse_thread_id(raw: &str) -> Result<atlas_thread_metadata::ThreadId, CmdError> {
@@ -1942,5 +2024,43 @@ impl PendingUpdates {
             }
             super::catalog::emit_catalog_changed(&app, "update");
         });
+    }
+}
+
+#[cfg(test)]
+mod project_dir_tests {
+    use super::canonical_project_dir;
+
+    /// The review finding: the UI's raw cwd keyed the watcher's slug directory,
+    /// the `session/list` filter and the debounce, so a symlinked checkout (or
+    /// macOS's `/tmp` → `/private/tmp`) watched a folder Claude Code never
+    /// writes. Claude names the folder after its physical `getcwd`.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_project_resolves_to_its_physical_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let physical = std::fs::canonicalize(&real).unwrap();
+        let physical = physical.to_string_lossy();
+
+        assert_eq!(canonical_project_dir(&link.to_string_lossy()), physical);
+        assert_eq!(
+            canonical_project_dir(&format!("{}/", link.to_string_lossy())),
+            physical,
+            "a trailing slash is the same project"
+        );
+    }
+
+    #[test]
+    fn a_missing_directory_falls_back_to_the_trimmed_raw_path() {
+        assert_eq!(
+            canonical_project_dir(" /no/such/atlas-project/ "),
+            "/no/such/atlas-project"
+        );
+        assert_eq!(canonical_project_dir(""), "");
+        assert_eq!(canonical_project_dir("   "), "");
     }
 }

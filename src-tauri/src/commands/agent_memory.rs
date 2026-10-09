@@ -276,11 +276,9 @@ pub async fn collect_corpus(project_path: &str) -> Vec<MemoryDoc> {
         });
     }
 
-    // Fold in the codebase index (current source: per-file structure + optional
-    // LLM summaries) so the chat is grounded in how the code works *now*, not just
-    // stale agent memory. Cheap disk read — the expensive scan/summarize happens
-    // in the separate `codebase_index_build` command.
-    docs.extend(read_codebase_docs(&project_path));
+    // Code is not folded in: agents search it through the `atlas_code` tools
+    // (`semantic_search`, `find_symbol`, grep), and memory keeps what code
+    // can't say (code-index plan Phase 4).
     docs.extend(read_shared_memory_docs(&project_path));
     // Fold the knowledge base in (source "note") so KB notes are retrievable by
     // every agent through the same embedding + the `memory_search` tool — they
@@ -502,35 +500,6 @@ mod shared_promo_tests {
     fn empty_text_is_none() {
         assert!(shared_doc(1, "a", "fact", "   ", 0).is_none());
     }
-}
-
-/// Map the persisted codebase index (`.atlas/codebase-index/docs.json`) into
-/// embeddable `MemoryDoc`s for the unified corpus.
-fn read_codebase_docs(project_path: &str) -> Vec<MemoryDoc> {
-    atlas_codeindex::load_index(project_path)
-        .docs
-        .into_iter()
-        .map(|d| {
-            let summary = if d.summary.trim().is_empty() {
-                format!("{} · {} symbols", d.language, d.symbols.len())
-            } else {
-                d.summary.clone()
-            };
-            let aliases = atlas_codeindex::aliases(&d.rel, &d.symbols);
-            MemoryDoc {
-                id: format!("codebase:{}", d.rel),
-                title: d.rel,
-                summary,
-                kind: "file".into(),
-                source: "codebase".into(),
-                file_path: Some(d.abs_path),
-                timestamp_ms: d.mtime_ms,
-                text: d.text,
-                aliases,
-                links: vec![],
-            }
-        })
-        .collect()
 }
 
 /// File mtime as unix ms, or 0 if unavailable.
@@ -863,6 +832,21 @@ mod tests {
         format!("{envelope}\n\n{user_text}")
     }
     use super::*;
+
+    /// Code is searched through `atlas_code`, not the memory corpus: even with
+    /// a built code index in the project, no `codebase` document is gathered.
+    #[tokio::test]
+    async fn the_corpus_has_no_codebase_docs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "pub fn indexed() {}\n").unwrap();
+        atlas_codeindex::CodeIndex::open(dir.path())
+            .unwrap()
+            .full_build(&atlas_search::CancelToken::new(), &|_| {})
+            .unwrap();
+        let docs = collect_corpus(dir.path().to_str().unwrap()).await;
+        assert!(docs.iter().all(|d| d.source != "codebase"));
+    }
 
     fn scratch() -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("atlas-memory-read-{}", uuid::Uuid::new_v4()));

@@ -18,11 +18,13 @@ import { useLocalProjects } from "@/features/projects/lib/project-scope";
 
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
+import { useFrozenOrder } from "../hooks/use-frozen-order";
 import { bumpLoadToken, isLoadStale } from "../lib/load-tokens";
 import {
   archiveThread,
   deleteThread,
   onThreadsChanged,
+  syncProjectThreads,
   threadProjects,
   type ThreadRow,
 } from "../lib/history-api";
@@ -32,6 +34,8 @@ import { resumeThreadFast, ResumeError } from "../lib/resume-session";
 import { applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
 import { AGENT_TYPE_BY_SIDEBAR, sidebarAgentOf, type SidebarAgent } from "../lib/sidebar-agents";
 
+/** A row's identity for the frozen order (and its React key). */
+const rowKey = (item: SidebarItem) => item.threadId;
 /** One key for the whole sidebar: history is one store, so there is one query. */
 const THREAD_PROJECTS_KEY = ["thread-projects"] as const;
 
@@ -56,6 +60,7 @@ function itemFromThread(thread: ThreadRow, projectName: string, isCurrent: boole
     elsewhere: !isCurrent,
     // The thread's own directory — where it resumes.
     cwd: thread.folderPaths[0] ?? "",
+    liveElsewhere: thread.liveElsewhere ?? false,
     branch: thread.branch ?? null,
   };
 }
@@ -79,6 +84,9 @@ interface SidebarItem {
   /** The thread's own working directory — where it resumes, which is not
    *  necessarily the project that happens to be open. */
   cwd: string;
+  /** Another process (likely a terminal) is still writing this session. */
+  liveElsewhere: boolean;
+  /** The branch the thread ran on, as it recorded it. */
   branch: string | null;
 }
 
@@ -266,7 +274,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   // coupled the sidebar to four private storage formats and meant an agent
   // nobody had written a reader for had no history at all (ADR-0001).
   //
-  // No polling and no file watching: the store says when it changed.
+  // No polling here: the store's change event says when to re-read.
   const {
     data: projects = [],
     isLoading,
@@ -293,6 +301,22 @@ export const SessionSidebar = memo(function SessionSidebar({
       window.removeEventListener("focus", invalidate);
     };
   }, [queryClient]);
+
+  // Pick up sessions started outside Atlas (a terminal) for the open project:
+  // on mount, when the project changes, and when the window regains focus. The
+  // backend debounces per cwd, so this stays cheap; the threads-changed
+  // listener above refreshes the list when rows land (ADR-0001 amendment).
+  useEffect(() => {
+    if (!cwd) return;
+    const sync = () => {
+      void syncProjectThreads(cwd).catch((error) => {
+        console.warn("Session discovery failed:", error);
+      });
+    };
+    sync();
+    window.addEventListener("focus", sync);
+    return () => window.removeEventListener("focus", sync);
+  }, [cwd]);
 
   // The open project's threads, newest first. `threads_projects` is scoped to
   // `cwd`, so this is normally a single group and needs no ordering of its own
@@ -362,10 +386,19 @@ export const SessionSidebar = memo(function SessionSidebar({
     return map;
   }, [tabSummaries]);
 
+  // Rows keep their order while the pointer is over the list or focus is in
+  // it: a session another process keeps writing moves to the top on every
+  // write, and used to jump under the pointer just as it was clicked. Content
+  // still updates live; leaving applies the real order (`use-frozen-order.ts`).
+  const { ordered, listProps: frozenListProps } = useFrozenOrder(items, rowKey);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return q ? items.filter((item) => item.title.toLowerCase().includes(q)) : items;
-  }, [items, search]);
+    return q ? ordered.filter((it) => it.title.toLowerCase().includes(q)) : ordered;
+  }, [ordered, search]);
+
+  // Where each row's project is named (`placeProjectNames`): on the card for a
+  // row from another project, as headings when no project is open — Rust then
+  // marks nothing current and returns every project.
   const placements = useMemo(
     () => placeProjectNames(filtered, !projects.some((project) => project.isCurrent)),
     [filtered, projects],
@@ -533,7 +566,16 @@ export const SessionSidebar = memo(function SessionSidebar({
       useRecentChatsStore.getState().actions.removeBySession(item.id);
     } catch (err) {
       console.error("Failed to delete session:", err);
-      toast.error(`Couldn't delete session: ${err instanceof Error ? err.message : String(err)}`);
+      // A rejected `invoke` carries the backend's `CmdError` — a plain
+      // `{ message, kind }` object, not an `Error` — and its message is the
+      // reason (e.g. the session is still active in another process).
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === "object" && err !== null && "message" in err
+            ? String((err as { message: unknown }).message)
+            : String(err);
+      toast.error(`Couldn't delete session: ${message}`);
     }
   };
 
@@ -640,7 +682,11 @@ export const SessionSidebar = memo(function SessionSidebar({
       />
 
       {/* List */}
-      <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2 hide-scrollbar">
+      <div
+        data-testid="session-list"
+        className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2 hide-scrollbar"
+        {...frozenListProps}
+      >
         {isLoading && <div className="px-1 py-1 text-xs text-muted-foreground">Loading…</div>}
         {historyFailed && (
           <div role="alert" className="px-1 py-1 text-xs leading-relaxed text-error">
@@ -681,6 +727,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 liveTabId={live?.tabId ?? null}
                 active={isActiveItem(item)}
                 agent={item.agent}
+                liveElsewhere={item.liveElsewhere}
                 onOpen={() => {
                   handleOpenAgent(item);
                   onOpened?.();

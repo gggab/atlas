@@ -1,0 +1,21 @@
+[package]
+name = "atlas-retrieval"
+version = "0.1.0"
+edition = "2021"
+description = "The retrieval core memory and the code index share: content-keyed embedding cache codec, per-model usearch vector files that heal, RRF fusion, the Embedder trait."
+
+[dependencies]
+# Match atlas-memory: NumKong does not build with MSVC on Windows ARM64.
+usearch = { version = "2.25.3", default-features = false }
+half = { workspace = true }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(not(windows))'.dependencies]
+usearch = { version = "2.25.3", features = ["numkong"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

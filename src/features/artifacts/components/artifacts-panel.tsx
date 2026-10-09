@@ -700,7 +700,7 @@ export function ArtifactsPanel() {
                     place, whichever state you are in. */}
                 <HintGroup>
                   <DockButton
-                    label={showSidebar ? "Maximise session" : "Show timeline"}
+                    label={showSidebar ? "Maximize session" : "Show timeline"}
                     active={!showSidebar}
                     onClick={toggleTimelineSidebar}
                   >

@@ -2451,10 +2451,8 @@ fn with_sibling<R>(
 }
 
 fn transcript_source_for(root: &std::path::Path) -> Option<atlas_checkpoint::TranscriptSource> {
-    let projects = dirs::home_dir()?.join(".claude").join("projects");
-    let encoded = atlas_agent_transcript::encode_cwd(&root.to_string_lossy());
     Some(atlas_checkpoint::TranscriptSource::new(
-        projects.join(encoded),
+        atlas_agent_transcript::discovery::claude_sessions_dir(root)?,
     ))
 }
 

@@ -191,6 +191,18 @@ impl MemoryRegistry {
         }
     }
 
+    /// Queue one `IndexCorpus` pass for `cwd`, the pass that embeds the whole
+    /// corpus. If the project's engine is not open yet, opening it queues its
+    /// own cold pass, so this never queues two. Non-blocking, like
+    /// [`enqueue_index`](Self::enqueue_index).
+    pub fn request_reindex(&self, cwd: &str) {
+        if self.open_engine(cwd).is_some() {
+            self.enqueue_index(cwd);
+        } else {
+            let _ = self.engine_for(cwd);
+        }
+    }
+
     /// Get-only lookup: the engine if this project is currently open, `None`
     /// otherwise. Background jobs (index/promotion) use this instead of
     /// [`engine_for`](Self::engine_for) so a stale queued job for a closed
@@ -225,9 +237,6 @@ impl MemoryRegistry {
     /// cwd watch never saw at all. `collect_corpus` reads exactly:
     ///  - `~/.claude/projects/<encoded>/memory/*.md` → watched recursively,
     ///  - `<cwd>/CLAUDE.md` + `<cwd>/AGENTS.md` → cwd watched NON-recursively,
-    ///  - `<cwd>/.atlas/codebase-index/docs.json` → watched when present
-    ///    (created later → picked up next open; the codebase-index build
-    ///    enqueues its own reindex anyway),
     ///  - Codex sqlite under `~/.codex` → not watchable meaningfully (WAL
     ///    churn); its content rides the debounced reindexes above.
     fn start_watcher(&self, cwd: &str) {
@@ -281,15 +290,6 @@ impl MemoryRegistry {
                     }
                 }
 
-                // The persisted codebase index, when it exists.
-                let codebase_index = atlas_profile::dir_in(Path::new(cwd)).join("codebase-index");
-                if codebase_index.is_dir()
-                    && w.watch(&codebase_index, notify::RecursiveMode::Recursive)
-                        .is_ok()
-                {
-                    watched_any = true;
-                }
-
                 if watched_any {
                     self.watchers.insert(cwd.to_string(), w);
                 }
@@ -301,8 +301,8 @@ impl MemoryRegistry {
     }
 }
 
-/// True for paths the corpus is built from: any `*.md`, `CLAUDE.md`, `AGENTS.md`,
-/// or the codebase index's `codebase-index/docs.json`. Dependency/build trees
+/// True for paths the corpus is built from: any `*.md`, `CLAUDE.md` and
+/// `AGENTS.md`. Dependency/build trees
 /// are rejected outright — the scoped roots in `start_watcher` shouldn't
 /// deliver them, but a top-level rename can surface such paths in an event
 /// batch, and node_modules is full of README/CHANGELOG `.md` files that would
@@ -321,9 +321,6 @@ fn is_corpus_path(path: &Path) -> bool {
         return true;
     }
     if path.extension().and_then(|e| e.to_str()) == Some("md") {
-        return true;
-    }
-    if name == "docs.json" && path.components().any(|c| c.as_os_str() == "codebase-index") {
         return true;
     }
     false
@@ -644,9 +641,6 @@ mod tests {
         assert!(is_corpus_path(Path::new("/p/NOTES.md")));
         assert!(is_corpus_path(Path::new("/p/CLAUDE.md")));
         assert!(is_corpus_path(Path::new("/p/sub/AGENTS.md")));
-        assert!(is_corpus_path(Path::new(
-            "/p/.atlas/codebase-index/docs.json"
-        )));
         assert!(!is_corpus_path(Path::new("/p/main.rs")));
         assert!(!is_corpus_path(Path::new("/p/other/docs.json")));
         assert!(!is_corpus_path(Path::new("/p/data.json")));
@@ -747,6 +741,33 @@ mod tests {
             job_rx.try_recv().is_err(),
             "re-opening must not re-enqueue any job"
         );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// `request_reindex` asks for exactly one corpus pass. A never-opened
+    /// project gets the cold pass its open queues; an open one gets the
+    /// nudge. Neither ever blocks.
+    #[test]
+    fn request_reindex_queues_exactly_one_index_corpus() {
+        let (job_tx, mut job_rx) = mpsc::channel::<Job>(16);
+        let registry = MemoryRegistry::with_window(job_tx, Duration::from_millis(50));
+        let root = tmp_root("reindex");
+        let cwd = root.to_string_lossy().to_string();
+
+        // Not open yet: opening queues the cold IndexCorpus + one-time Compact.
+        registry.request_reindex(&cwd);
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd: c }) if c == cwd));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { cwd: c }) if c == cwd));
+        assert!(
+            job_rx.try_recv().is_err(),
+            "no second IndexCorpus on first open"
+        );
+
+        // Open: exactly one IndexCorpus, no further Compact.
+        registry.request_reindex(&cwd);
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd: c }) if c == cwd));
+        assert!(job_rx.try_recv().is_err());
 
         std::fs::remove_dir_all(&root).ok();
     }

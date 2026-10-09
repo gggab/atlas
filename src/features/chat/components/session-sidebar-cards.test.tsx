@@ -30,6 +30,7 @@ vi.mock("@/features/keybindings/lib/use-action-shortcut", () => ({
 vi.mock("../lib/open-agent-session", () => ({ openNewAgentChat: vi.fn() }));
 vi.mock("../lib/agents-api", () => ({ agents: {}, getAgentSync: () => undefined }));
 vi.mock("../lib/history-api", () => ({
+  syncProjectThreads: vi.fn(async () => 0),
   threadProjects: vi.fn(),
   archiveThread: vi.fn(async () => undefined),
   deleteThread: vi.fn(async () => undefined),

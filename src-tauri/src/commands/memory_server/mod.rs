@@ -41,6 +41,7 @@ pub use offers::{MemorySessionOffers, OfferDecision};
 pub(crate) use tokens::require_token;
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};
+pub(crate) use tools::TOOLS_LIST_TTL_MS;
 #[allow(unused_imports)]
 pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS};
 

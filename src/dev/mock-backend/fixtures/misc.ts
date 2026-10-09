@@ -60,6 +60,11 @@ const THREADS: ThreadRow[] = [
     archived: false,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
+    // Another process is writing this one: the live dot, and the composer's
+    // "Send anyway" hold when it is opened.
+    liveElsewhere: true,
+    // One of the fake repo's own branches (`fixtures/git.ts`).
+    branch: "feature/auth-v2",
   },
   {
     threadId: "th-02",
@@ -72,6 +77,8 @@ const THREADS: ThreadRow[] = [
     archived: false,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
+    liveElsewhere: false,
+    branch: "main",
   },
   {
     threadId: "th-03",
@@ -84,6 +91,8 @@ const THREADS: ThreadRow[] = [
     archived: false,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path, abs("src/styles")],
+    liveElsewhere: false,
+    branch: "main",
   },
   {
     threadId: "th-04",
@@ -95,6 +104,8 @@ const THREADS: ThreadRow[] = [
     archived: false,
     projectName: OTHER_PROJECTS[0].name,
     folderPaths: [OTHER_PROJECTS[0].path],
+    liveElsewhere: false,
+    branch: "main",
   },
   {
     threadId: "th-05",
@@ -107,6 +118,9 @@ const THREADS: ThreadRow[] = [
     archived: true,
     projectName: MOCK_PROJECT.name,
     folderPaths: [MOCK_PROJECT.path],
+    liveElsewhere: false,
+    // Detached HEAD when it ran, so Atlas never learned a branch.
+    branch: null,
   },
 ];
 
@@ -247,8 +261,11 @@ const models: ModelStatus[] = MODELS.map((model) => ({ ...model }));
 
 export const miscHandlers: MockHandlers = {
   // ── chat history ────────────────────────────────────────────────────────
+  // As in Rust: `archivedOnly` narrows to archived rows, otherwise every row,
+  // archived or not (the composer's live-elsewhere feed relies on that).
   threads_history: ({ archivedOnly }): ThreadRow[] =>
-    threads.filter((thread) => (archivedOnly ? thread.archived : !thread.archived)),
+    archivedOnly ? threads.filter((thread) => thread.archived) : threads,
+  threads_sync_project: () => 0,
   threads_projects: ({ cwd }): ThreadProject[] =>
     threadProjects(cwd === null || cwd === undefined ? null : String(cwd)),
   threads_resume: ({ threadId }): ResumedThread => {
@@ -317,6 +334,16 @@ export const miscHandlers: MockHandlers = {
     return { settings, generation };
   },
   open_atlas_config: nothing,
+  // No `config.toml` on a browser's disk: the settings shown come from the
+  // boot snapshot, and `null` is the "no file read" answer the API allows.
+  get_atlas_config_info: nothing,
+
+  // ── OS notifications and the dock badge ─────────────────────────────────
+  // A browser has neither. `null` is what the wrappers read as "no native
+  // backend" / "not granted", the honest state here.
+  notifier_init: nothing,
+  notifier_request_authorization: nothing,
+  "plugin:window|set_badge_count": nothing,
 
   // ── updater ─────────────────────────────────────────────────────────────
   // An update IS available, because "you are up to date" hides the whole

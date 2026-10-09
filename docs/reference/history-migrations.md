@@ -37,6 +37,11 @@ as already complete on V3+ databases and is not replayed on their existing rows.
 The historical upgrade behavior for pre-V3 databases remains unchanged.
 The store's existing unsent-draft pruning also remains unchanged.
 
+Terminal discovery adds two tables through the same ledger: `deleted_sessions`
+prevents repeated imports after deletion, and `session_aliases` stores confirmed
+continuation IDs. They do not raise the epoch or replay old cleanup. See
+[Session discovery](session-discovery.md) for the inference and live-send limits.
+
 A pre-ledger build supporting linear version 5 can still open this catalog.
 The old fork build supporting only version 3 cannot; use the rollback procedure
 below before running it against the same data profile.

@@ -112,6 +112,13 @@ agentSwitchBehavior = "reset"
 # sends either way. (default: true)
 enterToSend = true
 
+# Let agents search this project's code through Atlas: grep for text
+# and find files by name, in-process, respecting .gitignore. Secret files
+# are hidden unless explicitly named by path. Off: the code tools are withdrawn
+# and every call is refused; agents use their own shell instead.
+# (default: true)
+agentCodeTools = true
+
 # Notify when a command succeeds after running longer than
 # terminalNotifyMinDurationMs. (The master switch for all notifications
 # is notificationsEnabled.) (default: true)
@@ -203,6 +210,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `showHiddenFiles` | boolean | `true` | — |
 | `uiScale` | number | `1.0` | finite, `0.5`–`2.0` inclusive |
 | `embeddingModelId` | string | `"all-MiniLM-L6-v2"` | non-empty |
+| `codeEmbeddingModelId` | string | `"granite-embedding-small-r2"` | non-empty; a code model for semantic code search (memory keeps `embeddingModelId`) |
 | `theme` | string | `"atlas"` | known theme id; an unknown id is logged and falls back to `"atlas"` |
 | `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
 | `themeOverrides` | table | absent | optional `base`, `palette`, and `keys` patch applied after the active theme variant |
@@ -216,6 +224,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `instructionSync` | boolean | `false` | — . See [Mirrored instructions](#mirrored-instructions-instructionsync) |
 | `rememberBeforeSwitch` | boolean | `false` | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |
 | `enterToSend` | boolean | `true` | — |
+| `agentCodeTools` | boolean | `true` | — |
 | `terminalNotifications` | boolean | `true` | — |
 | `terminalNotifyMinDurationMs` | integer | `10000` | 0 ≤ n ≤ 3600000 |
 | `terminalNotifyOnFailure` | boolean | `true` | — |

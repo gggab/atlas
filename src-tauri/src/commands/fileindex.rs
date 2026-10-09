@@ -90,9 +90,14 @@ impl FileIndexState {
     }
 
     /// Drop a window's index (called on window close). Dropping `ProjectIndex`
-    /// also drops its `_debouncer`, stopping the fs watcher.
-    pub fn drop_window(&self, label: &str) {
-        self.per_window.write().remove(label);
+    /// also drops its `_debouncer`, stopping the fs watcher. Returns the
+    /// project root when no other window still has it open, so the caller can
+    /// release that root's code index too.
+    pub fn drop_window(&self, label: &str) -> Option<PathBuf> {
+        let mut per_window = self.per_window.write();
+        let gone = per_window.remove(label)?;
+        (!root_still_open(per_window.values().map(|p| p.root.as_path()), &gone.root))
+            .then_some(gone.root)
     }
 
     /// Snapshot the derived unique-folder list. Lazily built on first
@@ -339,6 +344,17 @@ async fn build_project_index(
                     // typically one parent dir per debounce.
                     let (dirs_touched, full_refresh) = summarise_events(&events);
 
+                    // Content edits matter to the code index even though the
+                    // file list ignores them: forward every surviving batch.
+                    if let Some(code_index) = app_for_watch
+                        .try_state::<Arc<crate::commands::code_index::CodeIndexRegistry>>()
+                    {
+                        code_index.apply_feed(
+                            &root_for_watch,
+                            crate::commands::code_index::feed_from(&events),
+                        );
+                    }
+
                     apply_events(&root_for_watch, &files_for_watch, events);
                     // Files just changed — drop the derived folder
                     // cache so the next mention_search rebuilds it.
@@ -413,7 +429,22 @@ pub fn fileindex_close_project(
     state: State<'_, FileIndexState>,
 ) {
     let key = workspace_id.unwrap_or_else(|| webview.label().to_string());
-    state.per_window.write().remove(&key);
+    if let Some(root) = state.drop_window(&key) {
+        close_code_index(webview.app_handle(), &root);
+    }
+}
+
+/// Whether any window still has `root` open.
+fn root_still_open<'a>(roots: impl IntoIterator<Item = &'a Path>, root: &Path) -> bool {
+    roots.into_iter().any(|r| r == root)
+}
+
+/// Close `root`'s code index. Dropping the registry's project closes its
+/// queue; the worker exits after its current job and releases SQLite.
+pub fn close_code_index(app: &AppHandle, root: &Path) {
+    if let Some(code) = app.try_state::<Arc<crate::commands::code_index::CodeIndexRegistry>>() {
+        code.close(root);
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -487,15 +518,11 @@ pub fn fileindex_search_dirs(
 
     let mut matcher = Matcher::default();
     let pattern = Pattern::parse(trimmed, CaseMatching::Smart, Normalization::Smart);
+    let mut buf = Vec::new();
     let mut scored: Vec<(u32, (String, PathBuf))> = folders
         .into_iter()
         .filter_map(|(rel, abs)| {
-            pattern
-                .score(
-                    nucleo_matcher::Utf32Str::Ascii(rel.as_bytes()),
-                    &mut matcher,
-                )
-                .map(|score| (score, (rel, abs)))
+            score_rel(&pattern, &mut matcher, &mut buf, &rel).map(|score| (score, (rel, abs)))
         })
         .collect();
     scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -549,17 +576,11 @@ pub fn fileindex_search(
 
     let mut matcher = Matcher::default();
     let pattern = Pattern::parse(trimmed, CaseMatching::Smart, Normalization::Smart);
+    let mut buf = Vec::new();
 
     let mut scored: Vec<(u32, &IndexedFile)> = files
         .iter()
-        .filter_map(|f| {
-            pattern
-                .score(
-                    nucleo_matcher::Utf32Str::Ascii(f.rel.as_bytes()),
-                    &mut matcher,
-                )
-                .map(|score| (score, f))
-        })
+        .filter_map(|f| score_rel(&pattern, &mut matcher, &mut buf, &f.rel).map(|score| (score, f)))
         .collect();
     // Highest score first; stable order on ties (insertion = file walk order).
     scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -571,6 +592,19 @@ pub fn fileindex_search(
             rel: f.rel.clone(),
         })
         .collect()
+}
+
+/// Fuzzy score of a project-relative path. `Utf32Str::new` takes the ASCII
+/// fast path when it can and decodes to chars otherwise. Labelling raw UTF-8
+/// as `Utf32Str::Ascii` (the old code) broke the type's ASCII-only invariant
+/// and made every non-ASCII path unmatchable.
+fn score_rel(
+    pattern: &Pattern,
+    matcher: &mut Matcher,
+    buf: &mut Vec<char>,
+    rel: &str,
+) -> Option<u32> {
+    pattern.score(nucleo_matcher::Utf32Str::new(rel, buf), matcher)
 }
 
 // ── internals ────────────────────────────────────────────────────────────
@@ -1016,5 +1050,35 @@ mod tests {
         );
         let (_, full_refresh) = summarise_events(std::slice::from_ref(&renamed));
         assert!(full_refresh, "a rename must still refresh");
+    }
+
+    /// Cmd+P and the folder picker fed the matcher raw UTF-8 bytes labelled
+    /// as ASCII, so every non-ASCII character became two or three junk
+    /// "characters" and `café` or `日本語` paths never matched anything.
+    #[test]
+    fn fuzzy_score_matches_non_ascii_paths() {
+        let mut matcher = Matcher::default();
+        let mut buf = Vec::new();
+        let pattern = |q: &str| Pattern::parse(q, CaseMatching::Smart, Normalization::Smart);
+        let mut score = |q: &str, rel: &str| score_rel(&pattern(q), &mut matcher, &mut buf, rel);
+
+        assert!(score("café", "docs/café.md").is_some());
+        assert!(
+            score("cafe", "docs/café.md").is_some(),
+            "smart normalization folds the accent"
+        );
+        assert!(score("日本", "notes/日本語.md").is_some());
+        // ASCII paths take the same fast path as before.
+        assert!(score("readme", "docs/über/README.md").is_some());
+        assert!(score("xyz", "docs/café.md").is_none());
+    }
+
+    #[test]
+    fn a_root_stays_open_while_another_window_has_it() {
+        let repo = Path::new("/p/repo");
+        let other = Path::new("/p/other");
+        assert!(root_still_open([repo, other], repo));
+        assert!(!root_still_open([other], repo));
+        assert!(!root_still_open(std::iter::empty::<&Path>(), repo));
     }
 }

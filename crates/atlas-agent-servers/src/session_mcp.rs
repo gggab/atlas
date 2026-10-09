@@ -360,6 +360,27 @@ pub fn offer_for(
     provider.map_or_else(SessionMcpOffer::none, |p| p.offer(request))
 }
 
+/// Preapprove only the read-only Atlas code service. Other services keep the
+/// adapter's existing permission rules, including SSH and Browser Use.
+pub fn preapproval_meta(servers: &[acp::McpServer], ask_first: &AskFirst) -> Option<acp::Meta> {
+    let rules: Vec<serde_json::Value> = servers
+        .iter()
+        .filter_map(|server| match server {
+            acp::McpServer::Http(http)
+                if http.name == "atlas_code" && ask_first.tools_on(&http.name).next().is_none() =>
+            {
+                Some(format!("mcp__{}", http.name).into())
+            }
+            _ => None,
+        })
+        .collect();
+    if rules.is_empty() {
+        return None;
+    }
+    let meta = serde_json::json!({ "claudeCode": { "options": { "allowedTools": rules } } });
+    meta.as_object().cloned()
+}
+
 /// The servers an agent with `capabilities` may be sent: stdio always (ACP
 /// requires every agent to take it), HTTP and SSE only when advertised.
 pub fn admissible(
@@ -386,6 +407,31 @@ mod tests {
 
     fn http(name: &str) -> acp::McpServer {
         acp::McpServer::Http(acp::McpServerHttp::new(name, "http://127.0.0.1:1/mcp"))
+    }
+
+    /// Claude Code asked before every Atlas tool call (review of #354): the
+    /// offered HTTP servers ride the session request as pre-approved.
+    #[test]
+    fn offered_http_servers_are_preapproved_for_claude_code() {
+        let stdio = acp::McpServer::Stdio(acp::McpServerStdio::new("local", "/bin/true"));
+        let servers = [
+            http("atlas_memory"),
+            http("atlas_code"),
+            http("atlas_ssh"),
+            http("atlas_browser"),
+            stdio,
+        ];
+        let meta = preapproval_meta(&servers, &AskFirst::none()).unwrap();
+        assert_eq!(
+            serde_json::Value::Object(meta),
+            serde_json::json!({
+                "claudeCode": { "options": { "allowedTools": ["mcp__atlas_code"] } }
+            })
+        );
+        assert_eq!(preapproval_meta(&[], &AskFirst::none()), None);
+        // A server with an outward action keeps Claude Code's own prompt.
+        let ask = AskFirst::none().on("atlas_code", &["share"]);
+        assert_eq!(preapproval_meta(&servers, &ask), None);
     }
 
     /// Every settle call the offer made: one entry each, `None` when the

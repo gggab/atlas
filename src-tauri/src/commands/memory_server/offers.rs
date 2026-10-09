@@ -14,6 +14,7 @@ use atlas_agent_servers::{SessionMcpOffer, SessionMcpRequest, SessionMcpServers}
 
 use super::host::{MemoryServerHost, SharingGate};
 use super::MEMORY_SERVER_NAME;
+use crate::commands::code_server::{CodeOffer, CodeOfferDecision, CODE_PATH, CODE_SERVER_NAME};
 
 /// Whether one session request is handed the memory tool server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +60,7 @@ pub struct MemorySessionOffers {
     gate: SharingGate,
     ssh: Option<Arc<crate::commands::ssh::SshState>>,
     browser: Option<Arc<crate::commands::browser_use::BrowserUseState>>,
+    code: Option<CodeOffer>,
 }
 
 impl MemorySessionOffers {
@@ -68,6 +70,7 @@ impl MemorySessionOffers {
             gate,
             ssh: None,
             browser: None,
+            code: None,
         }
     }
 
@@ -81,6 +84,13 @@ impl MemorySessionOffers {
         browser: Arc<crate::commands::browser_use::BrowserUseState>,
     ) -> Self {
         self.browser = Some(browser);
+        self
+    }
+
+    /// Also offer the code tool server, mounted on this host at `/code`
+    /// (ADR-0015). Its own setting decides, never the sharing gate.
+    pub fn with_code(mut self, code: CodeOffer) -> Self {
+        self.code = Some(code);
         self
     }
 }
@@ -99,6 +109,18 @@ impl SessionMcpServers for MemorySessionOffers {
             "{}",
             decision.log_line(&agent, request.http_mcp),
         );
+        let code_url = self.host.url_at(CODE_PATH);
+        let code = self.code.as_ref().map(|code| {
+            let decision = code.decide(request.http_mcp, code_url.is_some());
+            tracing::info!(
+                target: "atlas::code_server",
+                session = request.session_id.as_ref().map(ToString::to_string).unwrap_or_default(),
+                "{}",
+                decision.log_line(&agent, request.http_mcp),
+            );
+            decision
+        });
+
         let mut entries: Vec<(&str, String)> = Vec::new();
         if let (OfferDecision::Included, Some(url)) = (decision, url) {
             entries.push((MEMORY_SERVER_NAME, url));
@@ -111,6 +133,9 @@ impl SessionMcpServers for MemorySessionOffers {
             if let Some(url) = self.browser.as_ref().and_then(|browser| browser.url()) {
                 entries.push(("atlas_browser", url));
             }
+        }
+        if let (Some(CodeOfferDecision::Included), Some(url)) = (code, code_url) {
+            entries.push((CODE_SERVER_NAME, url));
         }
         if entries.is_empty() {
             return SessionMcpOffer::none();

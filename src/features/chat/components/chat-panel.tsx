@@ -15,6 +15,7 @@ import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
 import { isDeadlineError, withDeadline } from "../lib/with-deadline";
 import { drainEdge } from "../lib/drain-gate";
+import { isSendHeldElsewhere, useSendHeldForTerminal } from "../stores/live-elsewhere-store";
 import { CHAT_STOP_EVENT, cycleChatAgent, isSwitchPending } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
@@ -954,6 +955,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const prevStatusRef = useRef<string | null>(null);
   const prevAcpRef = useRef<string | undefined>(undefined);
   const prevResumingRef = useRef(false);
+  // A session another process is writing (ADR-0001 amendment, Rule 7) closes
+  // the drain gate like a pending resume does; "Send anyway" or the other
+  // process going quiet is its falling edge. The composer feeds the live set.
+  const heldElsewhere = useSendHeldForTerminal(session?.acpSessionId);
+  const prevHeldElsewhereRef = useRef(false);
   const handleSendRef = useRef<
     | ((
         content: string,
@@ -1031,6 +1037,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     const curResuming = !!session?.resumePending || !!session?.unrestoredModeId;
     const prevResuming = prevResumingRef.current;
     prevResumingRef.current = curResuming;
+    const prevHeldElsewhere = prevHeldElsewhereRef.current;
+    prevHeldElsewhereRef.current = heldElsewhere;
     // The gate lives in `drain-gate.ts` with its own test: a queue drains
     // only into a BOUND session. The bind-failure branch above parks the held
     // message back in the queue and drops the status to idle, and reading
@@ -1044,6 +1052,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       curAcp,
       prevResuming,
       curResuming,
+      prevHeldElsewhere,
+      curHeldElsewhere: heldElsewhere,
     });
     if (justBound || justResumed) {
       // The first message held while the session was starting goes out
@@ -1079,6 +1089,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     session?.acpSessionId,
     session?.resumePending,
     session?.unrestoredModeId,
+    heldElsewhere,
     tabId,
   ]);
 
@@ -1260,6 +1271,25 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // refuses; this catches every other sender (chips, handoffs).
     if (bound?.unrestoredModeId) {
       useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+      return;
+    }
+    // Fail closed on a session another process is still writing (ADR-0001
+    // amendment, Rule 7): sending would fork its transcript. This is the choke
+    // point every sender passes — the composer (which already refuses), chips
+    // and `atlas:chat-send` (another agent's `ui_chat` send, agent-switch
+    // handoffs), the queue drain, the permission modal. Nothing is dropped:
+    // the message queues (a held first message stays held, already recorded),
+    // and the drain gate releases it on "Send anyway" or once the session
+    // stops being live.
+    if (isSendHeldElsewhere(bound?.acpSessionId)) {
+      const cs = useChatStore.getState();
+      if (opts?.recorded) {
+        cs.actions.setPendingSend(tabId, { content: actualContent, mentions, attachments });
+        // Not "Starting…": nothing is starting until the user says so.
+        updateSessionStatus(tabId, "idle");
+      } else {
+        cs.actions.enqueueMessage(tabId, actualContent);
+      }
       return;
     }
     // `resumePending` is the resume-path equivalent of "not bound yet": the

@@ -14,6 +14,7 @@ wiring point — every fixture file's handlers are spread into it.
 ```
 localhost:1420/                     # the rich default scenario
 localhost:1420/?scenario=git-conflict
+localhost:1420/?scenario=git-conflict&record=1
 ```
 
 `install.ts` also exports `installMockBackend(scenario?)` and
@@ -28,6 +29,13 @@ The badge bottom-right counts **unmocked** commands. Click it to list them, or
 run `__atlasMock.unmocked()` in the console. An unmocked command resolves
 `null`, so an empty or broken panel is usually a missing fake here, not a UI
 bug. `__atlasMock.actions.<name>()` fires a scenario's console triggers.
+
+`record=1` hides the mock badge for recordings; unmocked commands remain visible
+through console warnings and `__atlasMock.unmocked()`. Scenarios can override
+untyped boot commands with `rawCommands` (typed `commands` take precedence),
+choose fresh-chat transcripts, supply model lists and handle sends with fake-agent
+streaming / permission hooks. These hooks are development-only and do not run a
+vendor CLI or prove real desktop behavior.
 
 ## Native-only surfaces
 

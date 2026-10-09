@@ -540,6 +540,7 @@ impl AcpConnection {
             acp::SessionId,
             SessionDirectories,
             Vec<acp::McpServer>,
+            Option<acp::Meta>,
         ) -> BoxFuture<'static, Result<SessionConfigResponse>>,
     ) -> Result<AcpThreadHandle> {
         if self.sessions.pending_acquire(&session_id) {
@@ -556,6 +557,7 @@ impl AcpConnection {
         // is already open was acquired above and keeps the servers (and the
         // token) it was opened with. Dropped unbound on any failure below.
         let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, Some(&session_id));
+        let meta = session_mcp::preapproval_meta(&mcp_servers, mcp_offer.ask_first());
         let thread = self.new_thread(session_id.clone(), work_dirs, title);
 
         self.sessions.pending_begin(session_id.clone());
@@ -575,6 +577,7 @@ impl AcpConnection {
             session_id.clone(),
             directories,
             mcp_servers,
+            meta,
         )
         .await
         {
@@ -971,10 +974,13 @@ impl AgentConnection for AcpConnection {
             // Offered before the id exists; bound to it once the agent answers,
             // and released (dropped unbound) if it never does.
             let (mcp_offer, mcp_servers) = self.mcp_offer(&directories.cwd, None);
+            // Built here: the offer holds a non-`Sync` settle callback, so the
+            // request future must not borrow it across the await.
+            let request = directories.into_new_session_request(mcp_servers, mcp_offer.ask_first());
             let response = self
                 .request_deadline("session/new", async {
                     self.connection
-                        .send_request(directories.into_new_session_request(mcp_servers))
+                        .send_request(request)
                         .block_task()
                         .await
                         .map_err(map_acp_error)
@@ -1029,9 +1035,10 @@ impl AgentConnection for AcpConnection {
                     session_id,
                     work_dirs,
                     title,
-                    |conn, id, dirs, mcp_servers| {
+                    |conn, id, dirs, mcp_servers, meta| {
                         async move {
                             let mut request = acp::LoadSessionRequest::new(id, dirs.cwd);
+                            request.meta = meta;
                             request.mcp_servers = mcp_servers;
                             if !dirs.additional_directories.is_empty() {
                                 request.additional_directories = dirs.additional_directories;
@@ -1076,9 +1083,10 @@ impl AgentConnection for AcpConnection {
                     session_id,
                     work_dirs,
                     title,
-                    |conn, id, dirs, mcp_servers| {
+                    |conn, id, dirs, mcp_servers, meta| {
                         async move {
                             let mut request = acp::ResumeSessionRequest::new(id, dirs.cwd);
+                            request.meta = meta;
                             request.mcp_servers = mcp_servers;
                             if !dirs.additional_directories.is_empty() {
                                 request.additional_directories = dirs.additional_directories;

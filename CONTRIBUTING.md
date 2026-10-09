@@ -33,15 +33,15 @@ If you're not sure where to begin, `#dev` on [Discord](https://discord.gg/GmnFgg
 
 ## Where to start
 
-[`good first issue`](https://github.com/pacifio/atlas/labels/good%20first%20issue) and [`help wanted`](https://github.com/pacifio/atlas/labels/help%20wanted) are labelled for exactly this.
+[`good first issue`](https://github.com/pacifio/atlas/labels/good%20first%20issue) and [`help wanted`](https://github.com/pacifio/atlas/labels/help%20wanted) are labeled for exactly this.
 
 Areas where help goes furthest right now:
 
-- **Linux and Windows testing** of the production bundle — terminal font, PATH resolution, general GUI behaviour.
+- **Linux and Windows testing** of the production bundle — terminal font, PATH resolution, general GUI behavior.
 - **More ACP agents.** `atlas-acp` already speaks the wire format, so adding Gemini CLI, OpenCode, or Kilo Code is mostly plugin discovery and auth.
 - **LSP support** for diagnostics and go-to-definition in the editor.
 - **MCP server integration** for tool-call extensibility.
-- **Themes** and additional colour palettes.
+- **Themes** and additional color palettes.
 
 ## Reporting a bug
 

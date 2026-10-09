@@ -104,6 +104,7 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 |---|---|
 | Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_memory, catalog, registry, capture |
 | Agent tool servers | memory_server (ADR-0010) |
+| Local code search | code_server (HTTP MCP + project search), code_index (per-project workers), atlas-search, atlas-codeindex, atlas-grepindex, atlas-retrieval |
 | Terminal / browser / fs | terminal, browser, fs |
 | Git | git, git_graph, git_watcher, git_autofetch, gitdiff, git_ops, git_conflicts, git_snapshot, git_stage_ops |
 | GitHub | github |
@@ -112,7 +113,13 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 | Models & usage | models, models_pricing, usage, tool_stats |
 | Session chat | session_chat, session_chat_sessions, modelchat |
 | Auth & environment | byok, shell_profile, mcp |
-| Other | app_state, canvas, cli, clipboard, codebase_index, compose_prompt, feedback, fileindex, log, mention_search, mission_control, pdf_annotations, plans, project_session, recent_files, search, skills, telemetry, updater, window |
+| Other | app_state, canvas, cli, clipboard, compose_prompt, feedback, fileindex, log, mention_search, mission_control, pdf_annotations, plans, project_session, recent_files, skills, telemetry, updater, window |
+
+The code server shares the memory listener and session token middleware; its
+setting is independent of memory sharing. The metadata-only `session_watcher`
+feeds recent session activity, while ACP remains responsible for transcript
+replay. See `docs/reference/code-search.md` and `docs/reference/session-discovery.md`
+for their permission, storage and compatibility boundaries.
 
 Adding a command is a three-edit rule:
 

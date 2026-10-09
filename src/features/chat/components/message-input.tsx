@@ -39,6 +39,7 @@ import {
   type SessionHandoffDetail,
 } from "@/features/chat/lib/switch-agent";
 import { AgentMark } from "@/components/agent-mark";
+import { useCodebaseIndexStatus } from "../lib/use-codebase-index-status";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { modelLabel } from "../lib/model-label";
 import { ModelPicker } from "./model-picker";
@@ -77,6 +78,9 @@ import { FeaturedAgentOffers } from "./featured-agent-offers";
 import { RetryPill } from "./retry-pill";
 import { RemovedAgentBar } from "./removed-agent-bar";
 import { ModeRestoreBar, OPEN_MODE_PICKER_EVENT } from "./mode-restore-bar";
+import { LiveElsewhereBar } from "./live-elsewhere-bar";
+import { useSendHeldForTerminal } from "../stores/live-elsewhere-store";
+import { useLiveElsewhereFeed } from "../hooks/use-live-elsewhere-feed";
 import { QUALITY_LADDER, exceedsBudget, targetDimensions } from "../lib/image-policy";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { ComposerAddMenu } from "./composer-add-menu";
@@ -216,19 +220,8 @@ function acpModeColor(modeId: string | undefined): string {
 
 function CodebaseMemoryPill() {
   const projectPath = useAppStore((s) => s.currentProject?.path ?? null);
-  const [status, setStatus] = useState<CodebaseIndexStatus | null>(null);
+  const { status, error, refresh } = useCodebaseIndexStatus(projectPath);
   const [indexing, setIndexing] = useState(false);
-
-  const refresh = useCallback(() => {
-    if (!projectPath) return;
-    invoke<CodebaseIndexStatus>("codebase_index_status", { projectPath })
-      .then(setStatus)
-      .catch(() => {});
-  }, [projectPath]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
 
   // Track the auto-indexer (fired from App.tsx after a turn) for this project.
   useEffect(() => {
@@ -258,15 +251,17 @@ function CodebaseMemoryPill() {
 
   const label = indexing
     ? "Indexing…"
-    : status?.indexed
-      ? `${status.fileCount} indexed`
-      : "Index memory";
+    : error
+      ? "Index unavailable"
+      : status?.indexed
+        ? `${status.fileCount} indexed`
+        : "Index code";
 
   return (
     <button
       onClick={reindex}
       disabled={indexing}
-      title="Codebase index that grounds the agent's memory recall — click to re-index"
+      title={error ? `Code index unavailable: ${error}` : "Code search index — click to rebuild"}
       className="flex items-center px-2 h-6.5 rounded-full border border-[var(--border)] bg-[var(--card)] text-2xs leading-none font-medium text-[var(--muted-foreground)] hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer tabular-nums disabled:cursor-default"
     >
       {indexing ? (
@@ -281,22 +276,6 @@ function CodebaseMemoryPill() {
     </button>
   );
 }
-
-interface CodebaseIndexStatus {
-  indexed: boolean;
-  // Rust serializes this struct as camelCase (see codebase_index.rs).
-  fileCount: number;
-  summaryCount: number;
-  builtAtMs: number;
-}
-
-/** Codebase-index status pill for the native agent — the index that grounds
- *  `memory_search`. Shows file count (or "Index memory" when unbuilt), flips to
- *  "Indexing…" while the auto-indexer runs, and re-indexes on click. */
-
-/** Reasoning-effort pill for the native agent on Anthropic models (maps to a
- *  thinking budget). Cycles off → low → medium → high → max. Hidden for
- *  providers that don't support a thinking budget. */
 
 /**
  * Composer permission-mode picker for non-Claude ACP agents (Codex). Unlike
@@ -783,15 +762,16 @@ export function MessageInput({
   // which is what the transcript and sidebar already did.
   const switchableAgent: SwitchableAgent = switchableAgentOf(agentType);
 
-  // The org's AI grant, and the composer lock it drives.
-  //
-  // Owned here because this component always renders while a chat is open;
-  // `AiGrantBar` below only reads the result (see `ai-grant-store.ts` for why
-  // the two must not probe independently).
   const disabled = disabledProp;
   // A resume could not restore the user's mode (`ModeRestoreBar`): no send
   // until they pick one. Only the send — typing and the mode picker stay live.
   const modeUnrestored = useChatStore((s) => !!s.sessions[tabId]?.unrestoredModeId);
+  // Another process is still writing this session: sends wait for "Send anyway".
+  // The composer feeds the live set itself, so the guard holds whichever view
+  // (sidebar, History, another project) the session was opened from.
+  const acpSessionId = useChatStore((s) => s.sessions[tabId]?.acpSessionId);
+  useLiveElsewhereFeed(!!acpSessionId);
+  const heldForTerminal = useSendHeldForTerminal(acpSessionId);
   // ACP-reported slash commands for this session. Every agent advertises its
   // real command list via `available_commands_update` — Codex's arrives with
   // the binding, Claude's a few seconds after session/new (the SDK discovers
@@ -1657,7 +1637,7 @@ export function MessageInput({
       // stay in the composer strip and ride the next direct send.
       enqueueMessage(tabId, trimmed);
     } else {
-      if (modeUnrestored) return;
+      if (modeUnrestored || heldForTerminal) return;
       const images = stagedImages;
       onSend(trimmed, mentions, images.length ? images : undefined);
       if (images.length) setStagedImages([]);
@@ -1678,6 +1658,7 @@ export function MessageInput({
     stagedImages,
     githubSyncing,
     modeUnrestored,
+    heldForTerminal,
   ]);
   submitRef.current = submit;
 
@@ -1688,7 +1669,11 @@ export function MessageInput({
   type Mode = "send" | "queue" | "stop";
   const mode: Mode = running ? (hasText ? "queue" : "stop") : "send";
   const buttonEnabled =
-    disabled || (mode === "send" && modeUnrestored) ? false : mode === "stop" ? true : hasText;
+    disabled || (mode === "send" && (modeUnrestored || heldForTerminal))
+      ? false
+      : mode === "stop"
+        ? true
+        : hasText;
 
   // One fixed placeholder, always. The composer used to swap in a queue hint
   // while a turn ran and a no-grant explanation when AI access was missing;
@@ -1742,6 +1727,9 @@ export function MessageInput({
         {/* A resume could not restore the user's mode: nothing sends until
             they pick one. */}
         <ModeRestoreBar tabId={tabId} />
+
+        {/* Another process is writing this session: sending would fork it. */}
+        <LiveElsewhereBar tabId={tabId} />
 
         {/* Live plan docked on top of the input bar (JetBrains-Air style). */}
 
@@ -1904,6 +1892,13 @@ export function MessageInput({
               <button
                 onClick={submit}
                 disabled={!buttonEnabled}
+                aria-label={
+                  mode === "stop"
+                    ? "Stop generation"
+                    : mode === "queue"
+                      ? "Queue message"
+                      : "Send message"
+                }
                 className={cn(
                   // Reference-style squircle send: a soft rounded-square,
                   // transparent at rest, muted fill + border on hover, pinned

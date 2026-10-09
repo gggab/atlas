@@ -82,6 +82,11 @@ export interface AppSettings {
    *  Cmd/Ctrl+Enter sends, bare Enter always inserts a newline (the old
    *  default). Cmd/Ctrl+Enter always sends regardless of this setting. */
   enterToSend: boolean;
+  /** Let agents search this project's code through Atlas's code tool server:
+   *  `grep` and `find_files`, in-process, respecting .gitignore and hiding
+   *  secret files unless explicitly named by path (ADR-0015). Off: new sessions are not offered the
+   *  tools and every call in a running one is refused. Default ON. */
+  agentCodeTools: boolean;
   /** "Command finished" — a successful command longer than
    *  `terminalNotifyMinDurationMs` raises a notification. (Once the terminal
    *  master switch; `notificationsEnabled` is the master now, and this is the
@@ -151,6 +156,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepAwakeWhileRunning: false,
   instructionSync: false,
   enterToSend: true,
+  agentCodeTools: true,
   terminalNotifications: true,
   terminalNotifyMinDurationMs: 10_000,
   terminalNotifyOnFailure: true,
