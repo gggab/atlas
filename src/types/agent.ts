@@ -207,6 +207,8 @@ export interface ChatSession {
    *  the guard against premature "done" under parallel / queued / wake timing.
    *  Absent (or 0) for the native agent, which is treated as current. */
   currentTurnSeq?: number;
+  /** Current busy turn start in epoch milliseconds; cleared on idle/error. UI-only. */
+  turnStartedAt?: number | null;
   /** The current turn's live plan (ACP `plan` / TodoWrite), mirrored here from
    *  the trailing assistant message so the docked plan panel above the composer
    *  can select it with one narrow read instead of scanning `messages` every

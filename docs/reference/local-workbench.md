@@ -52,8 +52,12 @@ The model picker selectively ports `6e910c7e`: search, favorites, provider
 groups and keyboard controls. Rust snapshots and live ACP config updates keep
 the Agent's stated group names; no provider is guessed from a model id.
 Favorites use local `config.toml` preferences. See [Model picker](model-picker.md).
-This port does not include history cards, thread-database migrations, a native
-agent or gateway model refresh.
+The same upstream commit also supplies the [basic history cards](history-cards.md):
+title, live status, current-turn timing, Agent marks, project-name placement and
+explicit history read errors. Existing session restoration and archive/delete
+paths are retained. Timing is temporary frontend state; the thread database is
+unchanged. Branch recording, PR lookup, thread-database migrations, a native
+agent and gateway model refresh remain outside these selective ports.
 
 The fork selectively carries these upstream fixes without restoring account,
 organization or native-agent functionality:

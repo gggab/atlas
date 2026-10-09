@@ -1,27 +1,17 @@
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
-import { memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { X, MessageSquare, Search, PanelLeft, Plus, History, Archive } from "lucide-react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Search, PanelLeft, Plus, History } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { Hint } from "@/ui/tooltip";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { isBusyAgentStatus, agentTypeFromPluginId } from "@/types/agent";
-import {
-  ClaudeIcon,
-  CodexIcon,
-  OpenCodeIcon,
-  CursorIcon,
-  KiloIcon,
-  ExternalAgentIcon,
-  AgentMonogram,
-} from "@/components/agent-icons";
 import { pluginIdForAgent } from "@/types/agent";
-import { agentMeta } from "@/features/agents/lib/agent-meta";
-import { AtlasLoader } from "@/components/atlas-loader";
-import { timeAgo } from "@/lib/time-ago";
 import { ThreadHistoryView } from "./thread-history-view";
+import { SessionCard } from "./session-card";
+import { placeProjectNames } from "../lib/sidebar-grouping";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useProjectStore } from "@/features/projects/stores/project-store";
 import { useLocalProjects } from "@/features/projects/lib/project-scope";
@@ -37,7 +27,6 @@ import {
   type ThreadRow,
 } from "../lib/history-api";
 import { getAgentSync } from "../lib/agents-api";
-import { AtlasIcon } from "@/components/atlas-icon";
 import { useRecentChatsStore } from "@/features/projects/stores/recent-chats-store";
 import { resumeThreadFast, ResumeError } from "../lib/resume-session";
 import { applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
@@ -57,7 +46,6 @@ function itemFromThread(thread: ThreadRow, projectName: string, isCurrent: boole
     threadId: thread.threadId,
     kind: "agent",
     title: thread.title,
-    projectHeading: null,
     projectName,
     lastUpdated: thread.updatedAt,
     agent: sidebarAgentOf(thread.agentId),
@@ -71,8 +59,6 @@ function itemFromThread(thread: ThreadRow, projectName: string, isCurrent: boole
   };
 }
 
-/** Compact token count: 1234 → "1.2k", 1_200_000 → "1.2M". */
-
 interface SidebarItem {
   /** The agent's session id, or a stand-in while the thread is still a draft.
    *  Only used to match the row against a live tab. */
@@ -84,9 +70,6 @@ interface SidebarItem {
   lastUpdated: string | null;
   /** Which agent ran this session (drives the row icon). */
   agent: SidebarAgent;
-  /** The project's name, on the first row of a run of its threads. Stamped
-   *  after filtering, so it follows what is actually on screen. */
-  projectHeading: string | null;
   /** The project this thread belongs to, named on every row that is shown
    *  outside the open project. */
   projectName: string;
@@ -285,6 +268,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   const {
     data: projects = [],
     isLoading,
+    isError: historyFailed,
+    error: historyError,
     isSuccess: historyReady,
   } = useQuery({
     queryKey: [...THREAD_PROJECTS_KEY, cwd],
@@ -292,6 +277,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     staleTime: 30_000,
     refetchInterval: false,
     placeholderData: keepPreviousData,
+    retry: false,
   });
 
   useEffect(() => {
@@ -360,42 +346,28 @@ export const SessionSidebar = memo(function SessionSidebar({
     return set;
   }, [projects]);
 
-  // Sessions currently running (used to show a spinner on the matching row).
-  // Keys MUST match the `id`s used when constructing `items` above, otherwise
-  // the spinner never lights up. Once an agent session is bound we key by
-  // `acpSessionId`; while it's still spawning we use the synthetic
-  // `live-${tabId}` placeholder.
-  const runningKeys = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of Object.values(tabSummaries)) {
+  // Pair each busy history row with its live tab and explicit status.
+  const liveByKey = useMemo(() => {
+    const map = new Map<string, { status: "running" | "waiting"; tabId: string }>();
+    for (const [tid, s] of Object.entries(tabSummaries)) {
       if (!isBusyAgentStatus(s.status)) continue;
       const liveId = s.acpSessionId ?? `live-${s.id}`;
-      set.add(`agent:${liveId}`);
+      map.set(`agent:${liveId}`, {
+        status: s.status === "waiting" ? "waiting" : "running",
+        tabId: tid,
+      });
     }
-    return set;
+    return map;
   }, [tabSummaries]);
 
-  // Headings are stamped AFTER filtering, not before: a search that hides a
-  // project's first row would otherwise take the project's name with it and
-  // leave the rest of its threads under the previous project's heading.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const matching = q ? items.filter((it) => it.title.toLowerCase().includes(q)) : items;
-    // Label the groups whenever more than one project is on screen, or when a
-    // row belongs to some other project. Scoped to the open project this is
-    // false and no headings are drawn — it earns its keep in the unscoped case
-    // (no project open), where an unlabelled mix reads as one project's list.
-    const named =
-      matching.length > 0 &&
-      (new Set(matching.map((it) => it.projectName)).size > 1 ||
-        matching.some((it) => it.elsewhere));
-    let previous: string | null = null;
-    return matching.map((item) => {
-      const heading = named && item.projectName !== previous ? item.projectName : null;
-      previous = item.projectName;
-      return { ...item, projectHeading: heading };
-    });
+    return q ? items.filter((item) => item.title.toLowerCase().includes(q)) : items;
   }, [items, search]);
+  const placements = useMemo(
+    () => placeProjectNames(filtered, !projects.some((project) => project.isCurrent)),
+    [filtered, projects],
+  );
 
   // Singleton model: "New chat" always starts a fresh session in the CURRENT
   // tab (never a second tab). Shared with ⌘T / the palette / the context menu.
@@ -536,8 +508,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     })();
   };
 
-  const handleArchiveAgent = async (e: React.MouseEvent, item: SidebarItem) => {
-    e.stopPropagation();
+  const handleArchiveAgent = async (item: SidebarItem) => {
     try {
       // Out of the way, not gone. The thread stays in History and comes back
       // the moment it is opened (ADR-0001: archive is a shelf, not a grave).
@@ -547,8 +518,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     }
   };
 
-  const handleDeleteAgent = async (e: React.MouseEvent, item: SidebarItem) => {
-    e.stopPropagation();
+  const handleDeleteAgent = async (item: SidebarItem) => {
     try {
       // One call for every agent. Atlas's own row goes first and always; the
       // agent is asked to forget its copy only if it advertised that it can
@@ -611,7 +581,7 @@ export const SessionSidebar = memo(function SessionSidebar({
     return item.id === tabId;
   };
 
-  const showEmpty = !isLoading && filtered.length === 0;
+  const showEmpty = !isLoading && !historyFailed && filtered.length === 0;
 
   return (
     <div
@@ -668,127 +638,54 @@ export const SessionSidebar = memo(function SessionSidebar({
       />
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto hide-scrollbar">
-        {isLoading && (
-          <div className="text-xs text-[var(--muted-foreground)] px-3 py-2">Loading…</div>
+      <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2 hide-scrollbar">
+        {isLoading && <div className="px-1 py-1 text-xs text-muted-foreground">Loading…</div>}
+        {historyFailed && (
+          <div role="alert" className="px-1 py-1 text-xs leading-relaxed text-error">
+            Couldn't load chats:{" "}
+            {historyError instanceof Error ? historyError.message : String(historyError)}
+          </div>
         )}
         {showEmpty && (
-          <div className="text-xs text-[var(--muted-foreground)] px-3 py-3 leading-relaxed">
-            {/* Names the scope: the list is this project's, so an empty one
-                means "nothing here yet", not "no chats anywhere". Other
-                projects' chats are behind the History button in the header. */}
+          <div className="px-1 py-1 text-xs leading-relaxed text-muted-foreground">
             {search.trim() ? "No sessions match your search." : "No chats in this project yet."}
           </div>
         )}
-        {filtered.map((item, idx) => {
-          const active = isActiveItem(item);
-          const isRunning = runningKeys.has(`${item.kind}:${item.id}`);
-          const isLast = idx === filtered.length - 1;
+        {filtered.map((item, index) => {
+          const live = liveByKey.get(`${item.kind}:${item.id}`);
+          const { heading, showProject } = placements[index]!;
           return (
-            <div key={item.threadId}>
-              {item.projectHeading && (
-                // The project a run of rows belongs to. Threads from other
-                // worktrees are listed here too, and resume into their own
-                // worktree — that is what an app-level store is for.
-                <div className="px-3 pt-2.5 pb-1 text-3xs uppercase tracking-wider text-muted-foreground truncate">
-                  {item.projectHeading}
+            <Fragment key={item.threadId}>
+              {heading && (
+                <div
+                  role="heading"
+                  aria-level={3}
+                  className={cn(
+                    "-mx-2 truncate px-3 pt-1.5 pb-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground",
+                    !asDropdown && "sticky top-0 z-panel bg-[var(--sidebar)]",
+                  )}
+                >
+                  {heading}
                 </div>
               )}
-              <div
-                onClick={() => {
-                  if (item.kind !== "agent") return;
+              <SessionCard
+                threadId={item.threadId}
+                title={item.title}
+                projectName={item.projectName}
+                showProject={showProject}
+                lastUpdated={item.lastUpdated}
+                status={live?.status ?? null}
+                liveTabId={live?.tabId ?? null}
+                active={isActiveItem(item)}
+                agent={item.agent}
+                onOpen={() => {
                   handleOpenAgent(item);
-                  // Dismiss the picker; the sidebar variant stays put.
                   onOpened?.();
                 }}
-                className={cn(
-                  "group relative w-full text-left px-3 py-3 transition-colors flex flex-col gap-1 cursor-pointer select-none",
-                  active
-                    ? "bg-[var(--atlas-element-selected)] text-[var(--foreground)] opacity-100"
-                    : "text-[var(--secondary-foreground)] opacity-80 hover:opacity-100 hover:bg-[var(--atlas-element-hover)] hover:text-[var(--foreground)]",
-                  !isLast && "border-b border-[var(--border)]",
-                )}
-              >
-                {/* `pr-12` reserves the hover actions' full footprint: two 16px
-                    buttons + their 2px gap + the cluster's 6px offset is 40px,
-                    and the rest is breathing room. Reserved PERMANENTLY, not on
-                    hover — the actions sit on top of this row, and widening the
-                    title when they hide would reflow (and re-clamp) the text
-                    under the cursor. `pr-5` only cleared 20px, so the title's
-                    first line ran right up under the archive button. */}
-                <div className="flex items-start gap-2 min-w-0 pr-12">
-                  <span
-                    className="shrink-0 inline-flex h-[15px] items-center justify-center text-[var(--secondary-foreground)]"
-                    title={
-                      item.kind !== "agent"
-                        ? "AI Chat"
-                        : agentMeta(AGENT_TYPE_BY_SIDEBAR[item.agent] ?? item.agent).label
-                    }
-                  >
-                    {isRunning ? (
-                      <AtlasLoader size={8} className="text-[var(--primary)]" />
-                    ) : item.kind === "agent" ? (
-                      item.agent === "codex" ? (
-                        <CodexIcon className="size-3" />
-                      ) : item.agent === "opencode" ? (
-                        <OpenCodeIcon className="size-3" />
-                      ) : item.agent === "cursor" ? (
-                        <CursorIcon className="size-3" />
-                      ) : item.agent === "kilo" ? (
-                        <KiloIcon className="size-3" />
-                      ) : item.agent === "atlas-agent" ? (
-                        <AtlasIcon size={12} />
-                      ) : item.agent === "claude" ? (
-                        <ClaudeIcon className="size-3" />
-                      ) : agentMeta(item.agent).iconDataUrl ? (
-                        <ExternalAgentIcon dataUrl={agentMeta(item.agent).iconDataUrl!} size={12} />
-                      ) : (
-                        <AgentMonogram label={agentMeta(item.agent).label} size={12} />
-                      )
-                    ) : (
-                      <MessageSquare size={11} className="text-[var(--primary)]" />
-                    )}
-                  </span>
-                  <span className="text-xs leading-snug line-clamp-2 flex-1">{item.title}</span>
-                </div>
-                <div className="pl-[18px] flex items-center gap-1.5">
-                  <span className="text-3xs text-[var(--muted-foreground)]">
-                    {timeAgo(item.lastUpdated, { suffix: true })}
-                  </span>
-                  {item.elsewhere && (
-                    <span
-                      className="text-3xs text-[var(--muted-foreground)] truncate"
-                      title={item.cwd}
-                    >
-                      · {item.projectName}
-                    </span>
-                  )}
-                </div>
-
-                {/* Both work for every agent now: the row is Atlas's, so neither
-                  depends on reaching the agent that produced it. */}
-                <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                  <Hint label="Archive — keeps it in History">
-                    <button
-                      onClick={(e) => handleArchiveAgent(e, item)}
-                      aria-label="Archive session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--card)]"
-                    >
-                      <Archive size={10} />
-                    </button>
-                  </Hint>
-                  <Hint label="Delete session">
-                    <button
-                      onClick={(e) => handleDeleteAgent(e, item)}
-                      aria-label="Delete session"
-                      className="flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] hover:bg-[var(--card)]"
-                    >
-                      <X size={10} />
-                    </button>
-                  </Hint>
-                </div>
-              </div>
-            </div>
+                onArchive={() => handleArchiveAgent(item)}
+                onDelete={() => handleDeleteAgent(item)}
+              />
+            </Fragment>
           );
         })}
       </div>
