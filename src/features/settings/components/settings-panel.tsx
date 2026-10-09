@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { toast } from "sonner";
 import { ScrollArea } from "@/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -606,6 +607,20 @@ function ZoomControl() {
 
 function AboutSettings() {
   const { productName } = useAppProfile();
+  const [versionLabel, setVersionLabel] = useState("Loading version…");
+  useEffect(() => {
+    let live = true;
+    void getVersion()
+      .then((version) => {
+        if (live) setVersionLabel(`v${version}`);
+      })
+      .catch(() => {
+        if (live) setVersionLabel("Version unavailable");
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
   return (
     <div className="space-y-4">
       <SectionTitle title="About" subtitle={productName} />
@@ -614,7 +629,7 @@ function AboutSettings() {
           <AtlasIcon size={40} className="rounded-xl" alt={productName} />
           <div>
             <p className="text-sm font-semibold text-foreground">{productName}</p>
-            <p className="text-2xs text-muted-foreground">v0.4.0 — Local Agent workbench</p>
+            <p className="text-2xs text-muted-foreground">{versionLabel} — Local Agent workbench</p>
           </div>
         </div>
         <p className="text-xs text-secondary-foreground leading-relaxed pt-2">

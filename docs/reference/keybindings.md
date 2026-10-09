@@ -10,6 +10,9 @@ Bindings are grouped into **profiles**. The built-in `Default` profile is
 locked and always reflects Atlas's shipped defaults; duplicate it (or create an
 empty profile) to customise. Only one profile is active at a time.
 
+The welcome screen's **Open Folder** hint follows the active `workspace.add`
+binding and disappears when that action is unbound.
+
 ## Presets and the first-run question
 
 A profile can be **based on** another editor's keys: `vscode`, `cursor`,

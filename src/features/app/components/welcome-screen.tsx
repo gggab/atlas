@@ -9,6 +9,7 @@ import { useAppProfile } from "@/lib/app-profile";
 export function WelcomeScreen() {
   const { productName } = useAppProfile();
   const paletteHint = useActionShortcut("nav.commandPalette")?.label ?? "⌘K";
+  const openFolderHint = useActionShortcut("workspace.add")?.label;
   const allRecents = useAppStore.use.recentProjects();
 
   // Scoped to the active org: this list used to show every org's project
@@ -45,7 +46,11 @@ export function WelcomeScreen() {
         >
           <FolderOpen size={14} className="text-[var(--primary)] shrink-0" />
           <span className="text-sm font-medium text-[var(--foreground)]">Open Folder</span>
-          <span className="text-2xs text-[var(--muted-foreground)] ml-auto font-mono">⌘O</span>
+          {openFolderHint && (
+            <span className="text-2xs text-[var(--muted-foreground)] ml-auto font-mono">
+              {openFolderHint}
+            </span>
+          )}
         </button>
 
         {/* Recent projects */}

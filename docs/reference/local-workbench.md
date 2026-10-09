@@ -46,6 +46,32 @@ address-bar navigation to `https://example.com` completed, and a separate Atlas
 Browser window loaded that page. The focused contracts / overlay tests (16
 checks), test TypeScript check, and `cargo check --locked -p atlas --lib` passed.
 
+## Selected upstream fixes
+
+The fork selectively carries these upstream fixes without restoring account,
+organization or native-agent functionality:
+
+- `b4729890`: Windows builds use usearch's distance kernels without NumKong;
+  other targets retain NumKong. The Rust API and persisted memory remain intact.
+- `f3d76e5e`: capture titles skip agent wrapper markup; Timeline also cleans
+  previously stored titles when rendering, without rewriting the records.
+- `9cea73fd` and `30a13b36`: flat PDF highlighter strokes snap to text in their
+  own column. Annotations remain in the project's PDF annotation sidecar, not
+  embedded into the PDF.
+- `957d8027`: checkpoint and redaction documentation clarifies their rules.
+- Selected parts of `3721dce4`: Open Folder shows its live shortcut, the command
+  palette no longer offers the unimplemented Task Board, and About reads the
+  bundled app version with explicit loading and unavailable states. Stored task
+  tabs and the Atlas改 / Atlas改 Dev branding remain compatible.
+
+Focused development checks:
+
+```sh
+bun run test -- src/features/artifacts/lib/board.test.ts src/features/pdf/lib/highlight-rect.test.ts src/features/app/components/welcome-screen.test.tsx src/features/settings/components/settings-panel.test.tsx
+cargo test --locked -p atlas-checkpoint -p atlas-memory --lib
+cargo check --locked -p atlas --lib
+```
+
 ## Compatibility retained deliberately
 
 Old native source labels, sync-state columns and organization attribution in stored records remain readable; they cannot launch an agent or send records to a server. Old organization projects and groups migrate into the local project registry, and old cloud capture bindings become local while session rows, checkpoint links and content-addressed blobs stay in place. Pinned logs merge into the local log once without deleting originals.

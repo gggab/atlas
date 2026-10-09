@@ -44,7 +44,8 @@ and an official distribution with its LICENSE file.
 ## Version changes
 
 Keep `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the
-`atlas` entry in `Cargo.lock`, and the About label in sync. `scripts/bump.sh`
+`atlas` entry in `Cargo.lock` in sync. About reads the bundled version at runtime
+and needs no separate version edit. `scripts/bump.sh`
 currently uses macOS-specific `sed` and matches the historical About wording;
 do not use it unchanged on Windows. Refresh the workspace lock entries with
 `cargo update --workspace --offline` after changing the Cargo package version.
