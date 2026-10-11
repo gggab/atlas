@@ -113,10 +113,22 @@ release debugging control and clear the REPL. Agent-created pages close immediat
 unless marked `handoff` for necessary user intervention; `deliverable` does not
 retain results. Empty task groups disappear. Existing user pages/windows stay open.
 Taking over retains task pages, labels their group as waiting, and releases
-debugging. After verification, choose **Allow Agent to continue** in the extension
-and continue the original Agent session. The next task resumes retained pages; target IDs
+debugging. After verification, send **继续** or **continue** in the original
+Atlas chat. That human message returns control without an extra extension click.
+The Agent resumes retained pages with a fresh browser_start; target IDs
 are revalidated before resuming. Successful continuation cleans them up normally.
 User browser login/downloads stay managed by that browser.
+
+Recognized examples include `继续`, `继续任务`, `登录好了，继续`, `continue`,
+`resume` and `I'm done`. Questions, negations, quoted page content and other
+messages keep a waiting handoff paused. A continuation applies only to the current
+handoff of the original session; it never preauthorizes a future handoff.
+The chat sends the human's original text separately from the Agent prompt.
+Hidden next-step instructions and expanded mention content do not affect
+continuation recognition. Retrying a recorded turn does not grant fresh
+permission to resume a waiting browser task; send a new continuation instead.
+Both the updated desktop native host and extension are required; reload the local
+extension after updating. Page-data consent and global pause still apply.
 
 The connection address contains a random per-worker secret, separate from the
 MCP bearer token. Native Messaging passes it privately, omitted from Agent snapshots,

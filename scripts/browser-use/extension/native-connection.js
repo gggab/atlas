@@ -5,6 +5,16 @@ export class NativeConnection {
     this.api = api;
     this.controller = controller;
     this.connected = false;
+    controller.onHandoff = (sessionId) => {
+      this.handoffSessionId = sessionId;
+      try {
+        this.port?.postMessage({ type: "handoffState", sessionId });
+      } catch (error) {
+        this.error = error.message;
+        this.connected = false;
+        this.port = null;
+      }
+    };
     api.alarms.onAlarm.addListener((alarm) => {
       if (alarm.name === "atlas-native-reconnect") void this.connect();
     });
@@ -16,7 +26,11 @@ export class NativeConnection {
     this.hostName = HOST_NAME;
     this.clientId = settings.clientId ?? crypto.randomUUID();
     await this.api.storage.local.set({ clientId: this.clientId });
-    const { shareNextTab } = await this.api.storage.session.get("shareNextTab");
+    const { shareNextTab, atlasHandoff } = await this.api.storage.session.get([
+      "shareNextTab",
+      "atlasHandoff",
+    ]);
+    this.handoffSessionId = atlasHandoff?.tabs?.length ? atlasHandoff.sessionId : null;
     this.shareNextTab = Number.isInteger(shareNextTab) ? shareNextTab : undefined;
     if (this.enabled) await this.connect();
   }
@@ -88,6 +102,8 @@ export class NativeConnection {
         clientId: this.clientId,
         browser: /Edg\//.test(globalThis.navigator?.userAgent ?? "") ? "edge" : "chrome",
         version: this.api.runtime.getManifest().version,
+        chatHandoff: 1,
+        handoffSessionId: this.handoffSessionId,
       });
     } catch (error) {
       this.port = null;
@@ -111,6 +127,22 @@ export class NativeConnection {
       this.connected = false;
       port.disconnect();
       await this.controller.disconnect();
+      return;
+    }
+    if (message.type === "resumeHandoff" && typeof message.id === "string") {
+      try {
+        if (
+          !this.connected ||
+          typeof message.sessionId !== "string" ||
+          typeof message.resume !== "boolean"
+        )
+          throw new Error("Invalid chat continuation");
+        const result = await this.controller.allowResume(message.sessionId, message.resume);
+        if (result && message.resume) this.error = null;
+        if (this.port === port) port.postMessage({ id: message.id, result });
+      } catch (error) {
+        if (this.port === port) port.postMessage({ id: message.id, error: error.message });
+      }
       return;
     }
     if (message.type !== "start" || typeof message.id !== "string") return;

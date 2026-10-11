@@ -101,7 +101,7 @@ fn serve(identifier: &str, origin: &str) -> Result<(), String> {
         .set_write_timeout(Some(std::time::Duration::from_secs(5)))
         .map_err(|e| e.to_string())?;
     let hello = read_frame(&mut std::io::stdin())?.ok_or("Missing extension identity")?;
-    let hello = json!({"secret":descriptor.secret,"clientId":hello["clientId"],"browser":hello["browser"],"version":hello["version"]});
+    let hello = json!({"secret":descriptor.secret,"clientId":hello["clientId"],"browser":hello["browser"],"version":hello["version"],"chatHandoff":hello["chatHandoff"],"handoffSessionId":hello["handoffSessionId"]});
     writeln!(stream, "{hello}").map_err(|e| e.to_string())?;
     let mut outgoing = stream.try_clone().map_err(|e| e.to_string())?;
     std::thread::spawn(move || {

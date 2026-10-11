@@ -146,10 +146,13 @@ export const agents = {
     attachments?: ImageAttachment[],
     /** `@`-mentioned files, sent as ACP `ResourceLink` blocks (P2.1). */
     resourceLinks?: { uri: string; name: string }[],
+    /** Fresh human input before mention expansion or hidden directives; absent on replay. */
+    userText?: string,
   ) =>
     invoke<void>("agents_send", {
       key,
       text,
+      userText: userText ?? null,
       attachments: attachments?.length ? attachments : null,
       resourceLinks: resourceLinks?.length ? resourceLinks : null,
     }),

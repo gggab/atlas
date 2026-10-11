@@ -192,7 +192,7 @@ export class ExtensionController {
       }
       this.records.delete(tabId);
     }
-    if (hadRecords)
+    if (hadRecords) {
       await this.api.storage.session.set({
         atlasHandoff: {
           tabs: handoff,
@@ -201,6 +201,8 @@ export class ExtensionController {
           ready: false,
         },
       });
+      this.onHandoff?.(handoff.length ? this.sessionId : null);
+    }
     if (this.groupId !== undefined) {
       try {
         const tabs = await this.api.tabs.query({ groupId: this.groupId });
@@ -237,7 +239,7 @@ export class ExtensionController {
       );
     if (atlasHandoff?.tabs?.length && !atlasHandoff.ready)
       throw new Error(
-        "Waiting for user takeover. Complete verification and choose Allow Agent to continue in Atlas Browser.",
+        "Waiting for user takeover. After verification, send continue in the original Atlas chat.",
       );
     if (tabId === undefined) {
       if (atlasHandoff?.tabs?.length) {
@@ -297,6 +299,7 @@ export class ExtensionController {
       for (const targetInfo of others) this.send({ type: "attached", targetInfo });
       if (resume?.length) {
         await this.api.storage.session.set({ atlasHandoff: null });
+        this.onHandoff?.(null);
         this.groupId = await this.api.tabs.group({ tabIds: resume.map((record) => record.tabId) });
         await this.api.tabGroups.update(this.groupId, {
           title: `Atlas · ${this.title}`.slice(0, 100),
@@ -372,11 +375,15 @@ export class ExtensionController {
       if (tabs.length) await this.api.tabs.ungroup(tabs.map((tab) => tab.id));
     }
     await this.api.storage.session.set({ atlasHandoff: null });
+    this.onHandoff?.(null);
   }
-  async allowResume() {
+  async allowResume(sessionId, ready = true) {
+    if (this.disconnecting) await this.disconnecting;
+    if (this.socket) return false;
     const { atlasHandoff } = await this.api.storage.session.get("atlasHandoff");
-    if (!atlasHandoff?.tabs?.length) throw new Error("No task is waiting for handoff");
-    await this.api.storage.session.set({ atlasHandoff: { ...atlasHandoff, ready: true } });
+    if (!atlasHandoff?.tabs?.length || atlasHandoff.sessionId !== sessionId) return false;
+    await this.api.storage.session.set({ atlasHandoff: { ...atlasHandoff, ready } });
+    return true;
   }
   async disconnect({ takeover = false, tabId, replyId } = {}) {
     if (this.disconnecting) return this.disconnecting;

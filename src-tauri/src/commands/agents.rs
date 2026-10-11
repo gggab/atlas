@@ -1286,6 +1286,9 @@ pub fn agents_snapshot_meta(
 pub async fn agents_send(
     key: SessionKey,
     text: String,
+    // Fresh human input, before frontend mention expansion and hidden directives.
+    // Replayed wire prompts omit this and cannot authorize a new handoff.
+    user_text: Option<String>,
     attachments: Option<Vec<ImageAttachment>>,
     // `@`-mentions that point at files (P2.1). Sent as `ResourceLink` blocks
     // rather than flattened into the prose — the ACP-native way to hand an
@@ -1320,6 +1323,12 @@ pub async fn agents_send(
     let current_model = snapshot.current_model.clone();
     let plugin_id = snapshot.plugin_id.clone();
     let cwd = snapshot.cwd;
+
+    // Human chat continuation replaces the extension's extra handoff click.
+    // This command is the trusted user send path; MCP tools cannot grant it.
+    app.state::<Arc<super::browser_use::BrowserUseState>>()
+        .on_user_prompt(&key.session_id, user_text.as_deref().unwrap_or_default())
+        .await?;
 
     // Session capture: record the prompt and bind the session.
     //

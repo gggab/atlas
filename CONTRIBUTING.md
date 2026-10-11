@@ -108,6 +108,12 @@ and extension sources. Run `bun run browser:test` for contracts and
 `bun run browser:extension-smoke` for a real extension fixture check. See
 [Browser Use](docs/reference/browser-use.md) for setup and verification boundaries.
 
+Browser handoff continuation uses the original human text passed as `userText`
+to `agents_send`, separately from the enriched Agent prompt. Keep this separation
+when changing prompt composition or send callers; recorded-turn retries omit it.
+Run the focused `agents-api.send.test.ts` and `chat-panel-live-elsewhere.test.tsx`
+regressions with suggestions enabled, plus the Rust `browser_handoff` tests.
+
 There are two ways to run a source build, and they differ in whose data they use:
 
 - **`bun run dev:app`: the dev profile.** This is the normal way to work. It runs as **Atlas改 Dev** (bundle identifier `dev.atlas.ide.dev`, from `src-tauri/tauri.dev.conf.json`), with its own app data dir, its own `<project>/.atlas-dev/` instead of `.atlas/`, `~/.atlas-dev/` instead of `~/.atlas/`, and `~/.config/atlas-dev/` instead of `~/.config/atlas/`. It never touches an installed Atlas's data, so it is safe beside one on the same projects. It keeps `.atlas-dev/` out of git through `.git/info/exclude` rather than your projects' `.gitignore`, and it never checks for or installs updates or refreshes the `atlas` CLI helper. A fresh dev profile starts empty: no history, settings, sign-in or knowledge notes. To start it over, `bun run clean:app:dev` wipes Atlas Dev's data only; `bun run clean:app` wipes the installed Atlas's. A bundled skill both builds ship under one name (`remember`) is installed by Atlas Dev only when it is missing, so it never overwrites the installed Atlas's copy: to try a change to one, delete it from `~/.agents/skills` first.

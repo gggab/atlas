@@ -135,8 +135,34 @@ test("an Agent cannot automatically retake control while the user is completing 
     ),
     /Waiting for user/,
   );
-  await controller.allowResume();
+  assert.equal(await controller.allowResume("other"), false);
+  assert.equal(stored.atlasHandoff.ready, undefined);
+  assert.equal(await controller.allowResume("owner"), true);
   assert.equal(stored.atlasHandoff.ready, true);
+  assert.equal(await controller.allowResume("owner", false), true);
+  assert.equal(
+    stored.atlasHandoff.ready,
+    false,
+    "Later questions or pause instructions revoke unused continuation",
+  );
+});
+
+test("a chat continuation waits for takeover cleanup and cannot authorize a later handoff", async () => {
+  const { controller, stored } = fixture();
+  let finish;
+  controller.disconnecting = new Promise((r) => {
+    finish = r;
+  });
+  const intent = controller.allowResume("owner");
+  stored.atlasHandoff = { sessionId: "owner", tabs: [{ tabId: 7, targetId: "t7" }], ready: false };
+  finish();
+  assert.equal(await intent, true);
+  assert.equal(stored.atlasHandoff.ready, true);
+  controller.disconnecting = null;
+  stored.atlasHandoff = null;
+  assert.equal(await controller.allowResume("owner"), false);
+  stored.atlasHandoff = { sessionId: "owner", tabs: [{ tabId: 7, targetId: "t7" }], ready: false };
+  assert.equal(stored.atlasHandoff.ready, false);
 });
 
 test("startup recovery never closes recorded tab IDs without the same debugger target", async () => {

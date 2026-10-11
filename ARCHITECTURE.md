@@ -208,6 +208,12 @@ bridge; the desktop binary handles native frames before GUI/logging startup. Fix
 extension origins, per-user host registration and an app-instance authenticated
 loopback broker bootstrap the task relay. Finished/failed turns close owned task
 tabs and remove groups; only required handoffs and existing user pages survive.
+Human continuation on the trusted agents_send path returns handoff control through
+Native Messaging for the original session. Agent tool retries cannot authorize
+resumption; ordinary chats without a waiting browser task send no handoff request.
+The frontend passes the original human text separately from the enriched Agent
+prompt; only that original text is matched for continuation. Recorded-turn
+replays omit it and cannot authorize a new handoff.
 Atlas's embedded WebView and CLI vendor authentication remain separate. See
 `docs/reference/browser-use.md` for setup, API and verification boundaries.
 

@@ -33,8 +33,9 @@ Only await tab.markHandoff() preserves a page for necessary user intervention.
 Do not mark ordinary results for handoff; markDeliverable() does not retain them.
 Before asking the human to complete login/CAPTCHA, mark the necessary page for
 handoff. The extension's Take over this page retains the necessary page and
-releases debugging. Ask the user to choose Allow Agent to continue in the extension
-after verification; never retake control while they are working. Then browser_start resumes retained pages
+releases debugging. Ask the user to send continue (or 继续) in the original Atlas
+chat after verification. That human message returns control without an extra
+extension click; never retake control while they are working. Then browser_start resumes retained pages
 automatically, with fresh JS handles. Completion then closes them normally.
 browser_reset, pause, cancellation and session end apply the same cleanup policy.
 The app-level extension connection remains ready for subsequent tasks.

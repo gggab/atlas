@@ -24,7 +24,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       else if (message.action === "discardHandoff") await controller.discardHandoff();
       else if (message.action === "allowResume") {
         native.requireConsent();
-        await controller.allowResume();
+        const { atlasHandoff } = await chrome.storage.session.get("atlasHandoff");
+        await controller.allowResume(atlasHandoff?.sessionId);
         native.error = null;
       } else if (message.action === "disconnect")
         await controller.disconnect({ takeover: true, tabId: message.tabId });

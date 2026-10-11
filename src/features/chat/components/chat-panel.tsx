@@ -1393,7 +1393,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       session_id: bound.acpSessionId,
     };
     try {
-      await agents.send(key, wirePrompt, attachments, resourceLinks);
+      await agents.send(key, wirePrompt, attachments, resourceLinks, actualContent);
       logEvent({
         source: "agent",
         kind: "stream-started",

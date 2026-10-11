@@ -185,3 +185,31 @@ test("page access requires explicit consent and revocation stops control before 
   assert.equal(connection.status().dataConsent, false, "A pending grant cannot undo withdrawal");
   assert.equal(local.browserDataConsent, null);
 });
+
+test("only the authenticated native port forwards human handoff intent to its session", async () => {
+  const sent = [],
+    resumed = [];
+  const port = { postMessage: (message) => sent.push(message) };
+  const controller = {
+    allowResume: async (...args) => {
+      resumed.push(args);
+      return true;
+    },
+  };
+  const native = new NativeConnection({ alarms: { onAlarm: { addListener() {} } } }, controller);
+  native.port = port;
+  native.connected = true;
+  const message = { id: "human", type: "resumeHandoff", sessionId: "owner", resume: true };
+  await native.receive({}, message);
+  assert.equal(resumed.length, 0);
+  await native.receive(port, message);
+  assert.deepEqual(resumed, [["owner", true]]);
+  assert.deepEqual(sent.at(-1), { id: "human", result: true });
+  await native.receive(port, { ...message, resume: false });
+  assert.deepEqual(resumed.at(-1), ["owner", false]);
+  await native.receive(port, { ...message, resume: "yes" });
+  assert.match(sent.at(-1).error, /Invalid chat continuation/);
+  assert.equal(resumed.length, 2);
+  controller.onHandoff("owner");
+  assert.deepEqual(sent.at(-1), { type: "handoffState", sessionId: "owner" });
+});

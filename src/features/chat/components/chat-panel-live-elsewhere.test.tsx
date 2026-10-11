@@ -13,6 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent = vi.hoisted(() => [] as string[]);
+const userTexts = vi.hoisted(() => [] as (string | undefined)[]);
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -26,9 +27,18 @@ vi.mock("../lib/agents-api", async (importOriginal) => {
     {
       get: (_t, prop) =>
         prop === "send"
-          ? vi.fn(async (_key: unknown, prompt: string) => {
-              sent.push(prompt);
-            })
+          ? vi.fn(
+              async (
+                _key: unknown,
+                prompt: string,
+                _images: unknown,
+                _links: unknown,
+                userText?: string,
+              ) => {
+                sent.push(prompt);
+                userTexts.push(userText);
+              },
+            )
           : vi.fn(async () => ({})),
     },
   );
@@ -59,6 +69,7 @@ const sentTexts = () => sent.map((p) => p.split("\n")[0]);
 
 beforeEach(() => {
   sent.length = 0;
+  userTexts.length = 0;
   localStorage.clear();
   useChatStore.setState({
     sessions: {},
@@ -92,6 +103,14 @@ function chatSend(text: string) {
 }
 
 describe("ChatPanel holds every send into a session live elsewhere", () => {
+  it("sends raw continuation separately from the suggestions-enriched Agent prompt", async () => {
+    mount();
+    chatSend("继续");
+    await waitFor(() => expect(sentTexts()).toEqual(["继续"]));
+    expect(sent[0]).toContain("═══ Atlas next-steps ═══");
+    expect(userTexts).toEqual(["继续"]);
+  });
+
   it("sends an atlas:chat-send normally while the session is not live", async () => {
     mount();
     chatSend("status?");

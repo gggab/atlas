@@ -75,6 +75,12 @@ impl BrowserUseState {
     pub fn url(&self) -> Option<String> {
         self.url.get().cloned()
     }
+    pub async fn on_user_prompt(&self, session: &str, text: &str) -> Result<(), String> {
+        self.bridge
+            .update_handoff_from_chat(session, super::browser_handoff::is_continuation(text))
+            .await?;
+        Ok(())
+    }
     fn changed(&self) {
         let _ = self.app.emit("atlas:browser-use-changed", ());
     }
