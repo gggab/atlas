@@ -26,6 +26,7 @@ let sequence = 0,
   context,
   host,
   runtime;
+let handoffSession;
 const server = createServer((socket) => {
   sockets.add(socket);
   socket.on("close", () => sockets.delete(socket));
@@ -36,11 +37,13 @@ const server = createServer((socket) => {
     if (!admitted) {
       assert.equal(message.secret, secret);
       assert.match(message.clientId, /^[a-f0-9-]{36}$/);
-      assert.equal(message.version, "0.3.2");
+      assert.equal(message.version, "0.4.4");
+      assert.equal(message.chatHandoff, 1);
       admitted = true;
       peer = socket;
       socket.write('{"type":"bridgeReady"}\n');
-    } else if (message.id) pending.get(message.id)?.(message);
+    } else if (message.type === "handoffState") handoffSession = message.sessionId;
+    else if (message.id) pending.get(message.id)?.(message);
   });
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -109,16 +112,14 @@ try {
   const authorized = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }));
   assert.equal(authorized.error ?? undefined, undefined, JSON.stringify(authorized));
   assert.equal(authorized.appConnected, true, JSON.stringify(authorized));
-  assert.equal(authorized.dataConsent, false);
+  assert.equal(authorized.websiteAccess.allowAll, false);
+  assert.equal(authorized.websiteAccess.pending.length, 0);
+  assert.equal(await popup.getByRole("button", { name: "Agree to page data sharing" }).count(), 0);
   const screenshots = path.join(root, "artifacts/browser-extension");
   await mkdir(screenshots, { recursive: true });
   await popup
     .locator("body")
-    .screenshot({ path: path.join(screenshots, `popup-${browser}-consent.png`) });
-  await popup.getByRole("button", { name: "Agree to page data sharing" }).click();
-  await popup
-    .getByRole("button", { name: "Withdraw page data consent and stop control" })
-    .waitFor();
+    .screenshot({ path: path.join(screenshots, `popup-${browser}-ready.png`) });
   await popup.getByRole("heading", { name: "Atlas connected" }).waitFor();
   await popup.emulateMedia({ colorScheme: "light" });
   await popup
@@ -130,6 +131,7 @@ try {
     .screenshot({ path: path.join(screenshots, `popup-${browser}-dark.png`) });
   await popup.emulateMedia({ colorScheme: "light" });
   const baseline = context.pages().length;
+  const baselinePages = new Set(context.pages());
   async function start(title, expectedError) {
     host = new ExtensionHost({ check: async () => {} });
     await host.start();
@@ -196,8 +198,26 @@ try {
   await popup
     .locator("body")
     .screenshot({ path: path.join(screenshots, `popup-${browser}-handoff.png`) });
-  const resumed = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "allowResume" }));
-  assert.equal(resumed.error ?? undefined, undefined);
+  assert.equal(await popup.getByRole("button", { name: "Allow Agent to continue" }).count(), 0);
+  await start("Retry before human continuation", /Waiting for user takeover/);
+  assert.equal(handoffSession, "fixture-session");
+  async function continueFromChat(sessionId) {
+    const id = String(++sequence);
+    const result = new Promise((resolve) => pending.set(id, resolve));
+    peer.write(JSON.stringify({ id, type: "resumeHandoff", sessionId, resume: true }) + "\n");
+    const timer = setTimeout(
+      () => pending.get(id)?.({ error: "Continuation fixture timeout" }),
+      5000,
+    );
+    try {
+      return await result;
+    } finally {
+      clearTimeout(timer);
+      pending.delete(id);
+    }
+  }
+  assert.equal((await continueFromChat("other-session")).result, false);
+  assert.equal((await continueFromChat("fixture-session")).result, true);
   await start("Resume task");
   assert.equal(
     context.pages().length,
@@ -210,18 +230,27 @@ try {
   assert.equal(context.pages().length, baseline);
   assert.equal(personal.isClosed(), false);
   assert.equal((await popup.evaluate(() => chrome.tabGroups.query({}))).length, 0);
-  await start("Consent withdrawal task");
-  await popup.getByRole("button", { name: "Withdraw page data consent and stop control" }).click();
-  await popup.getByRole("button", { name: "Agree to page data sharing" }).waitFor();
+  await start("Website access reset task");
+  await popup.locator("#website-settings > summary").click();
+  await popup.getByRole("button", { name: "Reset website access and stop control" }).click();
+  await popup.getByRole("heading", { name: "Waiting for you" }).waitFor();
   await host.close();
   await runtime.close();
   runtime = null;
-  assert.equal(context.pages().length, baseline);
+  assert.equal(
+    context.pages().length,
+    baseline + 1,
+    "Revocation retains the necessary handoff page",
+  );
   assert.equal(personal.isClosed(), false);
+  const waitingPage = context.pages().find((page) => !baselinePages.has(page));
+  const releasedPage = waitingPage.waitForEvent("close", { timeout: 5000 });
+  await popup.getByRole("button", { name: "Release waiting task pages" }).click();
+  await releasedPage;
+  assert.equal(context.pages().length, baseline);
   assert.equal((await popup.evaluate(() => chrome.tabGroups.query({}))).length, 0);
-  await start("Blocked after withdrawal", /consent/i);
   console.log(
-    "[native:smoke] PASS: native authorization, consent/revocation, automatic grouped tabs, repeated tasks, handoff/resume and cleanup",
+    "[native:smoke] PASS: native authorization, website-access reset, automatic grouped tabs, repeated tasks, handoff/resume and cleanup",
   );
 } finally {
   console.log("[native:smoke] Releasing fixture host, browser and broker");

@@ -39,7 +39,7 @@ it("installs in the chosen available browser and distinguishes offline from miss
   mount();
   expect(await screen.findByText("Extension not connected")).toBeTruthy();
   expect(screen.getByText("Browser not found")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Install in Google Chrome" }));
+  fireEvent.click(screen.getByRole("button", { name: "Install from Google Chrome Web Store" }));
   await waitFor(() =>
     expect(mocks.invoke).toHaveBeenCalledWith("browser_use_manage", {
       browser: "chrome",
@@ -48,8 +48,8 @@ it("installs in the chosen available browser and distinguishes offline from miss
   );
   expect(screen.queryByText("Enable automatic connection")).toBeNull();
 });
-it("opens Chrome store installation while keeping local loading guidance explicit", async () => {
-  mount(false, true);
+it("opens Chrome store installation even when an older snapshot marks it as local", async () => {
+  mount(false, false);
   fireEvent.click(
     await screen.findByRole("button", { name: "Install from Google Chrome Web Store" }),
   );
@@ -59,9 +59,37 @@ it("opens Chrome store installation while keeping local loading guidance explici
       action: "install",
     }),
   );
-  expect(
-    screen.getByText("Open chrome://extensions or edge://extensions to load a local build."),
-  ).toBeTruthy();
+});
+it.each([false, true])(
+  "keeps developer setup out of browser settings (store install: %s)",
+  async (storeInstall) => {
+    mount(false, storeInstall, true);
+    await screen.findByText("Google Chrome");
+    expect(
+      screen.getByRole("button", { name: "Install from Google Chrome Web Store" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Install from Microsoft Edge Add-ons" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Install the development extension/)).toBeNull();
+    expect(
+      screen.queryByText(/Developer mode|Load unpacked|Store listings become available/),
+    ).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Extension folder" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Copy extension folder" })).toBeNull();
+  },
+);
+it("shows the matching browser logos beside the browser names", async () => {
+  mount(false, true, true);
+  for (const [name, asset] of [
+    ["Google Chrome", "chrome.svg"],
+    ["Microsoft Edge", "edge.svg"],
+  ]) {
+    const label = await screen.findByText(name);
+    const icon = label.parentElement?.parentElement?.querySelector("img");
+    expect(icon?.getAttribute("src")).toContain(asset);
+    expect(icon?.getAttribute("alt")).toBe("");
+  }
 });
 it("manages a connected extension and pauses browser actions from Atlas", async () => {
   mount(true);

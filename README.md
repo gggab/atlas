@@ -28,7 +28,7 @@ The display-name change preserves existing application identifiers, `.atlas/` an
 - [Terminal session discovery](docs/reference/session-discovery.md): recent ACP sessions, file-time activity hints, queued-send protection and stable sidebar ordering.
 - Managed SSH connections, project associations and remote execution history, with credentials kept in OS credential storage. See [SSH](docs/reference/ssh.md).
 - Shared local memory: SQLite storage, events, retrieval, import, policy controls, management UI and a session-authorized loopback MCP service.
-- Browser Use: an opt-in Chrome/Edge extension managed from Settings > Browser control, with automatic native connection, persistent pause, grouped task tabs, a JavaScript REPL and session-authorized MCP tools. Completed task pages close except necessary handoffs; daily tabs and login remain. See [Browser Use](docs/reference/browser-use.md) and [extension publishing](docs/reference/browser-extension-publishing.md).
+- Browser Use: an opt-in Chrome/Edge extension managed from Settings > Browser control, with first-use website approval, browser-local allow/block decisions, automatic native connection, persistent pause, grouped task tabs, a JavaScript REPL and session-authorized MCP tools. Agents decide which task pages to keep; cleanup releases control and closes Agent-created pages by default. Explicitly retained pages stay in their original task group. Daily tabs and login remain. See [Browser Use](docs/reference/browser-use.md) and [extension publishing](docs/reference/browser-extension-publishing.md).
 
 The [Atlas Browser privacy policy](PRIVACY.md) describes browser-task data handling, external Agent/model providers, retention, and user controls.
 

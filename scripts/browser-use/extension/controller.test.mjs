@@ -59,7 +59,11 @@ test("controller shares one selected tab, rejects other targets, and detaches on
       super(url, { origin: "chrome-extension://" + "a".repeat(32) });
     }
   }
-  const controller = new ExtensionController(api, ExtensionSocket);
+  const controller = new ExtensionController(api, ExtensionSocket, {
+    authorize: async () => {},
+    begin() {},
+    end() {},
+  });
   try {
     const ready = new Promise((resolve) => relay.once("ready", resolve));
     await controller.connect(relay.endpoint, 7);
@@ -73,7 +77,10 @@ test("controller shares one selected tab, rejects other targets, and detaches on
       relay.rpc("cdp", { targetId: "selected", method: "Page.close" }),
       /exceeds/,
     );
-    assert.equal(commands.length, 1);
+    assert.deepEqual(
+      commands.map((c) => c.method),
+      ["Fetch.enable", "Target.setAutoAttach", "Page.getFrameTree", "Target.getTargetInfo"],
+    );
     await relay.close();
     for (let i = 0; i < 50 && !detached.length; i++)
       await new Promise((resolve) => setTimeout(resolve, 10));
@@ -110,6 +117,7 @@ test("disconnect during debugger attachment cannot leave new access behind", asy
     },
     ws,
   );
+  controller.permissions = { authorize: async () => {}, end() {} };
   const attaching = controller.attach(7, controller.generation);
   const rejected = assert.rejects(attaching, /cancelled/);
   await started;
@@ -143,4 +151,76 @@ test("failed debugger release remains retryable and is reported explicitly", asy
   fail = false;
   await controller.disconnect();
   assert.deepEqual(stored.atlasTabs, []);
+});
+
+test("shared pages and new task URLs require approval before attachment or creation", async () => {
+  const calls = [];
+  const api = {
+    debugger: {
+      onEvent: { addListener() {} },
+      onDetach: { addListener() {} },
+      attach: async () => calls.push("attach"),
+    },
+    tabs: {
+      get: async () => ({ url: "https://private.example" }),
+      create: async () => calls.push("create"),
+    },
+  };
+  const controller = new ExtensionController(api, ws, {
+    authorize: async () => {
+      throw new Error("not allowed");
+    },
+  });
+  await assert.rejects(controller.attach(7, 0), /not allowed/);
+  await assert.rejects(controller.createTab("https://private.example"), /not allowed/);
+  assert.deepEqual(calls, []);
+});
+
+test("document interception holds redirects until approval and never forwards the paused request", async () => {
+  const calls = [],
+    messages = [];
+  let approve;
+  const controller = new ExtensionController(
+    {
+      debugger: {
+        onEvent: { addListener() {} },
+        onDetach: { addListener() {} },
+        sendCommand: async (_, method) => calls.push(method),
+      },
+    },
+    ws,
+    {
+      authorize: () =>
+        new Promise((r) => {
+          approve = r;
+        }),
+    },
+  );
+  controller.send = (message) => messages.push(message);
+  const operation = controller.event(
+    { tabId: 7 },
+    "Fetch.requestPaused",
+    { requestId: "r", request: { url: "https://redirect.example/private" } },
+    { targetId: "t" },
+    0,
+  );
+  assert.deepEqual(calls, []);
+  approve();
+  await operation;
+  assert.deepEqual(calls, ["Fetch.continueRequest"]);
+  assert.deepEqual(messages, []);
+  controller.permissions.authorize = async () => {
+    throw new Error("not allowed");
+  };
+  await assert.rejects(
+    controller.event(
+      { tabId: 7 },
+      "Fetch.requestPaused",
+      { requestId: "r2", request: { url: "https://blocked.example" } },
+      { targetId: "t" },
+      0,
+    ),
+    /not allowed/,
+  );
+  assert.deepEqual(calls, ["Fetch.continueRequest", "Fetch.failRequest"]);
 });

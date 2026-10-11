@@ -140,7 +140,7 @@ impl BrowserBridge {
         let version = self.client.lock().as_ref().and_then(|c| c.version.clone());
         let selected = self.preferences.lock().browser.clone();
         json!({"connected":connected,"browser":browser,"selectedBrowser":selected,"version":version,"hostName":browser_native::host_name(),"error":error,
-            "browsers":[{"id":"chrome","available":browser_executable("chrome").is_some(),"storeInstall":!atlas_profile::is_dev()},{"id":"edge","available":browser_executable("edge").is_some(),"storeInstall":!atlas_profile::is_dev()}]})
+            "browsers":[{"id":"chrome","available":browser_executable("chrome").is_some()},{"id":"edge","available":browser_executable("edge").is_some()}]})
     }
     fn preferences_path(&self) -> Result<PathBuf, String> {
         Ok(self
@@ -171,6 +171,7 @@ impl BrowserBridge {
             "background.js",
             "controller.js",
             "native-connection.js",
+            "site-permissions.js",
             "popup.html",
             "popup.css",
             "popup.js",
@@ -423,7 +424,7 @@ impl BrowserBridge {
                 .send(json!({"id":id,"type":"start","endpoint":endpoint,"title":title,"sessionId":session_id}))
                 .await
                 .map_err(|_| "Browser profile disconnected")?;
-            let value = tokio::time::timeout(std::time::Duration::from_secs(20), result)
+            let value = tokio::time::timeout(std::time::Duration::from_secs(60), result)
                 .await
                 .map_err(|_| "Browser task connection timed out")?
                 .map_err(|_| "Browser profile disconnected")?;
@@ -501,10 +502,7 @@ impl BrowserBridge {
             drop(preferences);
             self.forget()?;
         }
-        self.launch_browser(
-            browser,
-            browser_management_url(browser, action, atlas_profile::is_dev()),
-        )?;
+        self.launch_browser(browser, browser_management_url(browser, action))?;
         *self.error.lock() = None;
         self.changed();
         Ok(())
@@ -569,17 +567,17 @@ impl BrowserBridge {
     }
 }
 
-fn browser_management_url(browser: &str, action: &str, dev: bool) -> Option<String> {
+fn browser_management_url(browser: &str, action: &str) -> Option<String> {
     if action == "reconnect" {
         return None;
     }
-    if browser == "chrome" && action == "install" && !dev {
+    if browser == "chrome" && action == "install" {
         return Some(format!(
-            "https://chromewebstore.google.com/detail/{}",
+            "https://chromewebstore.google.com/detail/atlas-browser/{}",
             browser_native::EXTENSION_ID
         ));
     }
-    if browser == "edge" && action == "install" && !dev {
+    if browser == "edge" && action == "install" {
         return Some(format!(
             "https://microsoftedge.microsoft.com/addons/detail/{}",
             browser_native::EDGE_EXTENSION_ID
@@ -644,33 +642,25 @@ fn browser_executable(browser: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     #[test]
-    fn browser_installation_uses_both_assigned_store_items_and_dev_loading() {
+    fn browser_installation_opens_store_items_in_both_app_profiles() {
         assert_eq!(
-            browser_management_url("chrome", "install", false).as_deref(),
-            Some("https://chromewebstore.google.com/detail/falkhmhmbghdjcabgojjooddbhjpmmfd")
+            browser_management_url("chrome", "install").as_deref(),
+            Some("https://chromewebstore.google.com/detail/atlas-browser/falkhmhmbghdjcabgojjooddbhjpmmfd")
         );
         assert_eq!(
-            browser_management_url("chrome", "install", true).as_deref(),
+            browser_management_url("chrome", "manage").as_deref(),
             Some("chrome://extensions/")
         );
         assert_eq!(
-            browser_management_url("chrome", "manage", false).as_deref(),
-            Some("chrome://extensions/")
-        );
-        assert_eq!(
-            browser_management_url("edge", "install", false).as_deref(),
+            browser_management_url("edge", "install").as_deref(),
             Some("https://microsoftedge.microsoft.com/addons/detail/dpjekhhlbnbbpcjampjnmffnpnndpcci")
         );
         assert_eq!(
-            browser_management_url("edge", "install", true).as_deref(),
+            browser_management_url("edge", "manage").as_deref(),
             Some("edge://extensions/")
         );
-        assert_eq!(
-            browser_management_url("edge", "manage", false).as_deref(),
-            Some("edge://extensions/")
-        );
-        assert_eq!(browser_management_url("chrome", "reconnect", false), None);
-        assert_eq!(browser_management_url("edge", "reconnect", false), None);
+        assert_eq!(browser_management_url("chrome", "reconnect"), None);
+        assert_eq!(browser_management_url("edge", "reconnect"), None);
     }
     #[test]
     fn browser_pause_and_selection_survive_restart_and_invalid_files_are_reported() {

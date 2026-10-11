@@ -1,6 +1,6 @@
 # Atlas Browser Privacy Policy
 
-Effective date: October 8, 2026
+Effective date: October 11, 2026
 
 This policy covers the Atlas Browser extension and its browser-control connection
 to the local Atlas desktop app maintained in [gggab/atlas](https://github.com/gggab/atlas).
@@ -13,6 +13,12 @@ have their own privacy policies.
 Atlas Browser lets an Agent configured in Atlas work in dedicated browser task
 tabs or existing tabs that you explicitly share. It supports manual takeover,
 user-approved continuation, and cleanup of temporary task pages.
+
+Before an Agent first uses a website hostname, a prompt explains page-data sharing
+and asks you to allow it once for this task, remember that site, allow all sites,
+or decline and block the site. Each subdomain asks separately; blocked sites
+override allow-all. Browser installation permissions and metadata connection do
+not grant this website access. Old global page-data agreements do not enable it.
 
 To provide these features, the extension processes:
 
@@ -67,13 +73,18 @@ the maintainer for routine human review.
 ## Storage and retention
 
 The browser-profile identifier is stored locally in the browser's extension
-storage. Session storage contains task/shared-tab ownership and handoff state;
+storage, together with your remembered website decisions and allow-all setting.
+Once grants exist only for the active task and end on disconnect or takeover.
+Session storage contains task/shared-tab ownership and handoff state;
 these records are updated or cleared during connection, cleanup, and recovery.
 Atlas also stores profile binding and browser-control preferences in its local
 app data. These settings may remain across app restarts.
 
-Temporary Agent-owned tabs normally close when the task finishes or control is
-released. Necessary handoff pages can remain until you continue or release them.
+The Agent decides which task pages to keep or close based on your request.
+Agent-owned tabs close by default when the task finishes or control is released,
+unless explicitly marked keep, result or handoff. Retained pages remain in their
+original Atlas group without Agent control. Handoff pages remain until you
+continue or release them. Existing user tabs are never closed by task cleanup.
 Closing task tabs does not erase browser history, downloaded files, website
 accounts, or Atlas conversation history.
 
@@ -85,10 +96,18 @@ External providers may keep their own records under their policies.
 
 ## Your controls and deletion
 
+- Use **Manage website access** in the extension to remove allowed/blocked sites
+  or reset all website decisions. Changes immediately stop active control and
+  retain necessary handoff pages. Removing a block while allow-all is enabled
+  allows that site again; reset all access to return to asking per website.
+  Closing an unanswered prompt or a timeout does not approve access. These
+  controls do not erase existing Atlas or provider records.
 - Pause browser control in Atlas Settings > Browser control to stop Agent browser
   actions and release active control. The pause preference survives app restarts.
-- Use the extension popup to take over a page, allow continuation, or release
-  waiting task pages. Existing user-owned tabs are preserved during task cleanup.
+- Use the extension popup to take over a page or release waiting task pages.
+  After verification, send continue (or 继续) in the original Atlas chat to
+  return control without an extra extension click. Questions or unrelated messages
+  keep the handoff paused. Existing user-owned tabs are preserved during cleanup.
 - Use **Forget selected browser profile** in Atlas to remove the saved profile
   binding. This does not erase Atlas transcripts or browser extension storage.
 - Remove the extension through your browser's extension management page to remove

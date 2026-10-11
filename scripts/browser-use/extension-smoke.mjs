@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright-core";
 import { createServer } from "node:http";
-import { cp, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,12 +18,46 @@ await writeFile(
   path.join(extension, "config.js"),
   `export const HOST_NAME = "com.atlas.browser.fixture.unregistered";\nexport const APP_NAME = "Atlas";\n`,
 );
+let blockedRequests = 0;
+const linkQuery = "?tracking=" + "x".repeat(200) + "&priceTId=tail-value&spm=a%2Bb";
+const instructions = await readFile(
+  new URL("../../src-tauri/resources/browser-use-instructions.md", import.meta.url),
+  "utf8",
+);
+const linkWorkflow = [...instructions.matchAll(/```js\r?\n([\s\S]*?)```/g)]
+  .map((match) => match[1])
+  .find((code) => code.includes('getAttribute("href")'));
+assert.ok(linkWorkflow);
 const fixture = createServer((req, res) => {
+  if (req.url === "/links") {
+    res.setHeader("Content-Type", "text/html");
+    const href = `http://127.0.0.1:${fixture.address().port}/ad${linkQuery}`;
+    res.end(`<a href="${href.replaceAll("&", "&amp;")}">Observed product name</a>`);
+    return;
+  }
+  if (req.url === "/ad" + linkQuery) {
+    res.writeHead(302, { Location: "/detail" + linkQuery });
+    res.end();
+    return;
+  }
+  if (req.url === "/detail" + linkQuery) {
+    res.setHeader("Content-Type", "text/html");
+    res.end("<title>Observed product</title><p>Reviews fixture</p><p>Size chart fixture</p>");
+    return;
+  }
+  if (req.url === "/redirect") {
+    res.writeHead(302, { Location: `http://localhost:${fixture.address().port}/blocked` });
+    res.end();
+    return;
+  }
+  if (req.url === "/blocked") blockedRequests++;
   res.setHeader("Content-Type", "text/html");
   res.end(
-    req.url === "/frame"
-      ? '<label>Name<input aria-label="Name"></label>'
-      : `<title>Atlas extension fixture</title><label>Name<input aria-label="Name"></label><button onclick="document.querySelector('output').textContent=document.querySelector('input').value">Save</button><output></output><iframe src="http://localhost:${fixture.address().port}/frame"></iframe>`,
+    req.url === "/simple" || req.url === "/blocked"
+      ? "<title>Website approval fixture</title><p>Fixture page</p>"
+      : req.url === "/frame"
+        ? '<label>Name<input aria-label="Name"></label>'
+        : `<title>Atlas extension fixture</title><label>Name<input aria-label="Name"></label><button onclick="document.querySelector('output').textContent=document.querySelector('input').value">Save</button><output></output><iframe src="http://localhost:${fixture.address().port}/frame"></iframe>`,
   );
 });
 await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve));
@@ -68,14 +102,42 @@ try {
   });
   await host.start();
   console.log("[extension:smoke] Sharing an existing fixture tab through the real extension popup");
-  const reply = await popup.evaluate(
-    async ({ endpoint, url }) => {
-      const tabs = await chrome.tabs.query({});
-      const selected = tabs.find((tab) => tab.url === url + "/");
-      return chrome.runtime.sendMessage({ action: "connect", endpoint, tabId: selected.id });
-    },
-    { endpoint: host.relay.endpoint, url },
-  );
+  const approvalOpened = context.waitForEvent("page", { timeout: 10_000 });
+  const connecting = popup
+    .evaluate(
+      async ({ endpoint, url }) => {
+        const tabs = await chrome.tabs.query({});
+        const selected = tabs.find((tab) => tab.url === url + "/");
+        return chrome.runtime.sendMessage({ action: "connect", endpoint, tabId: selected.id });
+      },
+      { endpoint: host.relay.endpoint, url },
+    )
+    .catch((error) => ({ error: error.message }));
+  const approval = await approvalOpened;
+  await approval.waitForURL(`chrome-extension://${extensionId}/popup.html#website-access`);
+  await approval
+    .locator("#website-host")
+    .filter({ hasText: "127.0.0.1" })
+    .waitFor({ timeout: 10_000 });
+  async function approve(hostname, choice = "allow_site") {
+    await popup.locator("#website-host").filter({ hasText: hostname }).waitFor();
+    await popup.locator(`[data-choice="${choice}"]`).click();
+  }
+  await popup.locator("#website-host").filter({ hasText: "127.0.0.1" }).waitFor();
+  const screenshots = fileURLToPath(new URL("../../../output/playwright/", import.meta.url));
+  await mkdir(screenshots, { recursive: true });
+  for (const colorScheme of ["light", "dark"]) {
+    await popup.emulateMedia({ colorScheme });
+    await popup.locator("body").screenshot({
+      path: path.join(
+        screenshots,
+        `website-approval-${process.argv[2] ?? "edge"}-${colorScheme}.png`,
+      ),
+    });
+  }
+  await approval.locator('[data-choice="allow_site"]').click();
+  await approve("localhost");
+  const reply = await connecting;
   assert.equal(reply.error, undefined);
   await host.connect();
   assert.equal((await host.list()).length, 1);
@@ -108,17 +170,52 @@ try {
   );
   assert.equal(created.content.at(-1).text, "about:blank");
   assert.equal((await host.list()).length, 2);
+  console.log(
+    "[extension:smoke] Full observed redirect link, task grouping and destination content",
+  );
+  await run(
+    `let sourceTab = tab; tab = created; await tab.goto(${JSON.stringify(url + "/links")});`,
+  );
+  const groupedLinkTab = await popup.evaluate(async (url) => {
+    const selected = (await chrome.tabs.query({})).find((tab) => tab.url === url + "/links");
+    return selected.groupId;
+  }, url);
+  assert.notEqual(groupedLinkTab, -1);
+  const followed = await run(linkWorkflow);
+  assert.ok(followed.content.some((item) => item.text === url + "/detail" + linkQuery));
+  assert.ok(
+    followed.content.some(
+      (item) => item.text?.includes("Reviews fixture") && item.text.includes("Size chart fixture"),
+    ),
+  );
+  await run("tab = sourceTab;");
+  await run(
+    "let disposable = await browser.tabs.new(); await disposable.markTemporary(); let resultPage = await browser.tabs.new(); await resultPage.markDeliverable(); let keptPage = await browser.tabs.new(); await keptPage.markKeep();",
+  );
+  await run(
+    `await created.goto(${JSON.stringify(url + "/simple#undecided")}); await resultPage.goto(${JSON.stringify(url + "/simple#result")}); await keptPage.goto(${JSON.stringify(url + "/simple#kept")});`,
+  );
   allowed = false;
   assert.equal((await runtime.execute("await tab.reload();")).isError, true);
   allowed = true;
-  console.log(
-    "[extension:smoke] Task cleanup closes owned tabs and preserves existing browser pages",
-  );
+  console.log("[extension:smoke] Cleanup honors Agent keep/close decisions and releases control");
   const pageCount = context.pages().length;
   assert.equal((await host.cleanup()).keepAlive, false);
-  assert.equal(context.pages().length, pageCount - 1);
-  const groupCount = await popup.evaluate(async () => (await chrome.tabGroups.query({})).length);
-  assert.equal(groupCount, 0);
+  assert.equal(context.pages().length, pageCount - 2);
+  // The task's CDP handles close on disconnect; verify the independent browser context.
+  assert.equal(
+    context.pages().some((page) => page.url() === url + "/simple#undecided"),
+    false,
+  );
+  for (const fragment of ["result", "kept"])
+    assert.ok(context.pages().some((page) => page.url() === url + "/simple#" + fragment));
+  const retainedGroups = await popup.evaluate(async (url) => {
+    const tabs = await chrome.tabs.query({});
+    return ["result", "kept"].map(
+      (fragment) => tabs.find((tab) => tab.url === url + "/simple#" + fragment).groupId,
+    );
+  }, url);
+  assert.deepEqual(retainedGroups, [groupedLinkTab, groupedLinkTab]);
   assert.equal(shared.isClosed(), false);
   assert.equal(unrelated.isClosed(), false);
   for (let i = 0; i < 50; i++) {
@@ -131,13 +228,18 @@ try {
   // getTargets().attached also includes this test's Playwright connection.
   // Check ownership specifically: this extension can no longer send commands.
   const released = await popup.evaluate(async (url) => {
-    const selected = (await chrome.tabs.query({})).find((t) => t.url === url + "/");
-    try {
-      await chrome.debugger.sendCommand({ tabId: selected.id }, "Target.getTargetInfo");
-      return false;
-    } catch (error) {
-      return /not attached/i.test(error.message);
+    const controlled = (await chrome.tabs.query({})).filter((tab) =>
+      [url + "/", url + "/simple#result", url + "/simple#kept"].includes(tab.url),
+    );
+    for (const tab of controlled) {
+      try {
+        await chrome.debugger.sendCommand({ tabId: tab.id }, "Target.getTargetInfo");
+        return false;
+      } catch (error) {
+        if (!/not attached/i.test(error.message)) return false;
+      }
     }
+    return controlled.length === 3;
   }, url);
   assert.equal(released, true);
   console.log(
@@ -178,12 +280,66 @@ try {
     (await workerFixture.run("nodeRepl.write(await deferred);")).content[0].text,
     /completed call/,
   );
+  assert.equal(
+    (
+      await workerFixture.run(
+        `let later = await browser.tabs.new(); await later.goto(${JSON.stringify(url + "/simple#later-task")});`,
+      )
+    ).isError,
+    false,
+  );
+  const laterGroup = await popup.evaluate(
+    async (url) =>
+      (await chrome.tabs.query({})).find((tab) => tab.url === url + "/simple#later-task").groupId,
+    url,
+  );
+  assert.notEqual(laterGroup, groupedLinkTab);
   assert.equal((await workerFixture.run("", true)).keepAlive, false);
   await workerFixture.close();
   workerFixture = null;
-  assert.equal(context.pages().length, pageCount - 1);
+  assert.equal(context.pages().length, pageCount - 2);
+  assert.equal(
+    context.pages().some((page) => page.url() === url + "/simple#later-task"),
+    false,
+  );
+  for (const fragment of ["result", "kept"])
+    assert.ok(context.pages().some((page) => page.url() === url + "/simple#" + fragment));
   assert.equal(shared.isClosed(), false);
   assert.equal(unrelated.isClosed(), false);
+  console.log(
+    "[extension:smoke] Resetting website permissions and denying a new redirect hostname",
+  );
+  const reset = await popup.evaluate(() =>
+    chrome.runtime.sendMessage({ action: "resetWebsiteAccess" }),
+  );
+  assert.equal(reset.error ?? undefined, undefined);
+  await shared.goto(url + "/simple");
+  host = new ExtensionHost({ check: async () => {} });
+  await host.start();
+  const retry = popup.evaluate(
+    async ({ endpoint, url }) => {
+      const selected = (await chrome.tabs.query({})).find((t) => t.url === url + "/simple");
+      return chrome.runtime.sendMessage({ action: "connect", endpoint, tabId: selected.id });
+    },
+    { endpoint: host.relay.endpoint, url },
+  );
+  await approve("127.0.0.1", "allow_once");
+  assert.equal((await retry).error, undefined);
+  await host.connect();
+  runtime = new BrowserRuntime({
+    browserId: "extension",
+    backend: (m, a) => host.call(m, a),
+    resolvePage: (id) => host.resolvePage(id),
+  });
+  const navigation = runtime.execute(
+    `let task = await browser.tabs.selected(); await task.goto(${JSON.stringify(url + "/redirect")});`,
+  );
+  await approve("localhost", "deny");
+  assert.equal((await navigation).isError, true);
+  assert.equal(blockedRequests, 0, "A declined redirect never reaches its HTTP endpoint");
+  const deniedStatus = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }));
+  assert.equal(deniedStatus.websiteAccess.sites.localhost, "block");
+  assert.equal(shared.isClosed(), false);
   console.log(
     "[extension:smoke] PASS: real extension, existing-tab isolation, facade and preservation",
   );

@@ -134,7 +134,7 @@ try {
   authorized = true;
   console.log(`${browser}: upload, dialog and revocation completed`);
   await run(
-    "await tab.markHandoff(); let resultPage = await browser.tabs.new(); await resultPage.markDeliverable(); let temporaryPage = await browser.tabs.new();",
+    "await tab.markHandoff(); let resultPage = await browser.tabs.new(); await resultPage.markDeliverable(); let temporaryPage = await browser.tabs.new(); await temporaryPage.markTemporary();",
   );
   console.log(`${browser}: retention marks set`);
   const retained = await host.cleanup();

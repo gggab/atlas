@@ -22,6 +22,7 @@ for (const browser of ["chrome", "edge"]) {
     "background.js",
     "controller.js",
     "native-connection.js",
+    "site-permissions.js",
     "popup.html",
     "popup.css",
     "popup.js",

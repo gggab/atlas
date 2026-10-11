@@ -13,7 +13,7 @@ store installation still needs verification with the updated desktop build.
 
 1. Run `bun run browser:icons` after editing the SVG, then `bun run browser:test`.
 2. Run `bun run browser:package`. Upload
-   `artifacts/browser-extension/atlas-browser-0.3.2-chrome.zip` as a new package
+   `artifacts/browser-extension/atlas-browser-0.4.4-chrome.zip` as a new package
    on the **existing Chrome draft item**, not a new item. The ZIP puts
    `manifest.json` at its root, retains the assigned Chrome public key,
    excludes tests, SDK/Node binaries and runtime secrets, and targets released Atlas.
@@ -28,7 +28,7 @@ store installation still needs verification with the updated desktop build.
    under the Microsoft Edge program (currently no registration fee), then open the
    existing Atlas Browser item to upload a package update. Its supplied CRX ID is integrated in
    the desktop native host; the Store ID is not a native extension origin.
-   Use `artifacts/browser-extension/atlas-browser-0.3.2-edge.zip` produced by
+   Use `artifacts/browser-extension/atlas-browser-0.4.4-edge.zip` produced by
    `browser:package`. The Edge ZIP omits the manifest `key` field, which Partner
    Center rejects. Do not rename or copy the Chrome ZIP for Edge. The Chrome ZIP
    and source/unpacked manifest retain the assigned Chrome key; Edge's store
@@ -36,22 +36,24 @@ store installation still needs verification with the updated desktop build.
    See [account registration](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/create-dev-account)
    and [Edge publishing](https://learn.microsoft.com/en-us/microsoft-edge/extensions/publish/publish-extension).
 
-Version 0.3.2 adds explicit, versioned page-data consent in the extension popup.
-Native metadata connection remains automatic, but tasks, tab sharing and resume
-require consent. The disclosure names page data, possible sensitive content,
-the local app and the selected external Agent/model provider. Withdrawal stops
-active control before persistence, clears the next shared tab, and blocks further
-page access; it does not delete prior Atlas/provider records. Existing 0.3.1
-preferences do not count as consent. Upload 0.3.2 to the existing Edge item rather
-than submitting the previously uploaded 0.3.1 package. No native protocol or
-store identity changes are required in the desktop companion.
-
-Windows reviewers can download the published desktop companion from
-[Atlas改 v0.4.0](https://github.com/gggab/atlas/releases/tag/v0.4.0).
-The MSI is unsigned and the release is a prerelease. Full Agent tasks require an
-independently configured external CLI and its vendor authentication; disclose
-this dependency and do not invent review credentials. Browser fixture checks do
-not establish store-installed behavior or a paid Agent's end-to-end operation.
+Version 0.4.1 replaces the global agreement with first-use website approval.
+Version 0.4.2 fixes automatic approval-window messaging. The real-browser smoke
+check must approve a website in that automatic window, not only in the toolbar
+popup, before packaging an update.
+Version 0.4.4 corrects the 0.4.3 retention default and grouping: Agent-created
+tabs close unless explicitly retained, and retained tabs stay in their original
+Atlas group. Verify unmarked/temporary tabs close, keep/result tabs keep the same
+group ID without debugging or handoff state, and genuine handoffs still require
+human continuation. Later tasks must not inherit or close earlier retained groups.
+Rebuild/restart Atlas Dev so Agents receive the updated lifecycle instructions,
+then reload its local extension. Existing Agent sessions may need a new session
+to receive refreshed browser tool documentation.
+The disclosure remains beside Allow once / Allow for this site / Allow for all
+sites / Decline. Manage website access supports removal and reset, which stop
+control immediately. Existing global consent never becomes allow-all. Validate
+new sites, redirects, frames, blocked sites, revocation and task-scoped grants
+before updating the existing store items. Match privacy/store disclosures to the
+actual distributed behavior.
 
 ## Integrate store identity before submission
 
@@ -62,13 +64,14 @@ not establish a store ID; follow the [official key workflow](https://developer.c
 Chrome's provided public key is now in `extension/manifest.json` and derives the
 ID above. Native origin validation, native-host allowlist, integration fixture
 and released-app installation URL use that same ID. Released Atlas opens the
-Chrome store listing on Install; Atlas Dev keeps local unpacked installation.
+Chrome store listing on Install in both app profiles; Atlas Dev keeps local
+unpacked installation for source testing through the development instructions.
 The listing is unavailable until publication. Edge's supplied CRX ID differs
 from Chrome's ID and is accepted alongside it.
 
 The native host's origin validation and `allowed_origins` share the same two exact
-store identities; there are no wildcard origins. Released Atlas opens the matching
-Chrome or Edge store item. Atlas Dev still opens local extension management.
+store identities; there are no wildcard origins. Both app profiles open the matching
+Chrome or Edge HTTPS store item on Install, without forcing a Google account.
 Build and distribute the updated Atlas desktop app, then test each store extension
 and native-host connection on a fresh browser profile. The extension ZIP itself
 does not register or update the native host; uploading it cannot update an older
@@ -76,9 +79,11 @@ Atlas installation. Restart the updated app to refresh native-host registration.
 Store-ID integration does not prove store installation or reviewer access.
 
 The store package currently targets released Atlas (`com.atlas.browser`).
-Atlas Dev uses the unpacked copy generated by its settings page
+Atlas Dev uses the unpacked copy prepared on app startup
 (`com.atlas.browser.dev`); one browser profile can load only one extension with
-the same ID. When upgrading from the retired development ID
+the same ID. Local loading instructions and configuration-directory paths are in
+[Browser Use development](browser-use.md#development), not the settings page.
+When upgrading from the retired development ID
 `mfppkokdebmgaigclpffjjafpicgapbj`, remove the old extension and explicitly
 **Forget selected browser profile** in Atlas, then load the prepared folder again.
 Saved bindings are not silently deleted during upgrade. Restart Atlas to update

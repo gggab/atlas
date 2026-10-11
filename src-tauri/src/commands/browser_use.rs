@@ -358,7 +358,7 @@ impl BrowserUseState {
                     changed=completed.changed()=>{
                         if changed.is_err(){break;}
                         let (answer, _)=oneshot::channel();
-                        // Cleanup closes task-owned pages except required handoffs.
+                        // Cleanup releases control and executes the Agent's tab decisions.
                         Execution { grant: owner_grant.clone(), code: String::new(), cleanup: true, timeout_ms: 60_000, answer }
                     },
                     request=receiver.recv()=>match request{Some(request)=>request,None=>break}
@@ -516,9 +516,9 @@ struct Args {
 fn tools_list() -> ListToolsResult {
     let tools=[
             ("browser_status","Read this session's browser status and Browser Use documentation. Does not launch a browser.",json!({}),vec![]),
-            ("browser_start","Automatically connect the authorized Chrome/Edge extension and open a new grouped task tab. First-time setup requires installing and authorizing Atlas Browser. Never copy login profiles.",json!({}),vec![]),
-            ("browser_repl","Execute persistent JavaScript using cua/browser/agent and nodeRepl. Reuse handles across calls. Emit observations explicitly. Errors do not roll back browser actions; inspect before retrying. Trusted local code execution, not a security sandbox.",json!({"code":{"type":"string","maxLength":64000},"title":{"type":"string","maxLength":120},"timeout_ms":{"type":"integer","minimum":1000,"maximum":120000}}),vec!["code"]),
-            ("browser_reset","Close Agent-created task tabs except necessary handoffs, remove empty groups, release debugging and clear handles. Preserve existing user tabs and browser login.",json!({}),vec![]),
+            ("browser_start","Automatically connect the authorized Chrome/Edge extension and open a grouped task tab. Use Atlas tools for browser tasks; never launch task links through shell/OS URL handlers. Preserve pages with markKeep(). First-time setup requires installing and authorizing Atlas Browser. Never copy login profiles.",json!({}),vec![]),
+            ("browser_repl","Execute persistent JavaScript using cua/browser/agent and nodeRepl. Preserve full observed hrefs; resolve with new URL(href, sourceURL), never scheme concatenation. Navigate/inspect one page at a time; stop and hand off on verification. Reuse handles and emit observations. Errors do not roll back actions. Trusted local execution, not a security sandbox.",json!({"code":{"type":"string","maxLength":64000},"title":{"type":"string","maxLength":120},"timeout_ms":{"type":"integer","minimum":1000,"maximum":120000}}),vec!["code"]),
+            ("browser_reset","Release debugging and clear handles. Agent-created pages close by default unless marked keep, deliverable or handoff. Retained pages stay in their original Atlas task group. Existing user tabs and browser login remain.",json!({}),vec![]),
         ].into_iter().map(|(name,description,properties,required)|Tool::new(name,description,Arc::new(json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}).as_object().cloned().unwrap_or_default()))).collect();
     ListToolsResult::with_all_items(tools)
         .with_ttl_ms(60_000)

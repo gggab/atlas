@@ -3,10 +3,27 @@
 Use browser_status first. browser_start automatically connects the authorized
 Atlas Browser extension and opens a new grouped task tab in daily Chrome/Edge.
 First-time setup: the human opens Settings > Browser control in Atlas, chooses
-Chrome/Edge, and loads the extension folder shown there. It connects automatically.
+Chrome/Edge, and installs the extension from its store. Source builds use the
+local extension folder documented in development instructions. It connects automatically.
 Atlas manages installation guidance, connection and persistent global pause.
 No addresses or secrets need to be copied. If setup is missing, explain these steps
 and wait. Never repeatedly retry an offline profile or copy a browser login profile.
+
+For browser tasks, open and navigate pages only through browser_start and
+browser_repl (cua.createBrowserTab, browser.tabs.new and tab.goto). Do not launch
+task links through PowerShell Start-Process, cmd start, shell browser commands,
+OS URL handlers or another browser surface. These pages bypass Atlas task
+ownership and grouping. Do not use them to avoid cleanup, website approval,
+verification or an offline tool. Use markKeep() to preserve pages instead.
+If Atlas browser tools are unavailable or reject access, report it and stop;
+never substitute a system browser launch. External CLI shell permissions remain
+owned by the CLI; this instruction is not an OS sandbox.
+
+New website hostnames require human approval in the extension's automatic prompt:
+Allow once (this task), Allow for this site, Allow for all sites, or Decline.
+Redirects and frames can ask separately. Wait for the human; never approve through
+tools, bypass a declined site, or repeatedly retry a timed-out prompt. Website
+permissions can be reviewed/reset in the extension.
 
 browser_repl executes persistent JavaScript per ACP session. Reuse existing tabs:
 
@@ -27,16 +44,61 @@ Numeric refs require the latest getAXState. Screenshot before coordinate input.
 Use scoped Playwright locators and frame locators; await every browser action.
 Background actions from ended tool calls are rejected. Errors never mean rollback.
 
-Finished/failed turns automatically close Agent-created tabs, remove task groups,
-detach debugging and clear handles. Existing user tabs/windows and login remain.
-Only await tab.markHandoff() preserves a page for necessary user intervention.
-Do not mark ordinary results for handoff; markDeliverable() does not retain them.
+Keep the complete observed href in a variable. Shorten only a separate display
+label; never navigate a slice/truncated URL or strip/reconstruct query parameters
+or fragments to save output. Resolve absolute, protocol-relative and relative
+hrefs with new URL(rawHref, await tab.url()); never prepend "https:" blindly.
+Use a link identified in the current DOM, rather than inventing an address.
+This example assumes tab already refers to the observed source page; replace
+the link's accessible name with the one you observed:
+
+```js
+let link = tab.playwright.getByRole("link", { name: "Observed product name", exact: true });
+let rawHref = await link.getAttribute("href");
+if (!rawHref) throw new Error("The observed link has no href");
+let target = new URL(rawHref, await tab.url());
+if (!["http:", "https:"].includes(target.protocol)) throw new Error("Expected an HTTP(S) link");
+await tab.goto(target.href);
+nodeRepl.write(await tab.url());
+nodeRepl.write(await tab.playwright.domSnapshot());
+```
+
+Navigate and inspect one page at a time. Do not batch page openings/navigations
+with Promise.all or launch the next page before inspecting the current result.
+After navigation, inspect the final URL and DOM, verify the intended item/page
+identity and the specific content required by the task. Wait for observable page
+state rather than repeatedly navigating or assuming a fixed delay is enough.
+Do not report reviews, prices, sizes or other details unless observed. Report
+missing content as missing; query-parameter dependence needs evidence, not an
+assumption. Ad/redirect links are not automatically invalid: preserve their full
+address, inspect the destination, or use an observed direct link. Do not discard
+valid results solely because their path differs from an expected filename.
+On login, CAPTCHA or verification, stop further openings, navigations and retries.
+Mark the necessary page for handoff, return control and wait for human continuation;
+do not try another browser, shell launch, raw network request or rewritten link
+to bypass it. Sequential operation does not guarantee a website will never ask
+for verification.
+
+You decide whether each Agent-created page should remain open or close based on
+the user's task. Review that decision before finishing your reply. Await
+tab.markTemporary() on pages you choose to close at cleanup; await tab.markKeep()
+or tab.markDeliverable() on pages you choose to preserve. You may revise these
+markers during the task. Agent-created pages default to temporary and close unless
+you explicitly markKeep(), markDeliverable() or markHandoff() before cleanup.
+No website/content category forces your decision. Existing user tabs/windows
+and login always remain, regardless of markers.
+Finished/failed turns detach debugging and clear handles. Retained ordinary pages
+stay in their original Atlas task group and do not require human continuation or
+block the next task. Do not ungroup retained pages or reopen them through the OS.
+Use await tab.markHandoff() only when returning control for human intervention.
 Before asking the human to complete login/CAPTCHA, mark the necessary page for
 handoff. The extension's Take over this page retains the necessary page and
 releases debugging. Ask the user to send continue (or 继续) in the original Atlas
-chat after verification. That human message returns control without an extra
-extension click; never retake control while they are working. Then browser_start resumes retained pages
-automatically, with fresh JS handles. Completion then closes them normally.
+chat after verification. Atlas treats that human message as returning control;
+no extra extension click is needed. Never retake control while they are working.
+Then browser_start resumes retained pages
+automatically, with fresh JS handles. Resumed pages return to temporary task state;
+mark them explicitly again if they should remain after the resumed task finishes.
 browser_reset, pause, cancellation and session end apply the same cleanup policy.
 The app-level extension connection remains ready for subsequent tasks.
 No CAPTCHA bypass is implemented or promised. Do not repeatedly retry verification.

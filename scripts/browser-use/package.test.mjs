@@ -55,7 +55,7 @@ test("store ZIPs omit the Edge key while preserving Chrome identity and packaged
         ),
       ),
     );
-    assert.equal(files.size, 13);
+    assert.equal(files.size, 14);
     const packaged = JSON.parse(files.get("manifest.json"));
     if (browser === "edge")
       assert.equal(Object.hasOwn(packaged, "key"), false, "Edge rejects the key field");

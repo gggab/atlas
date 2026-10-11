@@ -33,6 +33,7 @@ function fixture() {
 
 test("turn cleanup closes temporary pages and retains result and login handoff pages", async () => {
   const { host, closed } = fixture();
+  await host.call("mark", { id: "temporary", disposition: "temporary" });
   await host.call("mark", { id: "result", disposition: "deliverable" });
   await host.call("mark", { id: "login", disposition: "handoff" });
   const result = await host.cleanup();
@@ -46,6 +47,14 @@ test("turn cleanup closes temporary pages and retains result and login handoff p
   await host.call("mark", { id: "login", disposition: "temporary" });
   assert.equal((await host.cleanup()).keepAlive, false);
   assert.deepEqual(closed, ["temporary", "result", "login", "window"]);
+});
+
+test("unmarked pages close by default while an explicit keep overrides a temporary marker", async () => {
+  const { host, closed } = fixture();
+  await host.call("mark", { id: "result", disposition: "temporary" });
+  await host.call("mark", { id: "result", disposition: "keep" });
+  assert.equal((await host.cleanup()).tabs.length, 1);
+  assert.deepEqual(closed, ["temporary", "login"]);
 });
 
 test("revoked cleanup cannot close retained or temporary pages", async () => {

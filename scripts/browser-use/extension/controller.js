@@ -15,27 +15,34 @@ export function validateEndpoint(value) {
 }
 
 export class ExtensionController {
-  constructor(api, Socket = WebSocket) {
+  constructor(api, Socket = WebSocket, permissions) {
     this.api = api;
     this.Socket = Socket;
     this.targets = new Map();
     this.records = new Map();
     this.creating = new Set();
     this.childSessions = new Map();
+    this.frames = new Map();
     this.generation = 0;
+    this.permissions = permissions;
+    this.checks = new Set();
     api.debugger.onEvent.addListener((source, method, params) => {
       const target = this.targets.get(source.tabId);
       if (!target) return;
-      if (method === "Target.attachedToTarget")
-        this.childSessions.set(params.sessionId, source.tabId);
-      if (method === "Target.detachedFromTarget") this.childSessions.delete(params.sessionId);
-      this.send({
-        type: "event",
-        targetId: target.targetId,
-        sessionId: source.sessionId,
-        method,
-        params,
-      });
+      const generation = this.generation;
+      const check = this.event(source, method, params, target, generation);
+      this.checks.add(check);
+      void check
+        .catch((error) => {
+          if (generation !== this.generation) return;
+          this.accessError = error.message;
+          void this.disconnect({ takeover: true, tabId: source.tabId }).catch((failure) => {
+            this.lastError = failure.message;
+          });
+        })
+        .finally(() => {
+          this.checks.delete(check);
+        });
     });
     api.debugger.onDetach.addListener((source, reason) => {
       const target = this.targets.get(source.tabId);
@@ -48,6 +55,76 @@ export class ExtensionController {
         void this.disconnect({ takeover: true, tabId: source.tabId }).catch((error) => {
           this.lastError = error.message;
         });
+    });
+  }
+  async authorize(url, generation = this.generation) {
+    if (!this.permissions) throw new Error("Website authorization is unavailable");
+    await this.permissions.authorize(url);
+    if (generation !== this.generation) throw new Error("Connection was cancelled");
+  }
+  async inspect(source, generation) {
+    const { frameTree } = await this.api.debugger.sendCommand(source, "Page.getFrameTree");
+    const visit = async (tree) => {
+      if (!tree) return;
+      await this.authorize(tree.frame.url, generation);
+      for (const child of tree.childFrames ?? []) await visit(child);
+    };
+    await visit(frameTree);
+  }
+  async intercept(source) {
+    await this.api.debugger.sendCommand(source, "Fetch.enable", {
+      patterns: [{ resourceType: "Document", requestStage: "Request" }],
+    });
+    await this.api.debugger.sendCommand(source, "Target.setAutoAttach", {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: "iframe", exclude: false }, { exclude: true }],
+    });
+  }
+  async event(source, method, params, target, generation) {
+    if (method === "Fetch.requestPaused") {
+      try {
+        await this.authorize(params.request.url, generation);
+        await this.api.debugger.sendCommand(source, "Fetch.continueRequest", {
+          requestId: params.requestId,
+        });
+      } catch (error) {
+        if (generation === this.generation)
+          await this.api.debugger.sendCommand(source, "Fetch.failRequest", {
+            requestId: params.requestId,
+            errorReason: "BlockedByClient",
+          });
+        throw error;
+      }
+      return;
+    }
+    if (method.startsWith("Fetch.")) return;
+    if (method.startsWith("Target.target")) return;
+    if (method === "Target.attachedToTarget") {
+      if (params.targetInfo.type !== "iframe") return;
+      const child = { tabId: source.tabId, sessionId: params.sessionId };
+      await this.authorize(params.targetInfo.url || "about:blank", generation);
+      await this.intercept(child);
+      await this.inspect(child, generation);
+      this.childSessions.set(params.sessionId, source.tabId);
+      this.frames.set(params.sessionId, { source, params });
+    }
+    if (method === "Page.frameNavigated") await this.authorize(params.frame.url, generation);
+    if (method === "Network.requestWillBeSent" && params.type === "Document")
+      await this.authorize(params.request.url, generation);
+    if (method === "Target.detachedFromTarget") {
+      this.childSessions.delete(params.sessionId);
+      this.frames.delete(params.sessionId);
+    }
+    if (source.sessionId && !this.childSessions.has(source.sessionId)) return;
+    if (generation !== this.generation || target.targetId === "pending") return;
+    this.send({
+      type: "event",
+      targetId: target.targetId,
+      sessionId: source.sessionId,
+      method,
+      params,
     });
   }
   send(message) {
@@ -113,6 +190,7 @@ export class ExtensionController {
     const url = tab.url || (allowBlank ? tab.pendingUrl : "");
     if (!/^https?:\/\//.test(url ?? "") && !(allowBlank && url === "about:blank"))
       throw new Error("Select an HTTP(S) web page before sharing it.");
+    await this.authorize(url, generation);
     if (generation !== this.generation) throw new Error("Connection was cancelled");
     await this.api.debugger.attach({ tabId }, "1.3");
     if (generation !== this.generation) {
@@ -122,7 +200,11 @@ export class ExtensionController {
     // Record immediately so startup recovery also covers a failed handshake.
     this.targets.set(tabId, { targetId: "pending" });
     await this.persist();
+    await this.intercept({ tabId });
+    await this.inspect({ tabId }, generation);
+    while (this.checks.size) await Promise.all(this.checks);
     const { targetInfo } = await this.api.debugger.sendCommand({ tabId }, "Target.getTargetInfo");
+    await this.authorize(targetInfo.url || "about:blank", generation);
     if (generation !== this.generation) throw new Error("Connection was cancelled");
     this.targets.set(tabId, targetInfo);
     this.records.set(tabId, { ...this.records.get(tabId), tabId, targetId: targetInfo.targetId });
@@ -140,6 +222,7 @@ export class ExtensionController {
         url.password
       )
         throw new Error("Only HTTP(S) or blank tabs may be created");
+      await this.authorize(url.href, generation);
       const tab = await this.api.tabs.create({
         url: url.href,
         ...(this.windowId !== undefined ? { windowId: this.windowId } : {}),
@@ -168,7 +251,7 @@ export class ExtensionController {
     }
   }
   async mark(targetId, disposition) {
-    if (!["temporary", "deliverable", "handoff"].includes(disposition))
+    if (!["temporary", "keep", "deliverable", "handoff"].includes(disposition))
       throw new Error("Invalid tab disposition");
     const record = [...this.records.values()].find((record) => record.targetId === targetId);
     if (!record || !this.targets.has(record.tabId)) throw new Error("Target is not shared");
@@ -180,7 +263,7 @@ export class ExtensionController {
     const hadRecords = this.records.size > 0;
     const handoff = [...this.records.values()].filter((record) => record.disposition === "handoff");
     for (const [tabId, record] of this.records) {
-      if (record.owned && record.disposition !== "handoff") {
+      if (record.owned && (record.disposition ?? "temporary") === "temporary") {
         try {
           await this.api.tabs.remove(tabId);
         } catch (error) {
@@ -212,8 +295,6 @@ export class ExtensionController {
             title: "Atlas · Waiting for handoff",
             color: "orange",
           });
-        else if (!failures.length && tabs.length)
-          await this.api.tabs.ungroup(tabs.map((tab) => tab.id));
       } catch (error) {
         if (!/No group with id|No tab group with id/i.test(error.message)) failures.push(error);
       }
@@ -224,10 +305,12 @@ export class ExtensionController {
   }
   async connect(endpoint, tabId, title = "Agent working", sessionId = "manual") {
     if (this.lastError) throw new Error(this.lastError);
+    this.accessError = null;
     if (this.socket || this.disconnecting)
       throw new Error("Disconnect the current Atlas session before connecting another.");
     endpoint = validateEndpoint(endpoint);
     const generation = ++this.generation;
+    this.permissions?.begin();
     this.title = String(title).slice(0, 100);
     this.sessionId = sessionId;
     this.groupId = undefined;
@@ -337,15 +420,47 @@ export class ExtensionController {
             "Target.createTarget",
             "Target.closeTarget",
             "Target.attachToTarget",
+            "Target.detachFromTarget",
             "Target.getTargets",
-          ].includes(params.method)
+            "Target.setDiscoverTargets",
+            "Network.setRequestInterception",
+            "Network.getAllCookies",
+            "Network.getCookies",
+            "Network.setCookie",
+            "Network.setCookies",
+            "Network.deleteCookies",
+            "Network.clearBrowserCookies",
+          ].includes(params.method) ||
+          params.method.startsWith("Fetch.")
         )
           throw new Error("Command exceeds shared tab access");
-        result = await this.api.debugger.sendCommand(
-          { tabId: entry[0], ...(params.sessionId ? { sessionId: params.sessionId } : {}) },
-          params.method,
-          params.params,
-        );
+        const generation = this.generation;
+        await Promise.all(this.checks);
+        const tab = await this.api.tabs.get(entry[0]);
+        await this.authorize(tab.url || tab.pendingUrl || "about:blank", generation);
+        const source = {
+          tabId: entry[0],
+          ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        };
+        await this.inspect(source, generation);
+        if (params.method === "Page.navigate") await this.authorize(params.params.url, generation);
+        if (generation !== this.generation || !this.targets.has(entry[0]))
+          throw new Error("Connection was cancelled");
+        if (params.method === "Target.setAutoAttach") {
+          // Keep extension-owned interception attached; replay approved frames to the client.
+          if (params.params.autoAttach)
+            for (const { source: parent, params: child } of this.frames.values()) {
+              if (parent.tabId === entry[0] && parent.sessionId === params.sessionId)
+                this.send({
+                  type: "event",
+                  targetId: params.targetId,
+                  sessionId: parent.sessionId,
+                  method: "Target.attachedToTarget",
+                  params: child,
+                });
+            }
+          result = {};
+        } else result = await this.api.debugger.sendCommand(source, params.method, params.params);
       } else if (method === "create") {
         const targetInfo = await this.createTab(params.url);
         this.send({ type: "attached", targetInfo });
@@ -388,6 +503,7 @@ export class ExtensionController {
   async disconnect({ takeover = false, tabId, replyId } = {}) {
     if (this.disconnecting) return this.disconnecting;
     ++this.generation;
+    this.permissions?.end();
     const socket = this.socket;
     this.socket = null;
     clearInterval(this.heartbeat);
@@ -397,6 +513,7 @@ export class ExtensionController {
     const tabs = [...this.targets.keys()];
     this.targets.clear();
     this.childSessions.clear();
+    this.frames.clear();
     this.disconnecting = (async () => {
       await Promise.allSettled(this.creating);
       if (takeover) {

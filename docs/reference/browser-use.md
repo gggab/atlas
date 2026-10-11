@@ -5,20 +5,39 @@ The extension retains the store name **Atlas Browser**, its existing extension
 IDs and native host names; changing the app display name does not require a new
 store package.
 
-The 0.3.2 extension popup requires explicit page-data consent before any Agent
-task, existing-tab sharing or handoff resume. Its disclosure covers URLs, page
-text, screenshots, input and network details, possible sensitive content, and
-transfer through local Atlas to the selected external Agent/model provider.
-Native metadata connects automatically without granting page access. Consent is
-stored locally with a disclosure version; older preferences do not grant it.
-`bun run browser:package` produces separate `-chrome.zip` and `-edge.zip` files:
-Chrome keeps its assigned manifest key, while Edge omits `key` for Partner Center
-validation. Source/unpacked identity and native-host store IDs stay unchanged.
-**Withdraw page data consent and stop control** stops active control immediately,
-clears the next shared tab, and blocks access until a new affirmative decision.
-Existing conversation/provider records are not erased. Release/install tests must
-exercise both acceptance and withdrawal; passing a fixture does not prove store
-certification or real CLI integration.
+Version 0.4.1 replaces the separate page-data agreement with website authorization.
+Native metadata connects automatically; it never grants page access. On first use
+of a hostname, the extension opens an approval window offering **Allow once**
+(for this task), **Allow for this site**, **Allow for all sites**, and **Decline**
+(persistently block this site). The same prompt is available in the toolbar popup.
+Version 0.4.2 fixes the automatic approval window's message routing. Both the
+toolbar popup and `popup.html#website-access` can read and submit approval; other
+pages and extension origins cannot. Approval appears when an Agent first uses
+an unapproved website, after the browser connection succeeds, not on installation
+or on **Share this tab** alone.
+The prompt discloses URLs, text, screenshots, form input and network details,
+possible sensitive content, and transfer through local Atlas to the selected
+external Agent/model provider. Only extension UI can make these decisions.
+
+**Manage website access** in the extension lists allowed/blocked hostnames and
+lets the user remove decisions or reset all access. Revocation immediately stops
+control and preserves the necessary handoff page. Existing conversation/provider
+records are not erased. Decisions belong to the selected browser profile; each
+subdomain asks separately. Blocked sites override allow-all. Once grants end on
+task completion, failure, reset, takeover, pause, disconnect or worker restart.
+Old global consent never becomes allow-all. Closing a prompt or letting it time
+out cancels access without approving it. Retry only after the user reviews access.
+
+Authorization precedes attaching shared pages, exposing existing frame trees,
+creating HTTP(S) task tabs, navigating, and continuing document requests (including
+redirects and cross-site frames). The extension owns Document Fetch interception;
+Agents cannot disable it. A declined document stops control and preserves the
+necessary page. Resource/API content used by an authorized page can also be part
+of that page's data; this is website access control, not a network firewall.
+
+`bun run browser:package` produces separate Chrome/Edge ZIPs. Chrome keeps
+its assigned manifest key; Edge omits it. Identities and native hosts stay unchanged.
+Passing fixtures does not prove store certification or real CLI integration.
 
 Atlas offers `atlas_browser` independently of shared memory to ACP sessions
 advertising HTTP MCP. It uses live session tokens and the external CLI's model
@@ -43,16 +62,22 @@ require explicit sharing. Groups are visual metadata, never an access boundary;
 moving a personal tab into a group does not authorize it. One task controls a
 browser profile at a time. A disconnected profile produces a visible error.
 
-Completion, failure, cancellation, reset and app exit detach debugging, close
-Agent-created task tabs, and remove empty groups. Only tabs explicitly marked
-for a necessary user handoff survive, with a waiting-for-handoff group label.
-Deliverable markers do not retain results. User-created/shared tabs never close.
+Version 0.4.4 lets the Agent decide page retention from the user's task, without
+fixed website/content categories. Before finishing, it can mark owned pages with
+`markTemporary()` to close, `markKeep()` or `markDeliverable()` to retain, and
+`markHandoff()` to return control for human intervention. Markers can be revised;
+unmarked Agent-created pages default to temporary and close at cleanup.
+Completion, failure, cancellation, reset and app exit detach debugging and close
+owned pages unless explicitly marked keep, deliverable or handoff.
+Ordinary retained pages stay in the original task group, do not block later tasks, and are
+not automatically exposed to another session. Handoffs retain their waiting group.
+User-created/shared tabs never close, even if marked temporary.
 Manual takeover retains necessary task pages and releases all debugging. The
 app-level connection stays available for the next task. Handoffs remain owned by
 the original ACP session. A different session cannot inherit them automatically;
 finish that session or use **Release waiting task pages** in the extension first.
 Manual takeover retains the current necessary page and explicitly marked handoffs,
-closing the other task tabs. Recovery after worker or
+applying the Agent's decisions to the other task tabs. Recovery after worker or
 extension termination applies the same ownership rules; it must never infer
 ownership from group membership or close a replaced/reused tab ID.
 
@@ -70,19 +95,52 @@ cookies or login files. Existing Atlas automation profiles remain untouched.
 This preserves the selected page's existing login environment; it does not promise
 to avoid website verification. Complete CAPTCHA/login manually after disconnecting.
 
-1. Run/restart `bun run dev:app` and create a new Agent session.
+### Browser-task operating guidance
+
+The MCP initialization instructions, `browser_status` documentation, tool
+descriptions and runtime API documentation direct Agents to open/navigate browser
+tasks through Atlas tools. Shell/PowerShell/OS URL launches bypass task ownership
+and grouping; they must not substitute for Atlas tools to avoid cleanup,
+permission, verification or connection errors. Page retention remains the Agent's
+decision using `markKeep()`/`markDeliverable()`/`markTemporary()`.
+
+Read full observed `href` values through locators, keep navigation data separate
+from shortened display labels, and resolve with `new URL(href, sourcePageURL)`.
+Preserve query parameters and fragments; never concatenate `https:` blindly,
+truncate navigation URLs, or require every result to use one path filename.
+Ad/redirect links may be valid. Inspect the destination or choose an observed
+direct alternative rather than reconstructing an address.
+
+Agents navigate and inspect one page at a time, check the final URL/page identity
+and task-required content, and report missing content explicitly. CAPTCHA/login
+or verification stops further openings, navigation and retries until human
+handoff/continuation. This reduces unnecessary requests but does not guarantee
+that a website will never challenge the user. Parameter-dependent page behavior
+must be supported by observations rather than assumed.
+
+These instructions are guidance for the external Agent, not an OS-level ban on
+shell execution. The vendor CLI owns shell permissions, and Atlas's trusted Node
+REPL is not a security sandbox. No live Taobao behavior is inferred from fixtures.
+
+1. Start Atlas and create a new Agent session.
 2. Open **Settings > Browser control** (also linked from the chat header).
-   Choose **Install extension** for Chrome or Edge to open that browser's
-   extension management page in Atlas Dev, or the matching store item in released
-   Atlas. For a local build, copy the folder shown in Atlas.
-3. For local loading in `chrome://extensions` or `edge://extensions`, enable Developer mode, choose
-   **Load unpacked**, and select that folder. Pin **Atlas Browser** if convenient.
-4. Wait for **Connected** in Atlas. **Allow browser control** enables/pauses
+   Chrome and Edge use their respective browser logos. Choose **Install from Chrome
+   Web Store** or **Install from Edge Add-ons** and confirm
+   installation in the browser. Pin **Atlas Browser** if convenient.
+   Settings shows browser availability, connection status and controls; it does
+   not show developer-mode instructions, local extension paths or publication status.
+   Source-build setup is documented under [Development](#development).
+   Installation buttons open the assigned HTTPS store item in both app profiles;
+   they never use internal extension-management URLs for installation. The Chrome
+   target is `https://chromewebstore.google.com/detail/atlas-browser/falkhmhmbghdjcabgojjooddbhjpmmfd`,
+   without account-specific `authuser` or forced language parameters.
+3. Wait for **Connected** in Atlas. **Allow browser control** enables/pauses
    Agent access and survives app restarts. **Use this browser** selects Chrome/Edge
    and reconnects. Offline means unknown extension state, not proof of absence.
    **Manage extension** opens the browser's own page to enable, disable, reload or
    remove it. Browser confirmation is required.
-5. Ask the Agent to use a website. It creates a new task tab and Atlas group
+4. Ask the Agent to use a website and approve its hostname in the automatic
+   extension prompt. It creates a new task tab and Atlas group
    automatically. To use a personal tab instead, select that page and choose
    **Share this tab** before asking the Agent.
    Other daily tabs and automatic popups are not discovered or shared. One task
@@ -109,16 +167,23 @@ The extension uses `chrome.debugger` on the chosen tab and native browser APIs.
 It shows Chrome/Edge's debugging indicator and an ON badge while connected.
 **Take over this page** releases control for login/verification.
 Task completion/failure, reset, cancellation, pause, session end and app exit
-release debugging control and clear the REPL. Agent-created pages close immediately
-unless marked `handoff` for necessary user intervention; `deliverable` does not
-retain results. Empty task groups disappear. Existing user pages/windows stay open.
+release debugging control and clear the REPL. Agent-created pages close by default;
+explicitly kept, deliverable and handoff pages remain in their original task group.
+Existing user pages/windows stay open regardless of markers.
 Taking over retains task pages, labels their group as waiting, and releases
 debugging. After verification, send **继续** or **continue** in the original
-Atlas chat. That human message returns control without an extra extension click.
-The Agent resumes retained pages with a fresh browser_start; target IDs
-are revalidated before resuming. Successful continuation cleans them up normally.
+Atlas chat. That human message returns control without an extension button;
+ordinary browser actions require no handoff click. The Agent then resumes the
+retained pages with a fresh browser_start; target IDs
+are revalidated before resuming. Resumed pages return to temporary task state;
+Agents must mark them again to retain them after the resumed task finishes.
 User browser login/downloads stay managed by that browser.
 
+This flow follows the public ChatGPT pattern of continuous browser work, reusable
+login sessions and handoff only when human intervention is necessary. ChatGPT's
+[cloud browser sign-in flow](https://learn.chatgpt.com/docs/browser#sign-in-on-the-web-page)
+uses an explicit return action after manual web-page sign-in. Atlas adapts that
+return action to a human chat message, without an additional extension click.
 Recognized examples include `继续`, `继续任务`, `登录好了，继续`, `continue`,
 `resume` and `I'm done`. Questions, negations, quoted page content and other
 messages keep a waiting handoff paused. A continuation applies only to the current
@@ -127,8 +192,8 @@ The chat sends the human's original text separately from the Agent prompt.
 Hidden next-step instructions and expanded mention content do not affect
 continuation recognition. Retrying a recorded turn does not grant fresh
 permission to resume a waiting browser task; send a new continuation instead.
-Both the updated desktop native host and extension are required; reload the local
-extension after updating. Page-data consent and global pause still apply.
+Both the updated desktop native host and extension 0.4.1 are required; reload the
+local extension after updating. Website permissions and global pause still apply.
 
 The connection address contains a random per-worker secret, separate from the
 MCP bearer token. Native Messaging passes it privately, omitted from Agent snapshots,
@@ -203,9 +268,43 @@ agent's MCP connection status/error; a tool search cannot repair a rejected list
 
 ## Development
 
+After operating-guidance changes, run `bun run browser:test`: its runtime check
+executes the link-navigation example from the MCP instructions against absolute,
+protocol-relative, relative, missing and non-HTTP(S) links, including long query
+tails. Run `bun run browser:extension-smoke chrome` for the real extension's
+grouped navigation through a full redirect URL and verify the requested content
+after navigation. These checks test API/example behavior, not model compliance
+with instructions or a vendor CLI's shell permissions. Rebuild/restart Atlas Dev
+and start a new Agent session to refresh MCP instructions and tool discovery.
+Guidance-only changes do not require a new extension version.
+
+Run/restart `bun run dev:app` to prepare the Atlas Dev extension copy. Store
+extensions target released Atlas (`com.atlas.browser`); source development still
+requires the local copy targeting Atlas Dev (`com.atlas.browser.dev`). Installation
+buttons open the store in both profiles and do not change native-host selection.
+For local loading, open `chrome://extensions` or `edge://extensions` manually in
+the browser. Chrome may reject internal page URLs passed on its launch command
+line, so loading instructions should not rely on launching those URLs.
+Enable Developer mode, choose **Load unpacked**, and select `browser-extension`
+inside the OS configuration directory for `dev.atlas.ide.dev`:
+
+- Windows: `%APPDATA%\dev.atlas.ide.dev\browser-extension`.
+- macOS: `~/Library/Application Support/dev.atlas.ide.dev/browser-extension`.
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/dev.atlas.ide.dev/browser-extension`.
+
+The settings page intentionally omits this developer setup in both app profiles.
+Atlas connects automatically after loading; no address or connection switch is
+needed. Only one Atlas app profile can own the extension in a browser profile.
+When switching from the retired extension ID, remove the old extension and
+forget its selected browser profile in Atlas before loading the prepared folder.
+
+The settings browser logos are bundled SVGs in `src/assets/browser-logos/`,
+sourced from [Browser Logos](https://github.com/alrra/browser-logos). Each asset
+retains its source and license notice; rendering does not fetch remote images.
+
 `browser:bundle` includes the official Node executable/license, pinned
-Playwright and Atlas extension sources in Tauri resources. The extension folder
-shown by native UI is a per-app profile copy, with a generated `config.js` selecting
+Playwright and Atlas extension sources in Tauri resources. The prepared extension
+folder is a per-app profile copy, with a generated `config.js` selecting
 its native host. Restart/update the loaded extension
 in the browser after source changes. No browser/extension is installed silently.
 The relay uses Playwright's bundled WebSocket library and its public

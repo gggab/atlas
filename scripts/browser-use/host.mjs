@@ -110,7 +110,7 @@ export class BrowserHost {
     }
     if (method === "mark") {
       await this.resolvePage(args.id);
-      if (!["temporary", "deliverable", "handoff"].includes(args.disposition))
+      if (!["temporary", "keep", "deliverable", "handoff"].includes(args.disposition))
         throw new Error("Invalid tab disposition");
       this.dispositions.set(args.id, args.disposition);
       this.notify();

@@ -10,7 +10,7 @@
     "browser:icons": "node scripts/browser-use/icons.mjs",
     "browser:package": "node scripts/browser-use/package.mjs",
     "browser:store-assets": "node scripts/browser-use/store-assets.mjs",
-    "browser:test": "node --test scripts/browser-use/runtime.test.mjs scripts/browser-use/host.test.mjs scripts/browser-use/extension.test.mjs scripts/browser-use/package.test.mjs scripts/browser-use/extension/controller.test.mjs scripts/browser-use/extension/task-tabs.test.mjs scripts/browser-use/extension/native-connection.test.mjs",
+    "browser:test": "node --test scripts/browser-use/runtime.test.mjs scripts/browser-use/host.test.mjs scripts/browser-use/extension.test.mjs scripts/browser-use/package.test.mjs scripts/browser-use/extension/controller.test.mjs scripts/browser-use/extension/task-tabs.test.mjs scripts/browser-use/extension/native-connection.test.mjs scripts/browser-use/extension/site-permissions.test.mjs",
     "browser:smoke": "node scripts/browser-use/smoke.mjs",
     "browser:worker-smoke": "node scripts/browser-use/worker-smoke.mjs",
     "build": "bun run --parallel typecheck:app build:vite",

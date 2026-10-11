@@ -20,7 +20,7 @@ export interface BrowserSnapshot {
     selectedBrowser?: string;
     version?: string;
     error?: string;
-    browsers: { id: "chrome" | "edge"; available: boolean; storeInstall?: boolean }[];
+    browsers: { id: "chrome" | "edge"; available: boolean }[];
   };
 }
 export const browserUseQueryKey = ["browser-use"];

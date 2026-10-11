@@ -192,22 +192,31 @@ The `SessionDelta` shapes those consumers pattern-match live in **`crates/atlas-
 
 `commands/browser_use.rs` offers `atlas_browser` to HTTP-MCP-capable ACP
 sessions independently of shared memory. Rust owns live grants, worker lifecycle
-and native setup UI. Settings > Browser control owns browser choice, installation
-guidance, connection/version status and persistent pause. Startup registers the
+and native setup UI. Settings > Browser control owns browser choice, store installation
+actions, connection/version status and persistent pause. Developer-mode loading
+instructions and extension paths live in the development documentation. Startup registers the
 native host and prepares an app-profile extension copy with its fixed host config;
 the extension connects automatically without an address or host selector.
 The packaged Chrome store key fixes both local and store extension identity.
 The native host accepts the exact Chrome and Edge store origins through a shared
-allowlist. Released-app installation opens the chosen browser's assigned store
-item; Atlas Dev explicitly uses local extension setup with the Chrome manifest key.
+allowlist. Installation opens the chosen browser's assigned HTTPS store item in
+both app profiles. Store extensions target released Atlas; Atlas Dev source testing
+uses the documented local extension setup with the Chrome manifest key.
 A session Node REPL connects via a loopback extension relay
 and Playwright's CDP transport to user-shared Chrome/Edge tabs. The Manifest V3
 extension uses chrome.debugger; only selected/Agent-created tabs are exposed.
+The extension owns per-hostname website approvals and persistent allow/block
+decisions in browser-local storage. First use opens an extension approval window;
+once grants belong to the active task. Shared pages, frame trees, navigation and
+Document requests are checked before exposure. Only extension UI can approve or
+revoke; the MCP facade cannot change permission or disable Fetch interception.
 The per-worker pairing secret arrives privately over an app-level Native Messaging
 bridge; the desktop binary handles native frames before GUI/logging startup. Fixed
 extension origins, per-user host registration and an app-instance authenticated
-loopback broker bootstrap the task relay. Finished/failed turns close owned task
-tabs and remove groups; only required handoffs and existing user pages survive.
+loopback broker bootstrap the task relay. The Agent decides page retention from
+the user's task. Finished/failed turns release control and close owned tabs by
+default unless explicitly retained. Kept/result pages stay in their original group;
+genuine handoffs retain their waiting state. Existing user pages always survive.
 Human continuation on the trusted agents_send path returns handoff control through
 Native Messaging for the original session. Agent tool retries cannot authorize
 resumption; ordinary chats without a waiting browser task send no handoff request.

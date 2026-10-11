@@ -1,9 +1,13 @@
 import { ExtensionController } from "./controller.js";
 import { NativeConnection } from "./native-connection.js";
-const controller = new ExtensionController(chrome);
+import { SitePermissions } from "./site-permissions.js";
+const permissions = new SitePermissions(chrome);
+const controller = new ExtensionController(chrome, WebSocket, permissions);
+permissions.onRevoked = () => controller.disconnect({ takeover: true });
 const native = new NativeConnection(chrome, controller);
 const ready = controller
   .recover()
+  .then(() => permissions.restore())
   .then(() => native.restore())
   .catch((error) => {
     controller.lastError = error.message;
@@ -12,30 +16,34 @@ chrome.runtime.onStartup.addListener(() => {
   void ready;
 });
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("popup.html")) return;
+  const popupUrl = chrome.runtime.getURL("popup.html");
+  if (
+    sender.id !== chrome.runtime.id ||
+    ![popupUrl, `${popupUrl}#website-access`].includes(sender.url)
+  )
+    return;
   void ready
     .then(async () => {
-      if (message.action === "setConsent") await native.setConsent(message.accepted);
+      if (message.action === "websiteDecision")
+        await permissions.respond(message.id, message.choice);
+      else if (message.action === "resetWebsiteAccess") await permissions.reset();
+      else if (message.action === "revokeWebsite") await permissions.revoke(message.host);
       else if (message.action === "connect") {
-        native.requireConsent();
         await controller.connect(message.endpoint, message.tabId);
       } else if (message.action === "reconnect") await native.reconnect();
       else if (message.action === "shareNextTab") await native.share(message.tabId);
       else if (message.action === "discardHandoff") await controller.discardHandoff();
-      else if (message.action === "allowResume") {
-        native.requireConsent();
-        const { atlasHandoff } = await chrome.storage.session.get("atlasHandoff");
-        await controller.allowResume(atlasHandoff?.sessionId);
-        native.error = null;
-      } else if (message.action === "disconnect")
+      else if (message.action === "disconnect")
         await controller.disconnect({ takeover: true, tabId: message.tabId });
       else if (message.action !== "status") throw new Error("Unknown action");
       const { atlasHandoff } = await chrome.storage.session.get("atlasHandoff");
       return {
-        error: controller.lastError,
+        error: controller.lastError ?? controller.accessError ?? permissions.error,
         connected: !!controller.socket,
         tabs: controller.targets.size,
         handoff: !!atlasHandoff?.tabs?.length,
+        handoffReady: !!atlasHandoff?.ready,
+        websiteAccess: permissions.status(),
         ...native.status(),
       };
     })

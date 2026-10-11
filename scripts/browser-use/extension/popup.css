@@ -30,6 +30,7 @@
   display: none !important;
 }
 body {
+  min-width: 360px;
   width: 360px;
   margin: 0;
   background: var(--bg);
@@ -39,6 +40,24 @@ body {
     BlinkMacSystemFont,
     "Segoe UI",
     sans-serif;
+}
+body.approval-window {
+  width: 100%;
+}
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+#website-host,
+#website-list span {
+  overflow-wrap: anywhere;
+}
+#website-list {
+  padding: 0;
+  list-style: none;
+}
+#website-list li {
+  margin-top: 8px;
 }
 header {
   display: flex;

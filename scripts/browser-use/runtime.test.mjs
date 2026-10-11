@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFile } from "node:fs/promises";
 import { BrowserRuntime } from "./runtime.mjs";
 
-function fixture() {
+function fixture({ href } = {}) {
   const calls = [];
+  const navigations = [];
+  let currentUrl = "http://localhost/example";
   let allowed = true;
   const page = {
-    url: () => "http://localhost/example",
+    url: () => currentUrl,
+    goto: async (url) => {
+      navigations.push(url);
+      currentUrl = url;
+    },
     title: async () => "Example",
     on: () => {},
     context: () => ({
@@ -21,7 +28,10 @@ function fixture() {
       click: async () => calls.push(selector),
       innerText: async () => "Saved",
       ariaSnapshot: async () => '- button "Save"',
+      getAttribute: async (name) => (name === "href" ? href : null),
     }),
+    getByRole: () => page.locator("a"),
+    frames: () => [page],
   };
   const backend = async (method, args) => {
     if (method === "list") return [{ id: "t1", title: "Example", url: page.url() }];
@@ -35,6 +45,7 @@ function fixture() {
   return {
     runtime,
     calls,
+    navigations,
     pause: () => {
       allowed = false;
     },
@@ -53,6 +64,43 @@ test("top-level await and handles persist across calls", async () => {
     assert.deepEqual(calls, ["button"]);
   } finally {
     await runtime.close();
+  }
+});
+
+test("the documented link workflow preserves full addresses and resolves relative links without scheme concatenation", async () => {
+  const instructions = await readFile(
+    new URL("../../src-tauri/resources/browser-use-instructions.md", import.meta.url),
+    "utf8",
+  );
+  const example = [...instructions.matchAll(/```js\r?\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .find((code) => code.includes('getAttribute("href")'));
+  assert.ok(example, "Ship an executable link-navigation example with the browser instructions");
+  const query = "?tracking=" + "x".repeat(200) + "&priceTId=tail-value&spm=a%2Bb";
+  for (const [href, expected] of [
+    ["https://shop.example/detail" + query, "https://shop.example/detail" + query],
+    ["http://shop.example/detail" + query, "http://shop.example/detail" + query],
+    ["//ads.example/redirect" + query, "http://ads.example/redirect" + query],
+    ["../detail" + query, "http://localhost/detail" + query],
+    [null, /no href/i],
+    ["javascript:alert(1)", /HTTP\(S\)/i],
+  ]) {
+    const { runtime, navigations } = fixture({ href });
+    try {
+      await runtime.execute("let tab = await browser.tabs.selected();");
+      const result = await runtime.execute(example);
+      if (expected instanceof RegExp) {
+        assert.equal(result.isError, true);
+        assert.match(result.content.at(-1).text, expected);
+        assert.deepEqual(navigations, []);
+      } else {
+        assert.equal(result.isError, false, JSON.stringify(result.content));
+        assert.deepEqual(navigations, [expected]);
+        assert.ok(result.content.some((item) => item.text === expected));
+      }
+    } finally {
+      await runtime.close();
+    }
   }
 });
 
