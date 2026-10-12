@@ -1,7 +1,178 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ExtensionController } from "./controller.js";
-import { ws } from "../extension-relay.mjs";
+import { ExtensionRelay, ws } from "../extension-relay.mjs";
+
+async function connect(controller, sessionId) {
+  const relay = new ExtensionRelay();
+  await relay.start();
+  const ready = new Promise((resolve) => relay.once("ready", resolve));
+  try {
+    await controller.connect(relay.endpoint, undefined, "Task", sessionId);
+    await ready;
+    return relay;
+  } catch (error) {
+    await relay.close();
+    throw error;
+  }
+}
+
+test("the same session discovers retained pages and reuses its group across turns", async () => {
+  const { controller, pages, stored, groups } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.mark("t8", "keep");
+    const result = await controller.createTab("https://example.com/result");
+    await controller.mark(result.targetId, "deliverable");
+    const groupId = pages.get(8).groupId;
+    // Group membership alone does not authorize a personal page.
+    pages.get(7).groupId = groupId;
+    await controller.disconnect();
+    await controller.recover();
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [8, 9]);
+    assert.equal(pages.size, 3, "Reconnect must not create a duplicate blank tab");
+    assert.equal(controller.records.get(8).disposition, "keep");
+    assert.equal(controller.records.get(9).disposition, "deliverable");
+    await controller.createTab("about:blank");
+    assert.equal(pages.get(10).groupId, groupId);
+    assert.equal(groups.size, 1);
+    await controller.disconnect();
+    assert.equal(pages.has(10), false, "New unmarked pages still close");
+    assert.deepEqual(
+      stored.atlasSessions[0].tabs.map((record) => record.tabId),
+      [8, 9],
+    );
+    assert.ok(pages.has(7));
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
+});
+
+test("another session gets a separate group and cannot discover retained pages", async () => {
+  const { controller, pages } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.mark("t8", "keep");
+    const originalGroup = pages.get(8).groupId;
+    await controller.disconnect();
+    second = await connect(controller, "other");
+    assert.deepEqual([...controller.targets.keys()], [9]);
+    assert.notEqual(pages.get(9).groupId, originalGroup);
+    await controller.disconnect();
+    assert.equal(pages.has(9), false);
+    assert.equal(pages.get(8).groupId, originalGroup);
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
+});
+
+test("retained records survive extension recovery but reused tab IDs are never attached", async () => {
+  const { controller, pages } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.mark("t8", "keep");
+    await controller.disconnect();
+    await controller.recover();
+    controller.api.debugger.getTargets = async () =>
+      [...pages.values()].map((tab) => ({
+        tabId: tab.id,
+        id: tab.id === 8 ? "reused" : `t${tab.id}`,
+      }));
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [9]);
+    assert.notEqual(pages.get(9).groupId, pages.get(8).groupId);
+    assert.ok(pages.has(8));
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
+});
+
+test("concurrent tab creation still uses a single session group", async () => {
+  const { controller, groups, pages } = fixture();
+  await Promise.all([controller.createTab("about:blank"), controller.createTab("about:blank")]);
+  assert.equal(groups.size, 1);
+  assert.equal(pages.get(8).groupId, pages.get(9).groupId);
+  await controller.disconnect();
+});
+
+test("handoff continuation restores ordinary retained pages without creating another group", async () => {
+  const { controller, pages } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.mark("t8", "keep");
+    const handoff = await controller.createTab("about:blank");
+    await controller.mark(handoff.targetId, "handoff");
+    const groupId = pages.get(8).groupId;
+    await controller.disconnect();
+    assert.equal(await controller.allowResume("owner"), true);
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [9, 8]);
+    assert.equal(pages.get(9).groupId, groupId);
+    assert.equal(pages.get(8).groupId, groupId);
+    await controller.disconnect();
+    assert.equal(pages.has(9), false, "Resumed handoff pages return to the closing default");
+    assert.ok(pages.has(8), "Ordinary keep decisions survive continuation");
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
+});
+
+test("reconnecting a retained page rechecks current website authorization", async () => {
+  const { controller, pages, stored } = fixture();
+  const first = await connect(controller, "owner");
+  try {
+    pages.get(8).url = "https://example.com/retained";
+    await controller.mark("t8", "keep");
+    await controller.disconnect();
+    controller.permissions.authorize = async (url) => {
+      if (url.startsWith("https://example.com")) throw new Error("Access is not allowed");
+    };
+    await assert.rejects(connect(controller, "owner"), /Access is not allowed/);
+    assert.equal(controller.targets.size, 0);
+    assert.ok(pages.has(8));
+    assert.equal(stored.atlasSessions[0].tabs[0].tabId, 8);
+  } finally {
+    await controller.disconnect();
+    await first.close();
+  }
+});
+
+test("releasing a handoff leaves ordinary retained pages in their reusable session group", async () => {
+  const { controller, pages, groups } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.mark("t8", "keep");
+    const handoff = await controller.createTab("about:blank");
+    await controller.mark(handoff.targetId, "handoff");
+    const groupId = pages.get(8).groupId;
+    await controller.disconnect();
+    await controller.discardHandoff();
+    assert.equal(pages.has(9), false);
+    assert.equal(pages.get(8).groupId, groupId);
+    assert.doesNotMatch(groups.get(groupId).title, /Waiting/);
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [8]);
+    assert.equal(pages.size, 2);
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
+});
 
 function fixture() {
   const pages = new Map([[7, { id: 7, windowId: 1, url: "https://example.com", groupId: -1 }]]);
@@ -61,7 +232,12 @@ function fixture() {
     },
     action: { setBadgeText: async () => {} },
   };
-  const controller = new ExtensionController(api, ws, {
+  class ExtensionSocket extends ws {
+    constructor(url) {
+      super(url, { origin: "chrome-extension://" + "a".repeat(32) });
+    }
+  }
+  const controller = new ExtensionController(api, ExtensionSocket, {
     authorize: async () => {},
     begin() {},
     end() {},
@@ -158,20 +334,6 @@ test("kept pages and handoffs remain in the original group but only handoffs can
   assert.equal(pages.get(8).groupId, 3);
   assert.equal(pages.get(9).groupId, 3);
   assert.match(groups.get(3).title, /Waiting/);
-});
-
-test("later task cleanup cannot inherit or close a previously retained group", async () => {
-  const { controller, pages, stored } = fixture();
-  const kept = await controller.createTab("about:blank");
-  await controller.mark(kept.targetId, "keep");
-  const originalGroup = pages.get(8).groupId;
-  await controller.disconnect();
-  assert.deepEqual(stored.atlasHandoff.tabs, []);
-  await controller.createTab("about:blank");
-  assert.notEqual(pages.get(9).groupId, originalGroup);
-  await controller.disconnect();
-  assert.equal(pages.has(9), false);
-  assert.equal(pages.get(8).groupId, originalGroup);
 });
 
 test("a retained handoff cannot be automatically inherited by another Agent session", async () => {

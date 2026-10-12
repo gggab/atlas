@@ -6,6 +6,10 @@ export const DOCUMENTATION = `Atlas Browser Use
 The JavaScript REPL persists per ACP session. Use let/const handles once and reuse them.
 The connected browser is the user's existing Chrome/Edge through Atlas Browser.
 Only explicitly shared and Agent-created tabs belong to this session.
+After browser_start, query browser.tabs.list() before opening pages. Later turns
+restore this session's retained pages and reuse its original group without a new
+blank tab. Reuse those pages instead of reopening their URLs. Other sessions and
+ordinary personal tabs remain private. Refresh handles after turn cleanup/reset.
 For browser tasks use browser_start/browser_repl and the Atlas cua/browser APIs.
 Never open task links through PowerShell Start-Process, cmd start, shell browser
 commands, OS URL handlers or another browser surface to avoid task grouping,
@@ -74,7 +78,10 @@ and markKeep() or markDeliverable() on pages you choose to leave open. Agent-cre
 pages default to temporary and close without an explicit retention marker.
 Existing user tabs/windows and login are preserved regardless of markers.
 Retained pages release control and stay in the original Atlas task group; retaining
-ordinary pages does not pause later tasks. Automatic connection opens new grouped tabs.
+ordinary pages does not pause later turns. Keep/result decisions survive reconnect;
+use markTemporary() to close a previously retained owned page at the next cleanup.
+New pages join the same session group. If all group pages are closed, the browser
+removes the empty group and a later new page creates a replacement.
 For verification markHandoff() before returning control. Wait for the human to
 send continue (or 继续) in the original Atlas chat. That human message returns
 control without an extra extension click. No CAPTCHA bypass is promised.

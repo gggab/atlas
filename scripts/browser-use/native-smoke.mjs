@@ -15,6 +15,9 @@ import { BrowserRuntime } from "./runtime.mjs";
 // The real desktop executable handles native frames before GUI initialization.
 assert.equal(process.platform, "win32", "Run this native-host fixture on Windows");
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const extensionManifest = JSON.parse(
+  await readFile(path.join(root, "scripts/browser-use/extension/manifest.json"), "utf8"),
+);
 const binary = process.env.ATLAS_BROWSER_TEST_BINARY ?? path.join(root, "target/debug/atlas.exe");
 await readFile(binary);
 const folder = await mkdtemp(path.join(tmpdir(), "atlas-extension-native-smoke-"));
@@ -37,7 +40,7 @@ const server = createServer((socket) => {
     if (!admitted) {
       assert.equal(message.secret, secret);
       assert.match(message.clientId, /^[a-f0-9-]{36}$/);
-      assert.equal(message.version, "0.4.4");
+      assert.equal(message.version, extensionManifest.version);
       assert.equal(message.chatHandoff, 1);
       admitted = true;
       peer = socket;
@@ -184,7 +187,39 @@ try {
     (await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }))).appConnected,
     true,
   );
-  await start("Second task");
+  await start("Retained pages");
+  const retained = await runtime.execute(
+    "let tab = await browser.tabs.selected(); await tab.markKeep(); let result = await browser.tabs.new(); await result.markDeliverable();",
+  );
+  assert.equal(retained.isError, false, JSON.stringify(retained));
+  const retainedGroup = (await popup.evaluate(() => chrome.tabGroups.query({})))[0].id;
+  await host.cleanup();
+  await runtime.close();
+  runtime = null;
+  await start("Next turn in the same session");
+  assert.equal(
+    context.pages().length,
+    baseline + 2,
+    "Retained pages resume without a duplicate blank page",
+  );
+  const inventory = await host.list();
+  assert.deepEqual(
+    inventory.map((tab) => tab.disposition),
+    ["keep", "deliverable"],
+  );
+  const nextTurn = await runtime.execute(
+    "let added = await browser.tabs.new(); for (let page of await browser.tabs.list()) { if (page.id !== added.id) await (await browser.tabs.get(page.id)).markTemporary(); }",
+  );
+  assert.equal(nextTurn.isError, false, JSON.stringify(nextTurn));
+  assert.deepEqual(
+    (await popup.evaluate(() => chrome.tabGroups.query({}))).map((group) => group.id),
+    [retainedGroup],
+  );
+  await host.cleanup();
+  await runtime.close();
+  runtime = null;
+  assert.equal(context.pages().length, baseline);
+  await start("Handoff task");
   const result = await runtime.execute(
     "let tab = await browser.tabs.selected(); await tab.markHandoff();",
   );
@@ -194,6 +229,7 @@ try {
   runtime = null;
   assert.equal(context.pages().length, baseline + 1);
   assert.match((await popup.evaluate(() => chrome.tabGroups.query({})))[0].title, /Waiting/);
+  const handoffGroup = (await popup.evaluate(() => chrome.tabGroups.query({})))[0].id;
   await popup.getByRole("heading", { name: "Waiting for you" }).waitFor();
   await popup
     .locator("body")
@@ -219,6 +255,7 @@ try {
   assert.equal((await continueFromChat("other-session")).result, false);
   assert.equal((await continueFromChat("fixture-session")).result, true);
   await start("Resume task");
+  assert.equal((await popup.evaluate(() => chrome.tabGroups.query({})))[0].id, handoffGroup);
   assert.equal(
     context.pages().length,
     baseline + 1,

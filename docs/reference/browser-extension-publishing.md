@@ -13,7 +13,7 @@ store installation still needs verification with the updated desktop build.
 
 1. Run `bun run browser:icons` after editing the SVG, then `bun run browser:test`.
 2. Run `bun run browser:package`. Upload
-   `artifacts/browser-extension/atlas-browser-0.4.4-chrome.zip` as a new package
+   `artifacts/browser-extension/atlas-browser-0.4.5-chrome.zip` as a new package
    on the **existing Chrome draft item**, not a new item. The ZIP puts
    `manifest.json` at its root, retains the assigned Chrome public key,
    excludes tests, SDK/Node binaries and runtime secrets, and targets released Atlas.
@@ -28,7 +28,7 @@ store installation still needs verification with the updated desktop build.
    under the Microsoft Edge program (currently no registration fee), then open the
    existing Atlas Browser item to upload a package update. Its supplied CRX ID is integrated in
    the desktop native host; the Store ID is not a native extension origin.
-   Use `artifacts/browser-extension/atlas-browser-0.4.4-edge.zip` produced by
+   Use `artifacts/browser-extension/atlas-browser-0.4.5-edge.zip` produced by
    `browser:package`. The Edge ZIP omits the manifest `key` field, which Partner
    Center rejects. Do not rename or copy the Chrome ZIP for Edge. The Chrome ZIP
    and source/unpacked manifest retain the assigned Chrome key; Edge's store
@@ -44,7 +44,12 @@ Version 0.4.4 corrects the 0.4.3 retention default and grouping: Agent-created
 tabs close unless explicitly retained, and retained tabs stay in their original
 Atlas group. Verify unmarked/temporary tabs close, keep/result tabs keep the same
 group ID without debugging or handoff state, and genuine handoffs still require
-human continuation. Later tasks must not inherit or close earlier retained groups.
+human continuation.
+Version 0.4.5 records retained pages by ACP session, restores their inventory on
+later turns and reuses the original group without a duplicate blank page. Keep
+and result markers persist; new unmarked tabs still close. Other sessions must
+neither discover nor close those pages. Verify identity changes, extension-worker
+recovery, website reauthorization and handoff continuation in the same group.
 Rebuild/restart Atlas Dev so Agents receive the updated lifecycle instructions,
 then reload its local extension. Existing Agent sessions may need a new session
 to receive refreshed browser tool documentation.
@@ -138,7 +143,7 @@ declare the single purpose, actual data handling and each permission:
 | --- | --- |
 | `debugger` | Task-scoped DOM/accessibility snapshots, screenshots and authorized page input through Chrome's debugger API; browser debugging indicator remains visible. |
 | `tabs` | Identify a tab explicitly shared from the popup, create/manage owned task pages and validate tab identities during recovery. |
-| `tabGroups` | Label active/waiting task groups and remove groups after cleanup; group membership never grants access. |
+| `tabGroups` | Reuse the session's group, label active/waiting pages and let empty groups disappear after cleanup; group membership never grants access. |
 | `nativeMessaging` | Connect to the installed Atlas app's per-user native host, without pasted connection addresses. |
 | `storage` | Keep a local browser-profile UUID and session ownership/handoff records for scoped cleanup/resume. |
 | `alarms` | Retry the local app connection after browser/app restart. |

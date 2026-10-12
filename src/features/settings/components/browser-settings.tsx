@@ -148,10 +148,9 @@ export function BrowserSettings() {
             </button>
           )}
           <p className="text-xs text-muted-foreground">
-            Tasks open their own Atlas tab group. New task pages close by default when finished.
-            Pages your Agent explicitly keeps stay in the original group with control released. Your
-            existing tabs and login are preserved. Use the extension popup to share a tab or take
-            over.
+            Each chat reuses its Atlas tab group and previously retained pages. New task pages close
+            by default when finished. Kept pages release control between turns. Your existing tabs
+            and login are preserved. Use the extension popup to share a tab or take over.
           </p>
         </>
       )}

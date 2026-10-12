@@ -256,6 +256,21 @@ try {
     { endpoint: workerFixture.endpoint, url },
   );
   assert.equal(reconnected.error, undefined);
+  const inventory = await workerFixture.run(
+    "nodeRepl.write(JSON.stringify(await browser.tabs.list()));",
+  );
+  assert.equal(inventory.isError, false, JSON.stringify(inventory.content));
+  const restored = JSON.parse(inventory.content[0].text);
+  assert.equal(
+    restored.length,
+    3,
+    "The same session discovers shared and retained pages without a blank tab",
+  );
+  assert.equal(restored.find((tab) => tab.url === url + "/simple#kept").disposition, "keep");
+  assert.equal(
+    restored.find((tab) => tab.url === url + "/simple#result").disposition,
+    "deliverable",
+  );
   assert.equal(
     (
       await workerFixture.run(
@@ -293,7 +308,11 @@ try {
       (await chrome.tabs.query({})).find((tab) => tab.url === url + "/simple#later-task").groupId,
     url,
   );
-  assert.notEqual(laterGroup, groupedLinkTab);
+  assert.equal(
+    laterGroup,
+    groupedLinkTab,
+    "Later turns in the same session reuse the original group",
+  );
   assert.equal((await workerFixture.run("", true)).keepAlive, false);
   await workerFixture.close();
   workerFixture = null;

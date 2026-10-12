@@ -1,6 +1,6 @@
 # Atlas Browser Privacy Policy
 
-Effective date: October 11, 2026
+Effective date: October 12, 2026
 
 This policy covers the Atlas Browser extension and its browser-control connection
 to the local Atlas desktop app maintained in [gggab/atlas](https://github.com/gggab/atlas).
@@ -75,7 +75,13 @@ the maintainer for routine human review.
 The browser-profile identifier is stored locally in the browser's extension
 storage, together with your remembered website decisions and allow-all setting.
 Once grants exist only for the active task and end on disconnect or takeover.
-Session storage contains task/shared-tab ownership and handoff state;
+Session storage contains task/shared-tab ownership, handoff state, and the
+retained-page/group associations for each ACP session. Later turns in the same
+session restore only those recorded pages after identity and website-access
+checks; other sessions and personal tabs are not discovered. Closing a page
+removes it from the next restored inventory. This in-memory catalog clears on
+extension reload/update/disable or browser restart and does not recover records
+from group titles;
 these records are updated or cleared during connection, cleanup, and recovery.
 Atlas also stores profile binding and browser-control preferences in its local
 app data. These settings may remain across app restarts.
@@ -83,7 +89,9 @@ app data. These settings may remain across app restarts.
 The Agent decides which task pages to keep or close based on your request.
 Agent-owned tabs close by default when the task finishes or control is released,
 unless explicitly marked keep, result or handoff. Retained pages remain in their
-original Atlas group without Agent control. Handoff pages remain until you
+original Atlas group without Agent control between turns. Later turns reuse
+that group and its retained pages. Keep/result decisions remain until changed;
+new unmarked pages still close. Handoff pages remain until you
 continue or release them. Existing user tabs are never closed by task cleanup.
 Closing task tabs does not erase browser history, downloaded files, website
 accounts, or Atlas conversation history.

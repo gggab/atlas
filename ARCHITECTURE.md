@@ -217,6 +217,12 @@ loopback broker bootstrap the task relay. The Agent decides page retention from
 the user's task. Finished/failed turns release control and close owned tabs by
 default unless explicitly retained. Kept/result pages stay in their original group;
 genuine handoffs retain their waiting state. Existing user pages always survive.
+An extension-session-storage catalog associates retained targets and the original
+group with their ACP session ID. Later turns revalidate only that session's target
+identities and website access, restore its pages and reuse the group. Group
+membership alone grants no access. New unmarked pages still close at cleanup;
+keep/result markers persist until changed. Closed/replaced targets are discarded.
+If the browser removes an empty group, a later page creates its replacement.
 Human continuation on the trusted agents_send path returns handoff control through
 Native Messaging for the original session. Agent tool retries cannot authorize
 resumption; ordinary chats without a waiting browser task send no handoff request.

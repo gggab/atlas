@@ -42,8 +42,19 @@ export class ExtensionHost extends BrowserHost {
     this.context = this.connection.contexts()[0];
     this.context.setDefaultTimeout(15_000);
     this.context.setDefaultNavigationTimeout(30_000);
-    for (const page of this.context.pages()) this.register(page);
+    for (const page of this.context.pages()) {
+      const id = this.register(page);
+      const client = await this.context.newCDPSession(page);
+      try {
+        const { targetInfo } = await client.send("Target.getTargetInfo");
+        const disposition = this.relay.targets.get(targetInfo.targetId)?.info.atlasDisposition;
+        if (disposition) this.dispositions.set(id, disposition);
+      } finally {
+        await client.detach();
+      }
+    }
     this.context.on("page", (page) => this.register(page));
+    this.notify();
     this.connection.on("disconnected", () => {
       this.pages.clear();
       this.changed([]);

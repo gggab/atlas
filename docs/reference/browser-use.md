@@ -47,6 +47,26 @@ subscription. No additional model API/key is needed.
 
 ### Automatic task tabs
 
+Extension 0.4.5 keeps one group per ACP session while that group exists. Turn
+completion still releases debugging and clears REPL handles, but retains a
+browser-session catalog of explicitly shared and kept/result pages. The next
+browser_start restores those pages, checks their target identity and current
+website approval, and reuses the same group. It creates a blank page only if no
+recorded page remains. Query browser.tabs.list() and acquire fresh handles before
+opening more pages. Keep/result markers survive reconnect; markTemporary() can
+close a previously retained owned page at the next cleanup. New unmarked pages
+still close, and personal/shared pages never acquire deletion ownership.
+
+Other sessions get separate groups and cannot discover these pages. Moving an
+unrelated tab into an Atlas group does not authorize it. Manually closed or
+replaced targets are skipped; an empty/deleted group is recreated when needed.
+The catalog uses extension session storage: it survives service-worker restarts,
+but clears when the extension is reloaded/updated/disabled or the browser restarts
+([Chrome storage lifecycle](https://developer.chrome.com/docs/extensions/reference/api/storage#session)).
+A changed ACP session ID does not inherit another session's pages. Existing
+0.4.4 groups lack retained ownership records and are not inferred from their
+titles; explicitly share a page if needed. Updating does not merge or close them.
+
 Install/load Atlas Browser once through **Settings > Browser control**.
 Atlas prepares a profile-specific extension folder and registers its bundled
 per-user native messaging host on startup. The extension connects automatically
@@ -140,8 +160,8 @@ REPL is not a security sandbox. No live Taobao behavior is inferred from fixture
    **Manage extension** opens the browser's own page to enable, disable, reload or
    remove it. Browser confirmation is required.
 4. Ask the Agent to use a website and approve its hostname in the automatic
-   extension prompt. It creates a new task tab and Atlas group
-   automatically. To use a personal tab instead, select that page and choose
+   extension prompt. The first browser operation creates a tab and Atlas group;
+   later turns restore retained pages and reuse that group. To use a personal tab instead, select that page and choose
    **Share this tab** before asking the Agent.
    Other daily tabs and automatic popups are not discovered or shared. One task
    controls a browser profile at a time. App-level connection survives task cleanup.
@@ -213,9 +233,9 @@ private worker pipes. Deferred actions cannot inherit a later tool call's grant.
 | Tool | Behavior |
 | --- | --- |
 | `browser_status` | Calling session state/instructions, no launch |
-| `browser_start` | Connect automatically and open a grouped task tab; no browser/profile arguments |
+| `browser_start` | Connect automatically, restore this session's pages and reuse its group; no browser/profile arguments |
 | `browser_repl` | Persistent JS with cua/browser/agent/nodeRepl after sharing |
-| `browser_reset` | Close task tabs except required handoffs, remove groups and clear handles |
+| `browser_reset` | Release control, close unmarked/temporary owned tabs and clear handles; preserve retained pages and their session group |
 
 These are MCP tools, not slash commands. Use the Agent tool interface.
 
@@ -277,6 +297,15 @@ after navigation. These checks test API/example behavior, not model compliance
 with instructions or a vendor CLI's shell permissions. Rebuild/restart Atlas Dev
 and start a new Agent session to refresh MCP instructions and tool discovery.
 Guidance-only changes do not require a new extension version.
+
+For session reuse changes, test consecutive native starts with the same session
+ID: retain multiple pages, finish the turn, list them on the next start without
+a duplicate blank tab, and add a page to the exact original group ID. Verify
+keep/result markers survive, new unmarked pages close, shared/personal pages
+survive, other sessions remain isolated, and handoff resumes in that same group.
+Run real Chrome and Edge extension/native fixtures. Reload the updated extension
+and rebuild/restart Atlas Dev for the new worker and instructions. These fixtures
+do not prove a paid CLI Agent's compliance or real shopping-site behavior.
 
 Run/restart `bun run dev:app` to prepare the Atlas Dev extension copy. Store
 extensions target released Atlas (`com.atlas.browser`); source development still

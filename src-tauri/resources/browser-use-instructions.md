@@ -1,7 +1,10 @@
 # Atlas Browser Use
 
 Use browser_status first. browser_start automatically connects the authorized
-Atlas Browser extension and opens a new grouped task tab in daily Chrome/Edge.
+Atlas Browser extension in daily Chrome/Edge. The same ACP session reuses its
+original group and restores its retained pages; a blank tab is created only when
+no existing page is available. After connecting, query browser.tabs.list() first,
+then reuse the appropriate page instead of opening the same URL again.
 First-time setup: the human opens Settings > Browser control in Atlas, chooses
 Chrome/Edge, and installs the extension from its store. Source builds use the
 local extension folder documented in development instructions. It connects automatically.
@@ -39,7 +42,10 @@ Reuse handles across calls; do not redeclare const bindings. Read the full API
 with nodeRepl.write(await browser.documentation()). Only the human-shared tab
 and tabs explicitly created by the Agent are visible. Other browser tabs and
 automatic popups are not authorized. Navigate the initial task tab instead of
-opening a duplicate. Human-shared and resumed pages are preferred when present.
+opening a duplicate. Human-shared and retained/resumed pages are preferred when present.
+After turn cleanup/reset, list pages again and obtain fresh handles; old handles
+are invalid. Retained pages are revalidated and require current website approval.
+Only pages recorded for this session are restored, never other tabs in the group.
 Numeric refs require the latest getAXState. Screenshot before coordinate input.
 Use scoped Playwright locators and frame locators; await every browser action.
 Background actions from ended tool calls are rejected. Errors never mean rollback.
@@ -89,7 +95,11 @@ No website/content category forces your decision. Existing user tabs/windows
 and login always remain, regardless of markers.
 Finished/failed turns detach debugging and clear handles. Retained ordinary pages
 stay in their original Atlas task group and do not require human continuation or
-block the next task. Do not ungroup retained pages or reopen them through the OS.
+block the next turn. Keep/result decisions survive reconnection; markTemporary()
+can change a previously retained owned page to close at the next cleanup. New
+pages join this session's existing group. If every group page is closed, the
+browser removes that group and the next new page creates a replacement.
+Do not ungroup retained pages or reopen them through the OS.
 Use await tab.markHandoff() only when returning control for human intervention.
 Before asking the human to complete login/CAPTCHA, mark the necessary page for
 handoff. The extension's Take over this page retains the necessary page and

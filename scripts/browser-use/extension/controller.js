@@ -20,6 +20,7 @@ export class ExtensionController {
     this.Socket = Socket;
     this.targets = new Map();
     this.records = new Map();
+    this.sessions = new Map();
     this.creating = new Set();
     this.childSessions = new Map();
     this.frames = new Map();
@@ -138,13 +139,16 @@ export class ExtensionController {
         groupId: this.groupId,
         sessionId: this.sessionId,
       },
+      atlasSessions: [...this.sessions.values()],
     });
   }
   async recover() {
-    const { atlasTabs = [], atlasTask } = await this.api.storage.session.get([
-      "atlasTabs",
-      "atlasTask",
-    ]);
+    const {
+      atlasTabs = [],
+      atlasTask,
+      atlasSessions = [],
+    } = await this.api.storage.session.get(["atlasTabs", "atlasTask", "atlasSessions"]);
+    this.sessions = new Map(atlasSessions.map((session) => [session.sessionId, session]));
     this.sessionId = atlasTask?.sessionId;
     const identities = atlasTask?.tabs?.length ? await this.api.debugger.getTargets() : [];
     for (const record of atlasTask?.tabs ?? []) {
@@ -209,11 +213,15 @@ export class ExtensionController {
     this.targets.set(tabId, targetInfo);
     this.records.set(tabId, { ...this.records.get(tabId), tabId, targetId: targetInfo.targetId });
     await this.persist();
-    return targetInfo;
+    return { ...targetInfo, atlasDisposition: this.records.get(tabId).disposition };
   }
   async createTab(value = "about:blank") {
+    const generation = this.generation;
+    const previous = [...this.creating];
     const work = (async () => {
-      const generation = this.generation;
+      // Serialize group creation even when a caller opens several pages concurrently.
+      await Promise.allSettled(previous);
+      if (generation !== this.generation) throw new Error("Connection was cancelled");
       const url = new URL(value);
       if (
         !["http:", "https:", "about:"].includes(url.protocol) ||
@@ -262,6 +270,7 @@ export class ExtensionController {
     const failures = [];
     const hadRecords = this.records.size > 0;
     const handoff = [...this.records.values()].filter((record) => record.disposition === "handoff");
+    const retained = [];
     for (const [tabId, record] of this.records) {
       if (record.owned && (record.disposition ?? "temporary") === "temporary") {
         try {
@@ -273,6 +282,11 @@ export class ExtensionController {
           }
         }
       }
+      if (
+        record.disposition !== "handoff" &&
+        (!record.owned || (record.disposition ?? "temporary") !== "temporary")
+      )
+        retained.push(record);
       this.records.delete(tabId);
     }
     if (hadRecords) {
@@ -286,9 +300,11 @@ export class ExtensionController {
       });
       this.onHandoff?.(handoff.length ? this.sessionId : null);
     }
-    if (this.groupId !== undefined) {
+    let groupId = this.groupId;
+    if (groupId !== undefined) {
       try {
-        const tabs = await this.api.tabs.query({ groupId: this.groupId });
+        const tabs = await this.api.tabs.query({ groupId });
+        if (!tabs.length) groupId = undefined;
         const handoff = tabs.filter((tab) => this.handoffTabs?.has(tab.id));
         if (handoff.length)
           await this.api.tabGroups.update(this.groupId, {
@@ -297,7 +313,13 @@ export class ExtensionController {
           });
       } catch (error) {
         if (!/No group with id|No tab group with id/i.test(error.message)) failures.push(error);
+        else groupId = undefined;
       }
+    }
+    if (hadRecords && this.sessionId) {
+      if (retained.length || groupId !== undefined)
+        this.sessions.set(this.sessionId, { sessionId: this.sessionId, groupId, tabs: retained });
+      else this.sessions.delete(this.sessionId);
     }
     if (!failures.length) this.groupId = undefined;
     await this.persist();
@@ -315,7 +337,11 @@ export class ExtensionController {
     this.sessionId = sessionId;
     this.groupId = undefined;
     let resume;
-    const { atlasHandoff } = await this.api.storage.session.get("atlasHandoff");
+    const { atlasHandoff, atlasSessions = [] } = await this.api.storage.session.get([
+      "atlasHandoff",
+      "atlasSessions",
+    ]);
+    this.sessions = new Map(atlasSessions.map((session) => [session.sessionId, session]));
     if (atlasHandoff?.tabs?.length && atlasHandoff.sessionId !== sessionId)
       throw new Error(
         "Another session is waiting for handoff. Resume that session or release its waiting pages in Atlas Browser first.",
@@ -324,21 +350,26 @@ export class ExtensionController {
       throw new Error(
         "Waiting for user takeover. After verification, send continue in the original Atlas chat.",
       );
-    if (tabId === undefined) {
-      if (atlasHandoff?.tabs?.length) {
-        // Read identity only for previously retained IDs; never expose inventory.
-        const targets = await this.api.debugger.getTargets();
-        resume = atlasHandoff.tabs.filter((record) =>
-          targets.some((target) => target.tabId === record.tabId && target.id === record.targetId),
-        );
-        if (resume.length) {
-          tabId = resume[0].tabId;
-          for (const record of resume)
-            this.records.set(record.tabId, { ...record, disposition: "temporary" });
-          this.groupId = atlasHandoff.groupId;
-        }
-      }
+    const session = this.sessions.get(sessionId);
+    const candidates = [
+      ...(atlasHandoff?.tabs ?? []).map((record) => ({ ...record, disposition: "temporary" })),
+      ...(session?.tabs ?? []),
+    ];
+    // Group membership never grants access; validate only this session's recorded targets.
+    const identities = candidates.length ? await this.api.debugger.getTargets() : [];
+    resume = candidates.filter((record) =>
+      identities.some((target) => target.tabId === record.tabId && target.id === record.targetId),
+    );
+    for (const record of resume) this.records.set(record.tabId, record);
+    this.groupId =
+      session?.groupId ?? (atlasHandoff?.tabs?.length ? atlasHandoff.groupId : undefined);
+    if (this.groupId !== undefined) {
+      const grouped = await this.api.tabs.query({ groupId: this.groupId });
+      if (!grouped.some((tab) => resume.some((record) => record.tabId === tab.id)))
+        this.groupId = undefined;
     }
+    tabId ??= resume[0]?.tabId;
+    resume = resume.filter((record) => record.tabId !== tabId);
     this.windowId = tabId === undefined ? undefined : (await this.api.tabs.get(tabId)).windowId;
     if (generation !== this.generation) throw new Error("Connection was cancelled");
     this.socket = new this.Socket(endpoint);
@@ -365,10 +396,9 @@ export class ExtensionController {
       const targetInfo =
         tabId === undefined
           ? await this.createTab()
-          : await this.attach(tabId, generation, !!resume?.length);
+          : await this.attach(tabId, generation, this.records.has(tabId));
       const others = [];
-      for (const record of resume?.slice(1) ?? [])
-        others.push(await this.attach(record.tabId, generation, true));
+      for (const record of resume) others.push(await this.attach(record.tabId, generation, true));
       this.socket.onmessage = (event) => {
         try {
           void this.handle(JSON.parse(event.data));
@@ -380,10 +410,16 @@ export class ExtensionController {
       };
       this.send({ type: "ready", targetInfo, userAgent: globalThis.navigator?.userAgent });
       for (const targetInfo of others) this.send({ type: "attached", targetInfo });
-      if (resume?.length) {
+      if (atlasHandoff?.tabs?.length) {
         await this.api.storage.session.set({ atlasHandoff: null });
         this.onHandoff?.(null);
-        this.groupId = await this.api.tabs.group({ tabIds: resume.map((record) => record.tabId) });
+      }
+      const owned = [...this.records.values()].filter((record) => record.owned);
+      if (owned.length) {
+        this.groupId = await this.api.tabs.group({
+          tabIds: owned.map((record) => record.tabId),
+          ...(this.groupId !== undefined ? { groupId: this.groupId } : {}),
+        });
         await this.api.tabGroups.update(this.groupId, {
           title: `Atlas · ${this.title}`.slice(0, 100),
           color: "blue",
@@ -487,7 +523,11 @@ export class ExtensionController {
     for (const record of owned) await this.api.tabs.remove(record.tabId);
     if (matching.length && atlasHandoff.groupId !== undefined) {
       const tabs = await this.api.tabs.query({ groupId: atlasHandoff.groupId });
-      if (tabs.length) await this.api.tabs.ungroup(tabs.map((tab) => tab.id));
+      if (tabs.length)
+        await this.api.tabGroups.update(atlasHandoff.groupId, {
+          title: "Atlas · Retained pages",
+          color: "blue",
+        });
     }
     await this.api.storage.session.set({ atlasHandoff: null });
     this.onHandoff?.(null);
