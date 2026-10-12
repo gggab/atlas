@@ -32,6 +32,16 @@ A browser mock validates UI and IPC wiring only. Real vendor subscription login,
 
 The Antigravity 1.3.0 standalone server unpacks its bundled runtime before it can answer ACP initialization. A local probe took 63.56 seconds and then returned `Log in with Google`; the ordinary 60-second deadline interrupted it before authentication. Windows `antigravity-acp` initialization now has a bounded 120-second deadline. Other agents retain 60 seconds. An initialization timeout occurs before vendor login and does not establish an account or subscription failure.
 
+### Chat scroll restoration
+
+The Agent transcript retains its last valid scroll position while the window is
+hidden or its viewport collapses. On visibility or native window wake, it restores
+the position before sampling: a reader following the live edge returns to the
+latest messages, including background arrivals; a reader browsing history keeps
+their saved offset. Hidden geometry cannot change the follow state or trigger
+history growth. These checks use simulated DOM geometry; native minimize/restore
+verification remains a separate desktop check.
+
 ### Windows embedded browser creation
 
 The Browser tab hosts a native WebView2 on Windows. Both `browser_embed_create`

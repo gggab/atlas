@@ -8,9 +8,17 @@
 // background streaming tab was snapped to the bottom on return, and the grow
 // trigger fired a prepend into a panel nobody was looking at.
 
-import { act, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useTranscriptScroll } from "./use-transcript-scroll";
+
+const windowFocus = vi.hoisted(() => ({ listeners: new Set<(focused: boolean) => void>() }));
+vi.mock("@/lib/window-focus", () => ({
+  onWindowFocusChange: (cb: (focused: boolean) => void) => {
+    windowFocus.listeners.add(cb);
+    return () => windowFocus.listeners.delete(cb);
+  },
+}));
 
 let resizeCallbacks: ResizeObserverCallback[] = [];
 let frames: FrameRequestCallback[] = [];
@@ -18,6 +26,7 @@ let frames: FrameRequestCallback[] = [];
 beforeEach(() => {
   resizeCallbacks = [];
   frames = [];
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -40,6 +49,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -73,6 +84,109 @@ function flushFrames(): void {
 
 const VISIBLE: Geometry = { scrollHeight: 5000, clientHeight: 600, scrollTop: 3000 };
 const HIDDEN: Geometry = { scrollHeight: 0, clientHeight: 0, scrollTop: 0 };
+
+describe("useTranscriptScroll window restoration", () => {
+  it.each([4400, 3000])(
+    "restores scrollTop %i after hiding and receiving background messages",
+    (top) => {
+      const scroller = document.createElement("div");
+      const content = document.createElement("div");
+      setGeometry(scroller, { ...VISIBLE, scrollTop: top });
+      const onGrow = vi.fn();
+      const onContentResize = vi.fn();
+      const { result } = renderHook(() =>
+        useTranscriptScroll({
+          scrollRef: { current: scroller },
+          contentRef: { current: content },
+          canGrow: true,
+          onGrow,
+          onContentResize,
+        }),
+      );
+      act(flushFrames);
+      onContentResize.mockClear();
+
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+      // Some webviews retain nonzero geometry while minimized but reset the offset.
+      setGeometry(scroller, { scrollHeight: 6000, clientHeight: 600, scrollTop: 0 });
+      act(() => {
+        fireResize();
+        result.current.onScroll();
+        flushFrames();
+      });
+      expect(result.current.atEndRef.current).toBe(top === 4400);
+      expect(onGrow).not.toHaveBeenCalled();
+      expect(onContentResize).not.toHaveBeenCalled();
+
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        flushFrames();
+      });
+      expect(scroller.scrollTop).toBe(top === 4400 ? 5400 : top);
+      expect(result.current.more).toBe(top !== 4400);
+      expect(onGrow).not.toHaveBeenCalled();
+    },
+  );
+
+  it("restores the live edge after a collapsed viewport without a visibility event", () => {
+    const scroller = document.createElement("div");
+    setGeometry(scroller, { ...VISIBLE, scrollTop: 4400 });
+    const onGrow = vi.fn();
+    renderHook(() =>
+      useTranscriptScroll({
+        scrollRef: { current: scroller },
+        contentRef: { current: document.createElement("div") },
+        canGrow: true,
+        onGrow,
+      }),
+    );
+    act(flushFrames);
+    setGeometry(scroller, HIDDEN);
+    // Animation frames can stop while minimized; the observer still saw zero.
+    act(fireResize);
+    setGeometry(scroller, { ...VISIBLE, scrollTop: 0 });
+    act(() => {
+      fireResize();
+      flushFrames();
+    });
+    expect(scroller.scrollTop).toBe(4400);
+    expect(onGrow).not.toHaveBeenCalled();
+  });
+
+  it.each([4400, 3000])("restores scrollTop %i on native wake without web events", (top) => {
+    const scroller = document.createElement("div");
+    setGeometry(scroller, { ...VISIBLE, scrollTop: top });
+    const onGrow = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useTranscriptScroll({
+        scrollRef: { current: scroller },
+        contentRef: { current: document.createElement("div") },
+        canGrow: true,
+        onGrow,
+      }),
+    );
+    act(flushFrames);
+    act(() => {
+      for (const cb of windowFocus.listeners) cb(false);
+    });
+    setGeometry(scroller, { ...VISIBLE, scrollTop: 0 });
+    act(() => {
+      result.current.onScroll();
+      flushFrames();
+    });
+    expect(result.current.atEndRef.current).toBe(top === 4400);
+    expect(onGrow).not.toHaveBeenCalled();
+    act(() => {
+      window.dispatchEvent(new CustomEvent("atlas:window-active"));
+      flushFrames();
+    });
+    expect(scroller.scrollTop).toBe(top);
+    unmount();
+    expect(windowFocus.listeners.size).toBe(0);
+  });
+});
 
 describe("useTranscriptScroll hidden-panel guard", () => {
   it("ignores a 0×0 sample and re-measures once the panel is visible again", () => {

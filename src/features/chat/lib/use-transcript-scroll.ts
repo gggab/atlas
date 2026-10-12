@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { isScrollHot, markScrollHot } from "@/lib/scroll-hot";
+import { onWindowFocusChange } from "@/lib/window-focus";
 
 /** How close to the top (px) the window grows at. Generous on purpose: growing
  *  early happens off-screen and is invisible, growing late is a hitch the reader
@@ -99,6 +100,9 @@ export function useTranscriptScroll({
   const metrics = useRef({ scrollHeight: 0, clientHeight: 0 });
   const atEndRef = useRef(true);
   const growPending = useRef(false);
+  const lastTop = useRef<number | null>(null);
+  const restorePending = useRef(false);
+  const windowPaused = useRef(false);
 
   // Held in refs so the scroll callback never has to be rebuilt — a new handler
   // identity per render means React detaching and re-attaching the listener,
@@ -180,6 +184,13 @@ export function useTranscriptScroll({
       return;
     }
 
+    // Minimized webviews can reset scrollTop even while reporting real sizes.
+    if (document.visibilityState === "hidden" || windowPaused.current) {
+      dirty.current = true;
+      restorePending.current = true;
+      return;
+    }
+
     if (dirty.current) measure();
 
     // A HIDDEN scroller knows nothing. A chat tab stays mounted while another
@@ -191,11 +202,22 @@ export function useTranscriptScroll({
     // first visible sample re-measures, and change nothing.
     if (metrics.current.clientHeight === 0) {
       dirty.current = true;
+      restorePending.current = true;
       return;
+    }
+
+    if (restorePending.current) {
+      if (lastTop.current !== null) {
+        el.scrollTop = atEndRef.current
+          ? Math.max(0, metrics.current.scrollHeight - metrics.current.clientHeight)
+          : lastTop.current;
+      }
+      restorePending.current = false;
     }
 
     // The only read on a clean pass, and the only one that never forces layout.
     const top = el.scrollTop;
+    lastTop.current = top;
     const { scrollHeight, clientHeight } = metrics.current;
     const fromBottom = scrollHeight - top - clientHeight;
 
@@ -243,11 +265,21 @@ export function useTranscriptScroll({
     if (!content || !el) return;
     const observer = new ResizeObserver(() => {
       dirty.current = true;
+      const laidOut = el.clientHeight > 0;
+      if (!laidOut) restorePending.current = true;
       // Give the caller a chance to re-hold its anchor before anything else
       // looks at the geometry — a markdown block finishing its parse changes
       // heights above the viewport, and without this the reader's position
       // drifts every time one lands.
-      resized.current?.();
+      if (
+        showing.current &&
+        document.visibilityState !== "hidden" &&
+        !windowPaused.current &&
+        !restorePending.current &&
+        laidOut
+      ) {
+        resized.current?.();
+      }
       // Re-sample rather than only marking dirty: growing the window makes the
       // page taller *without* a scroll event, and the fade would keep saying
       // "you are at the end" until the reader moved.
@@ -257,6 +289,36 @@ export function useTranscriptScroll({
     observer.observe(el);
     return () => observer.disconnect();
   }, [contentRef, scrollRef, sample]);
+
+  // Restore before sampling, including native wake without a web resize event.
+  useEffect(() => {
+    const wake = () => {
+      windowPaused.current = false;
+      dirty.current = true;
+      if (frame.current === null) frame.current = requestAnimationFrame(sample);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        restorePending.current = true;
+      } else {
+        wake();
+      }
+    };
+    const unlisten = onWindowFocusChange((focused) => {
+      if (focused) wake();
+      else {
+        windowPaused.current = true;
+        restorePending.current = true;
+      }
+    });
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("atlas:window-active", wake);
+    return () => {
+      unlisten();
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("atlas:window-active", wake);
+    };
+  }, [sample]);
 
   // Coming back into view, re-sample once. Everything that happened while
   // hidden left the geometry dirty on purpose (the guard in `sample`), and a
