@@ -36,18 +36,18 @@ export function KeymapOnboarding() {
     <Dialog open={open} onOpenChange={(next) => !next && choose(null)}>
       <DialogContent showCloseButton={false} className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Which shortcuts should Atlas use?</DialogTitle>
+          <DialogTitle>Which shortcuts should DeskMate use?</DialogTitle>
           <DialogDescription>
-            Pick the editor you're coming from and Atlas will match its keys where it has the same
-            command.
+            Pick the editor you're coming from and DeskMate will match its keys where it has the
+            same command.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">
           <Choice
             icon={<AtlasIcon size={16} />}
-            label="Atlas"
-            description="Atlas's own shortcuts."
+            label="DeskMate"
+            description="DeskMate's own shortcuts."
             keys={paletteKeys(null)}
             onClick={() => choose(null)}
           />

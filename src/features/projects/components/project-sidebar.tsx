@@ -1408,11 +1408,11 @@ function EmptyRail() {
 
 /** Where the help menu points. Grouped as they render: docs and support, then
  *  the public channels, then the app's own surfaces. */
-const DOCS_URL = "https://docs.tryatlas.cc/docs/getting-started";
-const GITHUB_URL = "https://github.com/pacifio/atlas";
+const DOCS_URL = "https://github.com/gggab/atlas#readme";
+const GITHUB_URL = "https://github.com/gggab/atlas";
 const DISCORD_URL = "https://discord.gg/GmnFggaPfP";
 const X_URL = "https://x.com/tryatlas_cc";
-const SITE_URL = "https://tryatlas.cc/";
+const SITE_URL = "https://github.com/gggab/atlas";
 
 function HelpItem({
   icon,
@@ -1479,10 +1479,10 @@ function HelpMenu() {
             />
             <HelpItem
               icon={<MessageCircle size={12} />}
-              label="Discord community"
+              label="Upstream Discord"
               onSelect={() => void openUrl(DISCORD_URL)}
             />
-            <HelpItem icon={<XIcon />} label="Follow on X" onSelect={() => void openUrl(X_URL)} />
+            <HelpItem icon={<XIcon />} label="Upstream on X" onSelect={() => void openUrl(X_URL)} />
 
             <DropdownMenu.Separator className="my-1 h-px bg-border" />
 

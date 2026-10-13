@@ -27,7 +27,7 @@ export class ExtensionHost extends BrowserHost {
             () =>
               reject(
                 new Error(
-                  "Browser profile is disconnected. Check Atlas Settings > Browser control.",
+                  "Browser profile is disconnected. Check DeskMate Settings > Browser control.",
                 ),
               ),
             15_000,

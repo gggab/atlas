@@ -690,7 +690,7 @@ pub fn run() {
             commands::skills::pack_components_list,
         ])
         .build(context)
-        .expect("error while building Atlas")
+        .expect("error while building DeskMate")
         .run(|app_handle, event| {
             match event {
                 tauri::RunEvent::ExitRequested { .. } => {

@@ -42,7 +42,7 @@ VERSION="${VERSION#alpha-}"
 VERSION="${VERSION#exp-}"
 VERSION="${VERSION#v}"
 RELEASE_TAG="${RELEASE_TAG:-alpha-${VERSION}}"
-echo "Packaging Atlas v${VERSION} for Linux (${ARCH}) [tag: ${RELEASE_TAG}]..."
+echo "Packaging DeskMate v${VERSION} for Linux (${ARCH}) [tag: ${RELEASE_TAG}]..."
 
 # Locate binary
 ATLAS_BIN="${ATLAS_BIN:-}"
@@ -67,10 +67,10 @@ if [ -z "$ATLAS_BIN" ] || [ ! -f "$ATLAS_BIN" ]; then
     mkdir -p target/release
     ATLAS_BIN="target/release/atlas"
     echo '#!/bin/sh' > "$ATLAS_BIN"
-    echo 'echo "Atlas"' >> "$ATLAS_BIN"
+    echo 'echo "DeskMate"' >> "$ATLAS_BIN"
     chmod +x "$ATLAS_BIN"
   else
-    echo "Error: Atlas binary required for packaging." >&2
+    echo "Error: DeskMate binary required for packaging." >&2
     exit 1
   fi
 fi
@@ -122,7 +122,7 @@ PREFIX="${PREFIX:-/usr/local}"
 if [ "$EUID" -ne 0 ] && [ "$PREFIX" = "/usr/local" ]; then
   PREFIX="${HOME}/.local"
 fi
-echo "Installing Atlas to ${PREFIX}..."
+echo "Installing DeskMate to ${PREFIX}..."
 install -d "${PREFIX}/bin" "${PREFIX}/share/applications" "${PREFIX}/share/licenses/atlas"
 install -m 755 bin/atlas "${PREFIX}/bin/atl"
 ln -sf atl "${PREFIX}/bin/tryatlas"
@@ -140,7 +140,7 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q -t "${PREFIX}/share/icons/hicolor" 2>/dev/null || true
 fi
-echo "Atlas installed successfully to ${PREFIX}! (run 'atl' or 'tryatlas')"
+echo "DeskMate installed successfully to ${PREFIX}! (run 'atl' or 'tryatlas')"
 EOF
 chmod 755 "${STAGE_DIR}/install.sh"
 
@@ -151,7 +151,7 @@ PREFIX="${PREFIX:-/usr/local}"
 if [ "$EUID" -ne 0 ] && [ "$PREFIX" = "/usr/local" ]; then
   PREFIX="${HOME}/.local"
 fi
-echo "Uninstalling Atlas from ${PREFIX}..."
+echo "Uninstalling DeskMate from ${PREFIX}..."
 rm -f "${PREFIX}/bin/atl"
 rm -f "${PREFIX}/bin/tryatlas"
 if [ -L "${PREFIX}/bin/atlas" ]; then
@@ -171,7 +171,7 @@ fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -q -t "${PREFIX}/share/icons/hicolor" 2>/dev/null || true
 fi
-echo "Atlas uninstalled."
+echo "DeskMate uninstalled."
 EOF
 chmod 755 "${STAGE_DIR}/uninstall.sh"
 
@@ -196,7 +196,7 @@ pkgname=tryatlas-bin
 _pkgname=atlas
 pkgver=${VERSION}
 pkgrel=1
-pkgdesc="Atlas — agent-first ideation and planning tool"
+pkgdesc="DeskMate — agent-first ideation and planning tool"
 arch=('${ARCH}')
 url="https://tryatlas.cc"
 license=('Apache-2.0')
@@ -266,12 +266,12 @@ Version: ${VERSION}
 Section: devel
 Priority: optional
 Architecture: ${DEB_ARCH}
-Maintainer: Atlas Team <contact@tryatlas.cc>
+Maintainer: DeskMate Team <contact@tryatlas.cc>
 Depends: libwebkit2gtk-4.1-0, libgtk-3-0, libayatana-appindicator3-1, bubblewrap, libglib2.0-0
 Suggests: wl-clipboard, xclip, xsel
 Provides: tryatlas (= ${VERSION}), atl (= ${VERSION})
-Description: Atlas — agent-first ideation and planning tool
- Atlas is an agent-first IDE and planning tool for software development.
+Description: DeskMate — agent-first ideation and planning tool
+ DeskMate is an agent-first IDE and planning tool for software development.
 EOF
 
 cat <<'EOF' > "${DEB_STAGING}/DEBIAN/postinst"
@@ -334,7 +334,7 @@ if command -v rpmbuild >/dev/null 2>&1; then
 Name:           tryatlas
 Version:        ${VERSION}
 Release:        1%{?dist}
-Summary:        Atlas — agent-first ideation and planning tool
+Summary:        DeskMate — agent-first ideation and planning tool
 License:        Apache-2.0
 URL:            https://tryatlas.cc
 Provides:       tryatlas = %{version}-%{release}
@@ -344,7 +344,7 @@ Requires:       webkit2gtk4.1, gtk3, libayatana-appindicator-gtk3, bubblewrap, g
 Suggests:       wl-clipboard, xclip, xsel
 
 %description
-Atlas is an agent-first IDE and planning tool for software development.
+DeskMate is an agent-first IDE and planning tool for software development.
 
 %install
 mkdir -p %{buildroot}/usr/bin

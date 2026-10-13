@@ -40,7 +40,7 @@ function expectedBlock(): string {
     .map(([name, value]) => `  ${name}: ${value};`);
   return [
     `${BEGIN} — do not edit.`,
-    "   Every `--atlas-*` variable at its Atlas-dark value: the floor for a frame",
+    "   Every `--atlas-*` variable at its DeskMate-dark value: the floor for a frame",
     "   with no resolved theme. Rewritten by",
     "   `ATLAS_WRITE_TOKENS=1 bunx vitest run src/features/theme/tokens-fallback.test.ts`. */",
     ":root {",
@@ -57,7 +57,7 @@ function currentBlock(css: string): string | null {
   return css.slice(begin, end + END.length);
 }
 
-describe("the Atlas-dark fallback in tokens.css", () => {
+describe("the DeskMate-dark fallback in tokens.css", () => {
   if (process.env.ATLAS_WRITE_TOKENS) {
     const css = readFileSync(TOKENS, "utf8");
     const current = currentBlock(css);
@@ -69,7 +69,7 @@ describe("the Atlas-dark fallback in tokens.css", () => {
 
   const css = readFileSync(TOKENS, "utf8");
 
-  it("matches what Atlas-dark resolves to", () => {
+  it("matches what DeskMate-dark resolves to", () => {
     expect(currentBlock(css), "run the command in this file's docblock").toBe(expectedBlock());
   });
 

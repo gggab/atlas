@@ -2,7 +2,7 @@
 name = "atlas-redact"
 version = "0.1.0"
 edition = "2021"
-description = "Atlas's single source of truth for secret redaction: layered scrubbing (Shannon entropy, vendored betterleaks rules, provider prefixes, credentialed URIs, connection strings, bounded credential key/value) with JSON-aware traversal. String in, redacted string out — no I/O, no async."
+description = "DeskMate's single source of truth for secret redaction: layered scrubbing (Shannon entropy, vendored betterleaks rules, provider prefixes, credentialed URIs, connection strings, bounded credential key/value) with JSON-aware traversal. String in, redacted string out — no I/O, no async."
 
 [lib]
 name = "atlas_redact"

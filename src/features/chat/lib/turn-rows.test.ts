@@ -242,7 +242,7 @@ describe("the icon a marker leads with", () => {
   /// The native agent reports MCP calls as kind "other" (Atlas's own servers
   /// are not fetches), so the name decides: a UI action is the generic tool,
   /// a memory search is a search.
-  it("gives Atlas's own tool servers the icon their names earn", () => {
+  it("gives DeskMate's own tool servers the icon their names earn", () => {
     const ui = markers(turn(toolCall({ kind: "other", toolName: "atlas_ui.ui_focus" })))[0];
     expect(ui.tool).toBe("tool");
     const memory = markers(
@@ -673,7 +673,7 @@ describe("the work header", () => {
   });
 });
 
-describe("an Atlas tool's marker", () => {
+describe("an DeskMate tool's marker", () => {
   it("names the tool in words, not by its MCP name", () => {
     expect(toolDisplayName("mcp__atlas_code__find_symbol")).toBe("Find symbol");
     expect(toolDisplayName("atlas_code.impact_of_diff")).toBe("Impact of diff");

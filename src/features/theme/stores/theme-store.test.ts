@@ -20,7 +20,7 @@ vi.mock("../apply-theme", () => ({ applyTheme: (...args: unknown[]) => applyThem
 
 const { useThemeStore, startThemeCatalogListener } = await import("./theme-store");
 
-const ATLAS = { schema: 1, id: "atlas", name: "Atlas", author: "a", license: "MIT" };
+const ATLAS = { schema: 1, id: "atlas", name: "DeskMate", author: "a", license: "MIT" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -42,7 +42,7 @@ describe("theme store load()", () => {
 });
 
 describe("theme store apply()", () => {
-  it("falls back to Atlas when the chosen theme cannot be loaded", async () => {
+  it("falls back to DeskMate when the chosen theme cannot be loaded", async () => {
     getTheme.mockImplementation((id: string) =>
       id === "atlas" ? Promise.resolve(ATLAS) : Promise.reject(new Error("gone")),
     );
@@ -80,7 +80,7 @@ describe("theme store apply()", () => {
  *  identical settings value that `applySettingsSideEffects` correctly skips —
  *  so the app kept painting the version it had read at boot. */
 describe("re-applying the active theme", () => {
-  const EDITED = { ...ATLAS, name: "Atlas (edited)" };
+  const EDITED = { ...ATLAS, name: "DeskMate (edited)" };
 
   it("repaints when the theme catalog changes underneath it", async () => {
     getTheme.mockResolvedValue(ATLAS);
@@ -150,7 +150,7 @@ describe("overlapping applies", () => {
   });
 });
 
-/** `system` used to read the OS once per apply, so Atlas stayed on whatever
+/** `system` used to read the OS once per apply, so DeskMate stayed on whatever
  *  the OS said at launch until something else happened to re-apply. */
 describe("system mode", () => {
   function fakeOs() {

@@ -57,10 +57,13 @@ function rustArms(fn: string): { default: string; dev: string } {
 
 describe("dev profile switch", () => {
   it("shows the fork name while preserving existing profile storage", () => {
-    expect(rustArms("product_name")).toEqual({ default: "Atlas改", dev: "Atlas改 Dev" });
+    expect(rustArms("product_name")).toEqual({
+      default: "同桌 DeskMate",
+      dev: "同桌 DeskMate Dev",
+    });
     expect(DEFAULT_APP_PROFILE).toEqual({
       dev: false,
-      productName: "Atlas改",
+      productName: "同桌 DeskMate",
       dirName: ".atlas",
     });
     expect(rustConst("DEFAULT_IDENTIFIER")).toBe("dev.atlas.ide");
@@ -69,9 +72,18 @@ describe("dev profile switch", () => {
     expect(rustArms("config_dir_name")).toEqual({ default: "atlas", dev: "atlas-dev" });
     for (const file of ["src-tauri/tauri.conf.json", "src-tauri/tauri.linux.conf.json"]) {
       const conf = readJson(file) as { app: { windows: { title: string }[] } };
-      expect(conf.app.windows[0].title).toBe("Atlas改");
+      expect(conf.app.windows[0].title).toBe("同桌 DeskMate");
     }
-    expect(read("index.html")).toContain("<title>Atlas改</title>");
+    expect(read("index.html")).toContain("<title>同桌 DeskMate</title>");
+  });
+
+  it("keeps the CLI app lookup and private workspace aligned with the brand", () => {
+    const name = rustArms("product_name").default;
+    const helper = read("src-tauri/bin/atlas-cli.sh");
+    expect(helper).toContain(`/Applications/${name}.app`);
+    expect(helper).toContain(`app="${name}.app"`);
+    expect(readJson("package.json").name).toBe("deskmate");
+    expect(read("bun.lock")).toContain('"name": "deskmate"');
   });
 
   it("dev:app builds with the dev overlay", () => {
@@ -441,7 +453,7 @@ describe("the profile-name scanner", () => {
   });
 });
 
-describe("Atlas's on-disk names have one source", () => {
+describe("DeskMate's on-disk names have one source", () => {
   const files = [
     ...rustSources(path.join(REPO_ROOT, "src-tauri", "src")),
     ...readdirSync(path.join(REPO_ROOT, "crates"), { withFileTypes: true })

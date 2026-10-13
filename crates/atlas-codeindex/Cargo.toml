@@ -2,7 +2,7 @@
 name = "atlas-codeindex"
 version = "0.2.0"
 edition = "2021"
-description = "Atlas code index: parallel tree-sitter symbol extraction into a per-project SQLite + FTS5 index, updated per file."
+description = "DeskMate code index: parallel tree-sitter symbol extraction into a per-project SQLite + FTS5 index, updated per file."
 
 [lib]
 name = "atlas_codeindex"

@@ -1,4 +1,4 @@
-# Releases for Atlas改
+# Releases for 同桌 DeskMate
 
 The fork develops on `develop`. Release a tested commit from that branch using
 an annotated `vX.Y.Z` tag in `gggab/atlas`. Build and publication are separate:
@@ -17,7 +17,7 @@ Run **Build Windows Release** in GitHub Actions, selecting `develop`. The
 workflow installs the repository-pinned Bun, Node and Rust versions, checks
 types, lint and focused release/browser contracts, and builds the production
 MSI with `bun run build:app:win`. It verifies MSI branding, version, architecture
-and required resources before uploading `atlas-windows-x64`.
+and required resources before uploading `deskmate-windows-x64`.
 
 The MSI uses `zh-CN` in `src-tauri/tauri.windows.conf.json`: WiX's default English code page cannot represent the
 Chinese product name and fails with `LGHT0311`. Keep this setting while the
@@ -58,6 +58,6 @@ do not use it unchanged on Windows. Refresh the workspace lock entries with
 `cargo update --workspace --offline` after changing the Cargo package version.
 
 The desktop release keeps the existing application identifiers and data
-profiles. The companion **Atlas Browser** extension has an independent
+profiles. The companion **DeskMate Browser** extension has an independent
 version and store-review process; releasing the MSI does not publish the
 extension or enable application auto-updates.

@@ -190,7 +190,7 @@ const installed = new Map<string, IconThemeSummary>([
     {
       id: MINIMAL_ID,
       name: "Minimal",
-      author: "Atlas",
+      author: "DeskMate",
       license: "MIT",
       builtIn: true,
       hidesExplorerArrows: false,
@@ -372,7 +372,7 @@ export const iconThemeHandlers: TypedHandlers<IconThemeResponses> = {
     if (query === "offline") {
       // The offline path, reachable on demand: search for "offline".
       throw new Error(
-        "The Open VSX search failed — Atlas could not reach open-vsx.org. Are you online?",
+        "The Open VSX search failed — DeskMate could not reach open-vsx.org. Are you online?",
       );
     }
     return OPEN_VSX.filter(

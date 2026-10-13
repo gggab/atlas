@@ -25,12 +25,12 @@ case "$cmd" in
   --help|-h)
     cat <<'USAGE'
 Usage:
-  atlas              open the current directory in Atlas
-  atlas <path>       open <path> in Atlas
+  atlas              open the current directory in DeskMate
+  atlas <path>       open <path> in DeskMate
   atlas --version    print the IDE version
   atlas --help       this message
 
-Atlas opens each invocation as its own window so you can have many
+DeskMate opens each invocation as its own window so you can have many
 projects in flight at once. The folder you pass must exist and be
 readable.
 USAGE
@@ -80,15 +80,15 @@ is_helper() {
   return 1
 }
 
-# Find Atlas.app. macOS first looks in /Applications, then
+# Find the DeskMate app. macOS first looks in /Applications, then
 # ~/Applications, then PATH-y locations via `mdfind`. The latter
 # covers DMG drag-installs to unusual locations.
-# "Atlas.app" (below and in the LaunchServices fallback) must match
+# "同桌 DeskMate.app" (below and in the LaunchServices fallback) must match
 # `productName` in src-tauri/tauri.conf.json.
 app=""
 for candidate in \
-  "/Applications/Atlas.app" \
-  "$HOME/Applications/Atlas.app"; do
+  "/Applications/同桌 DeskMate.app" \
+  "$HOME/Applications/同桌 DeskMate.app"; do
   if [ -d "$candidate" ]; then
     app="$candidate"
     break
@@ -116,7 +116,7 @@ if [ -z "$app" ]; then
   done
 fi
 if [ -z "$app" ] && [ "$(uname -s)" = "Darwin" ]; then
-  app="Atlas.app"  # let `open` resolve via LaunchServices as a fallback
+  app="同桌 DeskMate.app"  # let `open` resolve via LaunchServices as a fallback
 fi
 
 # On macOS, `-n` forces a fresh process so argv is actually delivered;
@@ -143,7 +143,7 @@ else
   fi
 
   if [ -z "$app" ]; then
-    echo "atlas: could not find Atlas installation (searched /usr/bin, /usr/local/bin, /opt/atlas/bin, and PATH for atl, tryatlas, or atlas)" >&2
+    echo "atlas: could not find DeskMate installation (searched /usr/bin, /usr/local/bin, /opt/atlas/bin, and PATH for atl, tryatlas, or atlas)" >&2
     exit 1
   fi
   exec "$app" "$abs"

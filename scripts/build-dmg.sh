@@ -64,7 +64,7 @@ export SDKROOT="${SDKROOT:-$(xcrun --show-sdk-path)}"
 # `--bundles app` only: Tauri's own dmg step always uses the app icon as the
 # mounted volume's icon, with no config to change it. layout-dmg.sh builds the
 # dmg instead — same as release-macos.sh — and gives the volume the drive icon.
-log "Building Atlas for ${TARGET}"
+log "Building DeskMate for ${TARGET}"
 bun run tauri build --target "${TARGET}" --bundles app
 
 # Cargo's target dir is the workspace root's `target/`, not

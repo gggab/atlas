@@ -44,13 +44,15 @@ function readZip(filename) {
 test("store ZIPs omit the Edge key while preserving Chrome identity and packaged assets", async () => {
   const source = await readFile(new URL("./extension/manifest.json", import.meta.url));
   const manifest = JSON.parse(source);
+  assert.equal(manifest.name, "DeskMate Browser");
+  assert.equal(manifest.action.default_title, "DeskMate Browser");
   execFileSync(process.execPath, [fileURLToPath(new URL("./package.mjs", import.meta.url))]);
   const packages = [];
   for (const browser of ["chrome", "edge"]) {
     const files = await readZip(
       fileURLToPath(
         new URL(
-          `../../artifacts/browser-extension/atlas-browser-${manifest.version}-${browser}.zip`,
+          `../../artifacts/browser-extension/deskmate-browser-${manifest.version}-${browser}.zip`,
           import.meta.url,
         ),
       ),

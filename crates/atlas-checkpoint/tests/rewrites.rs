@@ -243,7 +243,12 @@ fn a_rewrite_performed_while_atlas_was_closed_is_reconciled_on_next_open() {
         // Store dropped — Atlas is closed.
     };
 
-    fixture.git(&["commit", "--amend", "-m", "rewritten while Atlas was shut"]);
+    fixture.git(&[
+        "commit",
+        "--amend",
+        "-m",
+        "rewritten while DeskMate was shut",
+    ]);
     let new_sha = fixture.git(&["rev-parse", "HEAD"]).trim().to_string();
 
     // This is what a git hook could never do: the rewrite happened when nothing

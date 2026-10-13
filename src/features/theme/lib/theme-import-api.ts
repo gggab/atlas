@@ -22,7 +22,7 @@ export type ThemeFidelity = "native" | "near-lossless" | "lossy";
 /** Whether committing would create, replace, or shadow a built-in. */
 export type ThemeOrigin = "new" | "user" | "built-in";
 
-/** A value the source provided and Atlas kept. */
+/** A value the source provided and DeskMate kept. */
 export interface MappedThemeKey {
   /** Fully qualified: `dark.base.background`. */
   target: string;
@@ -31,7 +31,7 @@ export interface MappedThemeKey {
   value: string;
 }
 
-/** A value Atlas invented because the source had none. */
+/** A value DeskMate invented because the source had none. */
 export interface DerivedThemeKey {
   target: string;
   /** The token it came from, or `"atlas default"`. */
@@ -39,7 +39,7 @@ export interface DerivedThemeKey {
   value: string;
 }
 
-/** Something the source said that Atlas has no home for. */
+/** Something the source said that DeskMate has no home for. */
 export interface IgnoredThemeKey {
   source: string;
   category: string;

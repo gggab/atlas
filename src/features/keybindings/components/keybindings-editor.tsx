@@ -35,7 +35,7 @@ export function KeybindingsEditor() {
   const warnings = resolved.unknownPresetId
     ? [
         ...fileWarnings,
-        `This profile's preset “${resolved.unknownPresetId}” isn't in this version of Atlas; its keys come from Atlas's defaults.`,
+        `This profile's preset “${resolved.unknownPresetId}” isn't in this version of DeskMate; its keys come from DeskMate's defaults.`,
       ]
     : fileWarnings;
 

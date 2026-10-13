@@ -81,7 +81,7 @@ export function RemoteExecutionPanel() {
         <span>Remote execution</span>
         <span
           className="ml-auto text-muted-foreground"
-          title="Commands run by Atlas; interactive input is not available"
+          title="Commands run by DeskMate; interactive input is not available"
         >
           Read-only
         </span>

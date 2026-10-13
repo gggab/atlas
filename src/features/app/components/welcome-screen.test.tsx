@@ -4,12 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WelcomeScreen } from "./welcome-screen";
 
 const profile = vi.hoisted(() => ({
-  productName: "Atlas改",
+  productName: "同桌 DeskMate",
   openFolderShortcut: null as string | null,
 }));
 vi.mock("@/lib/app-profile", () => ({
   useAppProfile: () => profile,
-  DEFAULT_APP_PROFILE: { productName: "Atlas改" },
+  DEFAULT_APP_PROFILE: { productName: "同桌 DeskMate" },
 }));
 vi.mock("../stores/app-store", () => ({
   useAppStore: { use: { recentProjects: () => [], actions: () => ({}) } },
@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("welcome branding", () => {
-  it.each(["Atlas改", "Atlas改 Dev"])("shows the active profile name %s", (name) => {
+  it.each(["同桌 DeskMate", "同桌 DeskMate Dev"])("shows the active profile name %s", (name) => {
     profile.productName = name;
     render(<WelcomeScreen />);
     expect(screen.getByRole("heading", { name }).textContent).toBe(name);

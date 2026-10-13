@@ -12,7 +12,7 @@ const output = fileURLToPath(new URL("../../artifacts/browser-extension/", impor
 const manifest = JSON.parse(await readFile(path.join(source, "manifest.json"), "utf8"));
 await mkdir(output, { recursive: true });
 for (const browser of ["chrome", "edge"]) {
-  const target = path.join(output, `atlas-browser-${manifest.version}-${browser}.zip`);
+  const target = path.join(output, `deskmate-browser-${manifest.version}-${browser}.zip`);
   const storeManifest = { ...manifest };
   if (browser === "edge") delete storeManifest.key;
   const zip = new yazl.ZipFile();

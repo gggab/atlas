@@ -155,7 +155,7 @@ function rankedTable(view: UsageView, g: GroupBy, heading: string): string[] {
 export function buildMarkdown(view: UsageView): string {
   const { totals, eff, sessionCount, resolved } = view;
   const lines: string[] = [];
-  lines.push(`# Atlas — Usage report`);
+  lines.push(`# DeskMate — Usage report`);
   lines.push("");
   const facetsLine = facetLine(view);
   lines.push(`_${fmtRange(resolved)}${facetsLine ? ` · ${facetsLine}` : ""}_`);

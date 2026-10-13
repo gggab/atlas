@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { ExtensionController, validateEndpoint } from "./controller.js";
 import { ExtensionRelay, ws } from "../extension-relay.mjs";
 
-test("extension accepts only Atlas local secret addresses", () => {
+test("extension accepts only DeskMate local secret addresses", () => {
   const valid = "ws://127.0.0.1:1234/extension/" + "a".repeat(64);
   assert.equal(validateEndpoint(valid), valid);
   for (const address of [

@@ -38,7 +38,7 @@ function catalog(source: Catalog["source"], installed = false): Catalog {
 }
 
 describe("cardState", () => {
-  it("has no built-in state — Atlas ships no first-party external agents", () => {
+  it("has no built-in state — DeskMate ships no first-party external agents", () => {
     // ADR-0002: the only ways an agent exists are "the user installed
     // it" and "it is on their PATH". A card can never say "ships with Atlas".
     const states = [
@@ -57,7 +57,7 @@ describe("cardState", () => {
     expect(cardState({ ...stale, installed: true } as Entry, undefined)).toBe("installed");
   });
 
-  it("reports an Atlas-installed agent as installed even when also on PATH", () => {
+  it("reports an DeskMate-installed agent as installed even when also on PATH", () => {
     // Both can be true; "installed" is the one with a Remove action behind it.
     expect(cardState(listed({ installed: true }), catalog("detected", true))).toBe("installed");
   });

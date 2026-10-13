@@ -54,7 +54,7 @@ export const UsagePill = memo(function UsagePill({ tabId }: { tabId: string }) {
       <button
         onClick={toggle}
         className={composerPillClass(open)}
-        title="Session usage — context, tokens, cost and what Atlas recorded"
+        title="Session usage — context, tokens, cost and what DeskMate recorded"
         data-usage-state={pill.state}
       >
         <span key={pill.state} className="atlas-pill-swap flex items-center">

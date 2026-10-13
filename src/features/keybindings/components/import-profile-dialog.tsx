@@ -43,9 +43,9 @@ export function ImportProfileDialog({
       return;
     }
     const notes = [
-      result.unknownPresetId && `preset “${result.unknownPresetId}” isn't in this Atlas`,
+      result.unknownPresetId && `preset “${result.unknownPresetId}” isn't in this DeskMate`,
       result.unknownActionIds.length > 0 &&
-        `${result.unknownActionIds.length} command(s) this Atlas doesn't have were kept`,
+        `${result.unknownActionIds.length} command(s) this DeskMate doesn't have were kept`,
     ].filter(Boolean);
     toast.success(`Imported “${result.profile.name}”`, {
       description: notes.length ? notes.join("; ") : undefined,

@@ -88,7 +88,7 @@ jobs:
             if ($required -notin $files) { throw "Missing packaged resource: $required" }
           }
           New-Item -ItemType Directory -Force artifacts/windows-release | Out-Null
-          $name = "Atlas-Gai-$($package.version)-windows-x64.msi"
+          $name = "DeskMate-$($package.version)-windows-x64.msi"
           Copy-Item -LiteralPath $msi.FullName -Destination "artifacts/windows-release/$name"
           $hash = (Get-FileHash $msi.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $name" | Set-Content artifacts/windows-release/SHA256SUMS.txt -Encoding utf8NoBOM
@@ -106,7 +106,7 @@ jobs:
           } | ConvertTo-Json | Set-Content artifacts/windows-release/build-info.json -Encoding utf8NoBOM
       - uses: actions/upload-artifact@v4
         with:
-          name: atlas-windows-x64
+          name: deskmate-windows-x64
           path: artifacts/windows-release/*
           if-no-files-found: error
           retention-days: 14

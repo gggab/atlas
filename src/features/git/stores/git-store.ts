@@ -321,7 +321,7 @@ interface GitActions {
      *  stashes + in-progress) — a single IPC call, coalesced Rust-side.
      *  Defaults to the active `repoPath`. */
     refresh: (path?: string) => Promise<void>;
-    /** Force-fresh status refresh for changes Atlas originates (git
+    /** Force-fresh status refresh for changes DeskMate originates (git
      *  mutations, editor saves). Patches in place — no `loading` flicker.
      *  Now snapshot-backed; defaults to the active `repoPath`. */
     refreshStatusNow: (path?: string) => Promise<void>;

@@ -22,6 +22,8 @@ describe("Windows release packaging", () => {
     expect(source).toContain("Get-FileHash");
     expect(source).toContain("$env:GITHUB_SHA");
     expect(source).toContain("if-no-files-found: error");
+    expect(source).toContain("DeskMate-$($package.version)-windows-x64.msi");
+    expect(source).toContain("name: deskmate-windows-x64");
   });
 
   it("keeps publication separate from the read-only build job", () => {
@@ -38,7 +40,7 @@ describe("Windows release packaging", () => {
     const windows = JSON.parse(
       readFileSync(new URL("../src-tauri/tauri.windows.conf.json", import.meta.url), "utf8"),
     );
-    expect(config.productName).toBe("Atlas改");
+    expect(config.productName).toBe("同桌 DeskMate");
     expect(windows.bundle.windows.wix.language).toBe("zh-CN");
     expect(windows.app.windows[0].title).toBe(config.productName);
   });

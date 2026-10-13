@@ -65,7 +65,7 @@ export function SshHost() {
           <Dialog.Title className="text-base font-semibold">Allow SSH connection?</Dialog.Title>
           <Dialog.Description className="mt-2 text-sm text-muted-foreground">
             Allow this agent session to execute commands with the remote account’s existing
-            permissions. Credentials stay in Atlas. The waiting connection request resumes
+            permissions. Credentials stay in DeskMate. The waiting connection request resumes
             automatically after approval.
           </Dialog.Description>
           <dl className="my-4 grid grid-cols-[90px_1fr] gap-2 text-xs break-all">

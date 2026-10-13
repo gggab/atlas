@@ -1,6 +1,6 @@
 # History branches and named migrations
 
-The thread catalog is `<app-config-dir>/threads.db`; Atlas Dev uses its own
+The thread catalog is `<app-config-dir>/threads.db`; DeskMate Dev uses its own
 configuration profile. It stores conversation metadata, not transcripts,
 checkpoints, shared memory, vendor login or credentials. This selective port
 from upstream `6e910c7e` extends only that catalog and the cards that read it.
@@ -13,7 +13,7 @@ Only the newest in-flight probe per session may write. A changed name emits
 the existing history-change event; the same name does not produce another
 write or event. Live conversation updates preserve the recorded branch.
 
-Cards display the last branch Atlas actually observed. Switching the project's
+Cards display the last branch DeskMate actually observed. Switching the project's
 branch alone does not rewrite old conversation labels; binding or sending a
 new turn refreshes its label. Detached HEAD, missing Git and non-repository
 directories do not replace a previously observed name. Thus a branch label is
@@ -65,7 +65,7 @@ backups independently.
 
 To return to a build supporting only V3:
 
-1. Close every Atlas process using that profile, including Atlas Dev instances
+1. Close every DeskMate process using that profile, including DeskMate Dev instances
    if they were explicitly configured to share it.
 2. Preserve the current catalog and its WAL/SHM files as a separate recovery
    set. Moving to an earlier snapshot will omit changes made after it.

@@ -1337,7 +1337,7 @@ impl AgentHost {
         for (alias, owner, verdict) in verdicts {
             lock(&self.aliases).remove(&alias);
             if verdict == AliasVerdict::Revoke {
-                tracing::info!(%alias, %owner, "transcript alias revoked: written outside Atlas's turn");
+                tracing::info!(%alias, %owner, "transcript alias revoked: written outside DeskMate's turn");
                 revoked.push(alias);
                 continue;
             }
@@ -1378,7 +1378,7 @@ impl AgentHost {
             return false;
         };
         let claimed_turn = activity.get(&owner).map_or(0, |a| a.turns_started);
-        tracing::info!(alias = new_id, %owner, "on-disk session provisionally attributed to an Atlas turn");
+        tracing::info!(alias = new_id, %owner, "on-disk session provisionally attributed to an DeskMate turn");
         lock(&self.aliases).insert(
             new_id.to_owned(),
             ProvisionalAlias {
@@ -4080,7 +4080,7 @@ mod tests {
         assert_eq!(
             review_alias(Some(now), false, 1, None),
             AliasVerdict::Revoke,
-            "an owner Atlas never prompted explains nothing"
+            "an owner DeskMate never prompted explains nothing"
         );
         assert_eq!(
             review_alias(None, false, 1, Some(&idle)),
@@ -4192,7 +4192,7 @@ mod tests {
         let now = Utc::now();
         assert!(
             !live_elsewhere(Some(now), host.atlas_activity().get("fresh"), now),
-            "Atlas's own continuation is not live elsewhere"
+            "DeskMate's own continuation is not live elsewhere"
         );
         // And an import skips it.
         let history = host.history().expect("history");

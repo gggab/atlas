@@ -187,7 +187,7 @@ function ImportView({
             />
             <p className="caption">
               Fetched once, with a ten-second limit. The file is converted and then forgotten —
-              Atlas never reads the URL again.
+              DeskMate never reads the URL again.
             </p>
           </div>
         )}
@@ -368,7 +368,7 @@ function FidelityBadge({ report }: { report: ThemeImportReport }) {
 function Counts({ report }: { report: ThemeImportReport }) {
   const items = [
     { label: "mapped", value: report.counts.mapped, hint: "the source said this" },
-    { label: "derived", value: report.counts.derived, hint: "Atlas worked this out" },
+    { label: "derived", value: report.counts.derived, hint: "DeskMate worked this out" },
     { label: "ignored", value: report.counts.ignored, hint: "nowhere to put it" },
   ];
   return (
@@ -497,7 +497,7 @@ function ExportView({ themes }: { themes: ThemeSummary[] }) {
     <ScrollArea className="min-h-0 flex-1">
       <div className="flex flex-col gap-3 p-3">
         <p className="caption">
-          Any Atlas theme as a shadcn <span className="code">registry:style</span> item. The base
+          Any DeskMate theme as a shadcn <span className="code">registry:style</span> item. The base
           tokens cross verbatim; everything above them — palette, editor, terminal, syntax, diff,
           comms, agent chips — has no shadcn equivalent and is dropped.
         </p>

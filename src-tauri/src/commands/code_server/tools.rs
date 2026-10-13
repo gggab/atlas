@@ -46,7 +46,7 @@ task_context once at the start of an unfamiliar task.";
 pub(crate) const DEADLINE: Duration = Duration::from_secs(15);
 
 const OFF_NOTE: &str =
-    "Atlas code tools are switched off in Settings → General; search with your shell instead.";
+    "DeskMate code tools are switched off in Settings → General; search with your shell instead.";
 
 const GREP_DESCRIPTION: &str = "Search file contents with a Rust regex (ripgrep engine). Respects .gitignore; skips binary and secret files. Default: matching file paths, newest first. output_mode=content for matching lines (at most 20 per file), count for per-file counts. No look-around or backreferences; literal=true for plain text. Paged: follow next_offset.";
 

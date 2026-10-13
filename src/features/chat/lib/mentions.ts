@@ -610,7 +610,7 @@ export async function ensureKnowledgeMentionCache(projectPath: string): Promise<
  *
  *  Knowledge entries pre-fill `inlineBody` from the in-memory store so
  *  Rust doesn't re-read them from disk. */
-/** Render an Atlas-recorded session's messages as a plain-text transcript for the
+/** Render an DeskMate-recorded session's messages as a plain-text transcript for the
  *  `@session:` context block. Roles are labelled; empty turns are skipped. The
  *  Rust side clips the final size to the mention body budget. */
 function formatSessionTranscript(dump: AtlasTranscriptMessage[]): string {

@@ -21,7 +21,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  /* shadcn's accent is a selected/hover surface. Atlas's former brand
+  /* shadcn's accent is a selected/hover surface. DeskMate's former brand
      "accent" has been renamed primary; do not collapse the two again. */
   --color-accent: var(--accent);
   --color-accent-hover: var(--atlas-element-hover);
@@ -109,7 +109,7 @@
      theme-supplied shadow reaches `shadow-md` is to point the namespace at a
      variable OUTSIDE it — hence `--elevation-*` in tokens.css. `xl` and `2xl`
      are pointed at the dialog level too: left alone they render Tailwind's
-     10%-black default, which is invisible on Atlas's near-black chrome (the
+     10%-black default, which is invisible on DeskMate's near-black chrome (the
      bug the audit found on 47 existing call sites). */
   --shadow-sm: var(--elevation-raised);
   --shadow-md: var(--elevation-menu);
@@ -524,7 +524,7 @@
 /* ──────────────────────────────────────────────────────────────────────────
    Focus and disabled (decision 31).
 
-   Atlas used to remove the outline everywhere, which left it with no keyboard
+   DeskMate used to remove the outline everywhere, which left it with no keyboard
    focus indicator at all. `:focus` stays bare — a mouse click should not draw
    a ring, and on `role="tab"` / `tabIndex=0` hosts a sticky `:focus` outline
    reads as a stuck selection. `:focus-visible` is the keyboard case, and it
@@ -1591,7 +1591,7 @@
   color: #000 !important;
 }
 
-/* Atlas-themed CodeMirror Find/Replace panel (Cmd+F). These rules sit
+/* DeskMate-themed CodeMirror Find/Replace panel (Cmd+F). These rules sit
    OUTSIDE `@layer base` so they outrank any unlayered @codemirror/view
    StyleModule injections — layered styles always lose to unlayered. The
    `!important` annotations cover the few properties StyleModule sets
@@ -1970,7 +1970,7 @@
   accent-color: var(--primary);
 }
 
-/* Atlas bars loader — four bars that shuffle (evokes the Atlas logo). Color
+/* DeskMate bars loader — four bars that shuffle (evokes the DeskMate logo). Color
    inherits `currentColor`; size via `height` (the component scales the bar
    offset `--g` to match). Used in place of the circular spinner. */
 .atlas-loader {

@@ -1,7 +1,7 @@
 import type { ImageAttachment, SessionModeInfo } from "./agents";
 import type { MentionData } from "@/features/chat/lib/mentions";
 
-/** The agents Atlas has first-party BRANDING for — labels, brand icons and
+/** The agents DeskMate has first-party BRANDING for — labels, brand icons and
  *  `.agent-*` CSS tokens, which are Atlas's own design rather than registry
  *  metadata. It is not a list of agents that exist:  every one of these must be installed from the Marketplace
  *  before it can run (ADR-0002), and an installed agent with no entry here

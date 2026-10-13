@@ -194,7 +194,7 @@ fn flatten_override_keys(
                 out.insert(dotted, atlas_theme::ThemeKeyValue::Color(color.clone()));
             }
             serde_json::Value::Object(style) if style.contains_key("font_style") => {
-                drop("sets font_style, which Atlas does not apply");
+                drop("sets font_style, which DeskMate does not apply");
             }
             // `{ color = "…" }` and nothing else is the table spelling of one
             // key; any other table is a group of keys, as in a theme file.
@@ -539,14 +539,14 @@ const SCHEMA_VERSION_DOC: &str = "
 const SETTINGS_DOCS: &[(&str, &str)] = &[
     (
         "autoAddAtlasGitignore",
-        "# Keep Atlas's directory in each opened git project out of version\n\
+        "# Keep DeskMate's directory in each opened git project out of version\n\
          # control: `.atlas/` goes into the project's .gitignore (created if\n\
          # needed); a dev build's `.atlas-dev/` goes into .git/info/exclude.\n\
          # No-op on non-git projects. (default: true)",
     ),
     (
         "enableAtlasLogs",
-        "# Record Atlas-internal events (sign-in, agent lifecycle, file and\n\
+        "# Record DeskMate-internal events (sign-in, agent lifecycle, file and\n\
          # browser opens) into the Logs panel. (default: true)",
     ),
     (
@@ -596,7 +596,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "appIcon",
-        "# macOS app icon, by id: \"dark\" (the icon Atlas ships with) or\n\
+        "# macOS app icon, by id: \"dark\" (the icon DeskMate ships with) or\n\
          # \"light\". Any other than dark replaces the Dock and Finder icon.\n\
          # An id this Atlas does not know shows the default. (default: \"dark\")",
     ),
@@ -626,13 +626,13 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "gitAutoFetch",
-        "# Quietly `git fetch` the open project when it opens, when Atlas\n\
+        "# Quietly `git fetch` the open project when it opens, when DeskMate\n\
          # regains focus, and every few minutes, so the Pull badge shows what\n\
          # the remote has. Never pulls or touches your files. (default: true)",
     ),
     (
         "keepAwakeWhileRunning",
-        "# Keep the computer awake while an Atlas agent is actively running.\n\
+        "# Keep the computer awake while an DeskMate agent is actively running.\n\
          # Prevents idle system sleep; display can still turn off. No effect on\n\
          # Windows. (default: false)",
     ),
@@ -651,7 +651,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "agentCodeTools",
-        "# Let agents search this project's code through Atlas: grep for text\n\
+        "# Let agents search this project's code through DeskMate: grep for text\n\
          # and find files by name, in-process, respecting .gitignore. Secret files\n\
          # are hidden unless explicitly named by path. Off: the code tools are withdrawn\n\
          # and every call is refused; agents use their own shell instead.\n\
@@ -679,7 +679,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "terminalNotifyNative",
-        "# Also raise a macOS notification when the Atlas window is not focused.\n\
+        "# Also raise a macOS notification when the DeskMate window is not focused.\n\
          # (default: true)",
     ),
     (
@@ -726,7 +726,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "notificationsMigrated",
-        "# Set once Atlas has folded your earlier terminal and agent notification\n\
+        "# Set once DeskMate has folded your earlier terminal and agent notification\n\
          # choices into the keys above. Leave it alone. (default: false)",
     ),
     (
@@ -737,7 +737,7 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
     ),
     (
         "notifyKindsMigrated",
-        "# Set once Atlas has folded your earlier per-kind notification switches\n\
+        "# Set once DeskMate has folded your earlier per-kind notification switches\n\
          # into notifyDisabledKinds. Leave it alone. (default: false)",
     ),
     (
@@ -986,7 +986,7 @@ impl std::fmt::Display for ConfigError {
             }
             ConfigError::UnsupportedVersion(v) => write!(
                 f,
-                "config.toml has schemaVersion {v}, newer than this Atlas build supports ({CONFIG_SCHEMA_VERSION}) — it was likely created by a newer Atlas version"
+                "config.toml has schemaVersion {v}, newer than this DeskMate build supports ({CONFIG_SCHEMA_VERSION}) — it was likely created by a newer DeskMate version"
             ),
             ConfigError::Busy => write!(
                 f,
@@ -2077,7 +2077,7 @@ pub fn bootstrap(
         // banner rather than passing for a healthy load.
         let mut manager = ConfigManager::load();
         manager.status = ConfigStatus::UsingDefaults {
-            error: "could not resolve the Atlas config directory".to_string(),
+            error: "could not resolve the DeskMate config directory".to_string(),
         };
         return MigrationOutcome {
             manager,

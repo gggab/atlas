@@ -439,7 +439,7 @@ export const BlockTerminal = memo(function BlockTerminal({
         </div>
       </div>
 
-      {/* Atlas-owned footer stays visible below both block and alternate-screen
+      {/* DeskMate-owned footer stays visible below both block and alternate-screen
           modes. Keeping process controls outside the PTY viewport prevents them
           from obscuring application content. */}
       <div className="relative z-20 flex min-h-[29px] items-center gap-2 border-t border-[var(--border)] bg-[var(--background)] px-3 py-[5px]">

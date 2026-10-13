@@ -178,7 +178,7 @@ function NotebookOutputView({ output }: { output: NotebookOutput }) {
   if (anyMime) {
     return (
       <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 text-xs text-[var(--muted-foreground)]">
-        Output type <span className="font-mono">{anyMime}</span> isn't rendered in Atlas yet.
+        Output type <span className="font-mono">{anyMime}</span> isn't rendered in DeskMate yet.
       </div>
     );
   }

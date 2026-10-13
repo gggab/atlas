@@ -1313,9 +1313,9 @@ mod tests {
     const HERMETIC_ENV: &[(&str, &str)] = &[
         ("GIT_CONFIG_GLOBAL", "/dev/null"),
         ("GIT_CONFIG_NOSYSTEM", "1"),
-        ("GIT_AUTHOR_NAME", "Atlas Test"),
+        ("GIT_AUTHOR_NAME", "DeskMate Test"),
         ("GIT_AUTHOR_EMAIL", "test@atlas.invalid"),
-        ("GIT_COMMITTER_NAME", "Atlas Test"),
+        ("GIT_COMMITTER_NAME", "DeskMate Test"),
         ("GIT_COMMITTER_EMAIL", "test@atlas.invalid"),
     ];
 

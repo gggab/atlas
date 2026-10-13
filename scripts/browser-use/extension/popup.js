@@ -50,8 +50,8 @@ function render(result) {
     result.connectionError ??
     (result.handoff
       ? result.handoffReady
-        ? "Control returned. Your Agent can resume from the original Atlas chat."
-        : "Complete the waiting step, then send continue in the original Atlas chat."
+        ? "Control returned. Your Agent can resume from the original DeskMate chat."
+        : "Complete the waiting step, then send continue in the original DeskMate chat."
       : result.shareNextTab
         ? "This page is shared with the next task."
         : result.connected

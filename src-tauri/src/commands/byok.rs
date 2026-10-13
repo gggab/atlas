@@ -601,7 +601,9 @@ pub fn byok_env_set(app: AppHandle, env_var: String, value: String) -> Result<St
 pub fn byok_env_unset(app: AppHandle, env_var: String) -> Result<(), String> {
     let Some((path, _)) = locate_in_profiles(&env_var) else {
         // Live-env-only: nothing of ours to delete, and we will not guess.
-        return Err("This key is set outside your shell profile, so Atlas can't remove it.".into());
+        return Err(
+            "This key is set outside your shell profile, so DeskMate can't remove it.".into(),
+        );
     };
     let content = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let updated = shell_profile::remove(&content, &env_var);

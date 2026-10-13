@@ -23,7 +23,7 @@ config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 if [ "$dev" -eq 1 ]; then
   # A source build's binary, not the installed app's.
   if pgrep -f 'target/(debug|release)/atlas$' >/dev/null 2>&1; then
-    echo "error: Atlas Dev is running — quit it first" >&2
+    echo "error: DeskMate Dev is running — quit it first" >&2
     exit 1
   fi
   ids=(dev.atlas.ide.dev)
@@ -34,7 +34,7 @@ if [ "$dev" -eq 1 ]; then
     "$HOME/Library/WebKit/dev.atlas.ide.dev"
   )
   leftover_pattern="*dev.atlas.ide.dev*"
-  label="Atlas Dev"
+  label="DeskMate Dev"
 else
   if pgrep -x atlas >/dev/null 2>&1; then
     echo "error: atlas is running — quit it first" >&2

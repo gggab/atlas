@@ -1,5 +1,7 @@
 # Security
 
+The contact and response policy below belong to upstream Atlas. They are preserved as upstream information, not a dedicated DeskMate support channel.
+
 Report security issues privately by email rather than opening a public issue.
 
 ## Scope

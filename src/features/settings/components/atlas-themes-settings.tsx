@@ -337,7 +337,7 @@ const ThemeCard = memo(function ThemeCard({
             {!summary.builtIn && (
               <span className="shrink-0 text-3xs uppercase tracking-wide text-disabled">Local</span>
             )}
-            {/* A theme that loaded but carries keys Atlas does not know. Those
+            {/* A theme that loaded but carries keys DeskMate does not know. Those
                 keys are preserved, not applied, so the author sees the name
                 they typed do nothing until they are told. */}
             {summary.warnings.length > 0 && (

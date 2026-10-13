@@ -221,7 +221,7 @@ async fn fetch(url: &str) -> Result<String, String> {
     }
     let client = reqwest::Client::builder()
         .timeout(FETCH_TIMEOUT)
-        .user_agent("Atlas-IDE")
+        .user_agent("DeskMate-IDE")
         .build()
         .map_err(|error| format!("could not build an HTTP client: {error}"))?;
     let mut response = client

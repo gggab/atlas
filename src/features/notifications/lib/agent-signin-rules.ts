@@ -34,5 +34,5 @@ export function resolveSignInEpisode(s: SignInEpisode): SignInEpisode {
 export const signInDedupeKey = (agentType: string, episode: number) =>
   `agent-sign-in:${agentType}:${episode}`;
 
-/** Atlas's own signed-out notification key. */
+/** DeskMate's own signed-out notification key. */
 export const signedOutDedupeKey = (episode: number) => `atlas-signed-out:${episode}`;

@@ -287,207 +287,215 @@ const IGNORED_PREFIXES: &[(&str, &str, &str)] = &[
     (
         "editor.foldBackground",
         "editor furniture",
-        "Atlas draws the fold placeholder from the secondary surface",
+        "DeskMate draws the fold placeholder from the secondary surface",
     ),
     (
         "activityBar",
         "app chrome",
-        "Atlas's project rail follows the panel tokens",
+        "DeskMate's project rail follows the panel tokens",
     ),
     (
         "tab.",
         "app chrome",
-        "Atlas's tab strip follows the accent and sidebar tokens",
+        "DeskMate's tab strip follows the accent and sidebar tokens",
     ),
     (
         "input.placeholderForeground",
         "text roles",
-        "Atlas's placeholder follows muted-foreground",
+        "DeskMate's placeholder follows muted-foreground",
     ),
     (
         "terminal.selectionBackground",
         "terminal",
-        "Atlas derives the terminal selection from `primary`",
+        "DeskMate derives the terminal selection from `primary`",
     ),
-    ("minimap", "editor furniture", "Atlas has no minimap"),
+    ("minimap", "editor furniture", "DeskMate has no minimap"),
     (
         "editorOverviewRuler",
         "editor furniture",
-        "Atlas has no overview ruler",
+        "DeskMate has no overview ruler",
     ),
     (
         "editorIndentGuide",
         "editor furniture",
-        "Atlas draws no indent guides",
+        "DeskMate draws no indent guides",
     ),
-    ("editorRuler", "editor furniture", "Atlas draws no rulers"),
+    (
+        "editorRuler",
+        "editor furniture",
+        "DeskMate draws no rulers",
+    ),
     (
         "editorWhitespace",
         "editor furniture",
-        "Atlas does not render whitespace",
+        "DeskMate does not render whitespace",
     ),
     (
         "editorCodeLens",
         "editor furniture",
-        "Atlas has no code lens",
+        "DeskMate has no code lens",
     ),
     (
         "editorInlayHint",
         "editor furniture",
-        "Atlas has no inlay hints",
+        "DeskMate has no inlay hints",
     ),
     (
         "editorLightBulb",
         "editor furniture",
-        "Atlas has no light-bulb affordance",
+        "DeskMate has no light-bulb affordance",
     ),
     (
         "editorGhostText",
         "editor furniture",
-        "Atlas has no ghost text",
+        "DeskMate has no ghost text",
     ),
     (
         "editorSuggestWidget",
         "widget",
-        "Atlas's completions follow the popover tokens",
+        "DeskMate's completions follow the popover tokens",
     ),
     (
         "editorHoverWidget",
         "widget",
-        "Atlas's hovers follow the popover tokens",
+        "DeskMate's hovers follow the popover tokens",
     ),
-    ("peekView", "widget", "Atlas has no peek view"),
+    ("peekView", "widget", "DeskMate has no peek view"),
     (
         "notification",
         "widget",
-        "Atlas's toasts follow the popover tokens",
+        "DeskMate's toasts follow the popover tokens",
     ),
     (
         "quickInput",
         "widget",
-        "Atlas's palettes follow the popover tokens",
+        "DeskMate's palettes follow the popover tokens",
     ),
-    ("menu", "widget", "Atlas's menus follow the popover tokens"),
-    ("breadcrumb", "widget", "Atlas has no breadcrumb bar"),
-    ("debug", "widget", "Atlas has no debugger"),
-    ("debugToolBar", "widget", "Atlas has no debugger"),
-    ("debugConsole", "widget", "Atlas has no debugger"),
-    ("testing", "widget", "Atlas has no test explorer"),
+    (
+        "menu",
+        "widget",
+        "DeskMate's menus follow the popover tokens",
+    ),
+    ("breadcrumb", "widget", "DeskMate has no breadcrumb bar"),
+    ("debug", "widget", "DeskMate has no debugger"),
+    ("debugToolBar", "widget", "DeskMate has no debugger"),
+    ("debugConsole", "widget", "DeskMate has no debugger"),
+    ("testing", "widget", "DeskMate has no test explorer"),
     (
         "merge",
         "vcs",
-        "Atlas resolves conflicts through its own diff tokens",
+        "DeskMate resolves conflicts through its own diff tokens",
     ),
     (
         "mergeEditor",
         "vcs",
-        "Atlas resolves conflicts through its own diff tokens",
+        "DeskMate resolves conflicts through its own diff tokens",
     ),
     (
         "gitDecoration",
         "vcs",
-        "only added and deleted have an Atlas equivalent",
+        "only added and deleted have an DeskMate equivalent",
     ),
     (
         "scm",
         "vcs",
-        "Atlas's source-control panel follows the panel tokens",
+        "DeskMate's source-control panel follows the panel tokens",
     ),
     (
         "statusBar",
         "app chrome",
-        "Atlas's status bar follows the panel tokens",
+        "DeskMate's status bar follows the panel tokens",
     ),
     (
         "titleBar",
         "app chrome",
-        "Atlas's title bar follows the panel tokens",
+        "DeskMate's title bar follows the panel tokens",
     ),
     (
         "activityBarBadge",
         "app chrome",
-        "Atlas badges follow the status tokens",
+        "DeskMate badges follow the status tokens",
     ),
     (
         "badge",
         "app chrome",
-        "Atlas badges follow the status tokens",
+        "DeskMate badges follow the status tokens",
     ),
     (
         "panelTitle",
         "app chrome",
-        "Atlas panel titles follow the text tokens",
+        "DeskMate panel titles follow the text tokens",
     ),
     (
         "panelSection",
         "app chrome",
-        "Atlas panel sections follow the panel tokens",
+        "DeskMate panel sections follow the panel tokens",
     ),
     (
         "sideBarSectionHeader",
         "app chrome",
-        "Atlas section headers follow the panel tokens",
+        "DeskMate section headers follow the panel tokens",
     ),
     (
         "sideBarTitle",
         "app chrome",
-        "Atlas section titles follow the text tokens",
+        "DeskMate section titles follow the text tokens",
     ),
     (
         "welcomePage",
         "app chrome",
-        "Atlas has its own welcome screen",
+        "DeskMate has its own welcome screen",
     ),
-    ("walkThrough", "app chrome", "Atlas has no walkthroughs"),
+    ("walkThrough", "app chrome", "DeskMate has no walkthroughs"),
     (
         "settings",
         "app chrome",
-        "Atlas's settings follow the app tokens",
+        "DeskMate's settings follow the app tokens",
     ),
     (
         "keybindingLabel",
         "app chrome",
-        "Atlas's Kbd primitive follows the base tokens",
+        "DeskMate's Kbd primitive follows the base tokens",
     ),
     (
         "notebook",
         "editor furniture",
-        "Atlas has no notebook editor",
+        "DeskMate has no notebook editor",
     ),
     (
         "charts",
         "widget",
-        "Atlas charts use the chart-1…chart-5 base tokens",
+        "DeskMate charts use the chart-1…chart-5 base tokens",
     ),
     (
         "symbolIcon",
         "icon roles",
-        "Atlas icons take their color from the text roles",
+        "DeskMate icons take their color from the text roles",
     ),
     (
         "icon",
         "icon roles",
-        "Atlas icons take their color from the text roles",
+        "DeskMate icons take their color from the text roles",
     ),
     (
         "problemsErrorIcon",
         "icon roles",
-        "Atlas icons take their color from the text roles",
+        "DeskMate icons take their color from the text roles",
     ),
     (
         "terminalCommandDecoration",
         "terminal",
-        "Atlas's terminal draws no command decorations",
+        "DeskMate's terminal draws no command decorations",
     ),
     (
         "terminalOverviewRuler",
         "terminal",
-        "Atlas's terminal has no overview ruler",
+        "DeskMate's terminal has no overview ruler",
     ),
     (
         "terminalStickyScroll",
         "terminal",
-        "Atlas's terminal has no sticky scroll",
+        "DeskMate's terminal has no sticky scroll",
     ),
 ];
 
@@ -601,7 +609,7 @@ pub(crate) fn import(
         }
     }
     report.note(
-        "a VS Code theme is a starting point, not a copy: it describes a workbench Atlas does not have, and Atlas's chrome (panels, tabs, comms, agent chips) is derived rather than stated",
+        "a VS Code theme is a starting point, not a copy: it describes a workbench DeskMate does not have, and DeskMate's chrome (panels, tabs, comms, agent chips) is derived rather than stated",
     );
 
     let scoped = ImportOptions {
@@ -664,7 +672,7 @@ fn map_semantic(
 /// Said the same way wherever a `fontStyle` is dropped, so the report groups
 /// them into one line rather than several near-identical ones.
 const FONT_STYLE_REASON: &str =
-    "an Atlas theme key carries a color only; the scope is imported with its color and no italics";
+    "an DeskMate theme key carries a color only; the scope is imported with its color and no italics";
 
 /// One `tokenColors` rule, flattened.
 struct Rule {
@@ -758,7 +766,7 @@ fn map_token_colors(token_colors: &[Value], draft: &mut VariantDraft, report: &m
         report.ignore(
             format!("tokenColors ({unused} rules)"),
             "textmate scopes",
-            "grammar-specific and markup scopes have no equivalent among Atlas's syntax roles (see SCOPE_TABLE)",
+            "grammar-specific and markup scopes have no equivalent among DeskMate's syntax roles (see SCOPE_TABLE)",
         );
     }
 }
@@ -811,7 +819,7 @@ fn record_ignored(colors: &Map<String, Value>, used: &BTreeSet<String>, report: 
         report.ignore(
             format!("{unknown} workbench key(s)"),
             "workbench chrome",
-            "widgets and surfaces Atlas does not have",
+            "widgets and surfaces DeskMate does not have",
         );
     }
 }

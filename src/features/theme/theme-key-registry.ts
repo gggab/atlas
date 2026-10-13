@@ -29,7 +29,7 @@ export interface ThemeKeyRule {
   palette?: PaletteKey;
   /** Second derivation source after the palette. */
   base?: string;
-  /** Per-appearance Atlas default, used only when both sources are absent. */
+  /** Per-appearance DeskMate default, used only when both sources are absent. */
   atlasDefault: Record<Appearance, string>;
   transform?: ColorTransform;
   description: string;
@@ -161,8 +161,8 @@ export const THEME_KEY_REGISTRY = [
    * not because the mix is wrong — at a 0.0 mix the three worst still sat at 2.05,
    * 2.15 and 2.21. Varying the fraction per theme would buy almost nothing and cost
    * the one property that makes a derived key predictable to an author: one key, one
-   * rule. Where the low reading WAS Atlas's to fix — `phosphor`, `chyral` and
-   * `mirage`, Atlas's own designs — it was fixed upstream at `muted-foreground`
+   * rule. Where the low reading WAS DeskMate's to fix — `phosphor`, `chyral` and
+   * `mirage`, DeskMate's own designs — it was fixed upstream at `muted-foreground`
    * instead, which also lifts `syntax.comment`, `editor.gutter.foreground` and
    * `terminal.ansi.bright_black` in the same themes. The remaining floor (`one-dark`
    * at 1.98:1) comes from a ported third-party palette, and restating someone else's
@@ -688,7 +688,7 @@ export function describeDerivation(definition: ThemeKeyDefinition): string {
   const sources = [
     definition.rule.palette ? `palette.${definition.rule.palette}` : null,
     definition.rule.base ? `base.${definition.rule.base}` : null,
-    "Atlas appearance default",
+    "DeskMate appearance default",
   ].filter(Boolean);
   return sources.join(" → ");
 }

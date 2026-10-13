@@ -70,7 +70,7 @@ interface IconThemeState {
    * the effect depends on it and the whole screen re-asks at once.
    */
   generation: number;
-  /** The active theme's id. `minimal` means "use Atlas's own icons". */
+  /** The active theme's id. `minimal` means "use DeskMate's own icons". */
   themeId: string;
   appearance: IconAppearance;
   /** Whether the active theme wants the explorer's chevrons hidden. */

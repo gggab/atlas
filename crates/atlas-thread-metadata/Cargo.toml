@@ -2,7 +2,7 @@
 name = "atlas-thread-metadata"
 version = "0.1.0"
 edition = "2021"
-description = "The app-owned thread-metadata store: Atlas's only source for the session sidebar and history. Metadata only — never transcript content. Ported from Zed's `ThreadMetadataStore`."
+description = "The app-owned thread-metadata store: DeskMate's only source for the session sidebar and history. Metadata only — never transcript content. Ported from Zed's `ThreadMetadataStore`."
 
 [lib]
 name = "atlas_thread_metadata"

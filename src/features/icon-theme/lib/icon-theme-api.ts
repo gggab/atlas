@@ -10,7 +10,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
  * these types against Rust.
  */
 
-/** Atlas's own lucide icons — the opt-out. */
+/** DeskMate's own lucide icons — the opt-out. */
 export const MINIMAL_ICON_THEME_ID = "minimal";
 /** The bundled default (decision 12). */
 export const MATERIAL_ICON_THEME_ID = "material-icon-theme";
@@ -33,7 +33,7 @@ export interface IconThemeSummary {
   builtIn: boolean;
   /** The theme draws open/closed folders itself and wants no twisty chevron. */
   hidesExplorerArrows: boolean;
-  /** No document at all: keep rendering Atlas's own icons. */
+  /** No document at all: keep rendering DeskMate's own icons. */
   usesFallbackIcons: boolean;
   warnings?: IconThemeWarning[];
 }

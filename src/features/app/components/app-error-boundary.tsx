@@ -39,7 +39,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
       >
         <div style={{ maxWidth: 420, textAlign: "center", padding: 24 }}>
           <h1 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 8px" }}>
-            Atlas hit an unexpected error
+            DeskMate hit an unexpected error
           </h1>
           <p
             style={{
@@ -67,7 +67,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
               cursor: "pointer",
             }}
           >
-            Reload Atlas
+            Reload DeskMate
           </button>
         </div>
       </div>

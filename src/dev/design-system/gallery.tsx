@@ -238,7 +238,7 @@ function ColourSections() {
       <Section
         title="Base tokens"
         decision="decision 2 · shadcn names, verbatim"
-        note="The required level of a theme file. Everything else in Atlas derives from these."
+        note="The required level of a theme file. Everything else in DeskMate derives from these."
       >
         <div className="grid grid-cols-2 gap-x-6 md:grid-cols-4">
           {BASE_COLOR_TOKENS.map((token) => (
@@ -313,7 +313,7 @@ function TypeSection() {
         {TYPE_SCALE.map((step) => (
           <Row key={step.name} name={step.utility} value={values[`--text-${step.name}`]}>
             <span className={cn(step.utility, "font-medium text-foreground")}>
-              Atlas renders dense chrome at {step.px}px
+              DeskMate renders dense chrome at {step.px}px
             </span>
           </Row>
         ))}
@@ -811,7 +811,7 @@ function PrimitiveSection() {
             </div>
             <span className="caption">
               `focusableWhenDisabled` defaults to false, same as Base UI — most disabled controls in
-              Atlas explain nothing and a dead stop in the tab order is worse than skipping them.
+              DeskMate explain nothing and a dead stop in the tab order is worse than skipping them.
               Opt in per call site where, like here, a Hint explains why the control is disabled.
               Tab through the three above: only the third one gets focus.
             </span>
@@ -1190,7 +1190,7 @@ function Header() {
   return (
     <header className="z-titlebar sticky top-0 -mx-8 mb-2 flex items-center gap-3 border-b border-border bg-background px-8 py-3 backdrop-blur-glass">
       <div>
-        <div className="heading">Atlas design system</div>
+        <div className="heading">DeskMate design system</div>
         <div className="caption">
           Foundations · decisions 17–33 · {THEME_KEY_REGISTRY.length} theme keys
         </div>

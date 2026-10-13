@@ -12,7 +12,7 @@ import { invoke } from "@tauri-apps/api/core";
  * the webview.
  */
 
-/** One recognised provider key Atlas can see. */
+/** One recognised provider key DeskMate can see. */
 export interface EnvEntry {
   provider: string;
   envVar: string;
@@ -30,7 +30,7 @@ export interface ScannedFile {
   exists: boolean;
 }
 
-/** Which profile files Atlas reads, and where a new key would be written. */
+/** Which profile files DeskMate reads, and where a new key would be written. */
 export interface ProfileInfo {
   shell: string;
   target: string;

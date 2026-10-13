@@ -25,8 +25,8 @@ fn cwd_encoding_collapses_every_non_alphanumeric() {
         "-Users-adib-Desktop-atlas"
     );
     assert_eq!(
-        encode_cwd("/Users/adib/Codes/Test Atlas"),
-        "-Users-adib-Codes-Test-Atlas"
+        encode_cwd("/Users/adib/Codes/Test DeskMate"),
+        "-Users-adib-Codes-Test-DeskMate"
     );
     assert_eq!(encode_cwd("/a/b.c_d"), "-a-b-c-d");
     // A trailing slash is not part of the project path.

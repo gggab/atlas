@@ -4,7 +4,7 @@
 The betterleaks corpus (MIT, https://github.com/betterleaks/betterleaks) is the
 industry rule table for known provider secret formats — ~325 rules covering the
 prefixes and shapes that no entropy heuristic can be tuned to catch reliably.
-Atlas vendors it as generated Rust data rather than taking a dependency, because
+DeskMate vendors it as generated Rust data rather than taking a dependency, because
 `atlas-redact` must stay pure (no I/O, no async, no network) and must compile
 into the desktop binary with the rules baked in.
 
@@ -29,7 +29,7 @@ Deliberate exclusions, each for a reason:
     requires a credential-shaped key beside the value — which bounds the
     false-positive cost of keeping them.
   * `generic-api-key` — the corpus's own catch-all. It is the single largest
-    source of false positives, and Atlas already covers that ground with the
+    source of false positives, and DeskMate already covers that ground with the
     Shannon-entropy layer at a tuned threshold.
   * Rules with no content `regex` (path-only rules such as `pkcs12-file`) —
     `atlas-redact` sees strings, never file paths.

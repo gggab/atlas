@@ -1,6 +1,6 @@
 # The browser mock backend
 
-`bun run dev` runs the whole Atlas frontend in an ordinary browser against this
+`bun run dev` runs the whole DeskMate frontend in an ordinary browser against this
 fake backend: Tauri's `mockIPC` answers every `invoke()` and `listen()` with
 made-up data, so any screen can be opened, themed and reviewed without starting
 a Rust build, an agent, or a real git operation.
@@ -39,7 +39,7 @@ vendor CLI or prove real desktop behavior.
 
 ## Native-only surfaces
 
-Three things in Atlas are not `invoke()` calls, so nothing in this directory
+Three things in DeskMate are not `invoke()` calls, so nothing in this directory
 can stand in for them. A visual review done in the browser has not covered
 them, and a change that touches one has to be checked in `bun run dev:app`:
 
@@ -65,7 +65,7 @@ them, and a change that touches one has to be checked in `bun run dev:app`:
   edge shadow, full-screen behaviour, the menu bar and the single-instance
   handoff are drawn by macOS, not by CSS. `window_zoom` and the
   `plugin:window|*` commands are answered so nothing throws, but the titlebar
-  rendered in the browser is only the part Atlas draws itself.
+  rendered in the browser is only the part DeskMate draws itself.
 
 Two more differences are worth remembering even where the fake works: Chrome is
 not WKWebView (a final look in `bun run dev:app` is still the deciding one), and

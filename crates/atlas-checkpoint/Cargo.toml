@@ -2,7 +2,7 @@
 name = "atlas-checkpoint"
 version = "0.1.0"
 edition = "2021"
-description = "Atlas's agent-session record: local SQLite store, redact-on-write capture, git commit linkage, transcript import, and the sync outbox. Tauri-free so the whole surface is testable against a real database and a real git repository."
+description = "DeskMate's agent-session record: local SQLite store, redact-on-write capture, git commit linkage, transcript import, and the sync outbox. Tauri-free so the whole surface is testable against a real database and a real git repository."
 
 [lib]
 name = "atlas_checkpoint"

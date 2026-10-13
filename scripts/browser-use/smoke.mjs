@@ -18,7 +18,7 @@ const server = createServer((_req, res) => {
     return;
   }
   res.setHeader("Content-Type", "text/html");
-  res.end(`<!doctype html><title>Atlas Browser Smoke</title>
+  res.end(`<!doctype html><title>DeskMate Browser Smoke</title>
     <label>Name <input id="name"></label><button id="save" onclick="document.querySelector('#result').textContent='Saved '+document.querySelector('#name').value">Save</button>
     <p id="result">Not saved</p><a href="/file">Download</a>
     <input type="file" aria-label="Upload"><iframe srcdoc="<button>Frame button</button>"></iframe>
@@ -61,13 +61,13 @@ try {
   });
   await run(`let tab = await cua.createBrowserTab("${browser}", "${url}");`);
   await run(
-    'await tab.playwright.getByLabel("Name").fill("Atlas"); await tab.playwright.getByRole("button",{name:"Save",exact:true}).click(); nodeRepl.write(await tab.playwright.locator("#result").innerText());',
+    'await tab.playwright.getByLabel("Name").fill("DeskMate"); await tab.playwright.getByRole("button",{name:"Save",exact:true}).click(); nodeRepl.write(await tab.playwright.locator("#result").innerText());',
   );
   assert.equal(
     (await run('nodeRepl.write(await tab.playwright.locator("#result").innerText());')).content.at(
       -1,
     ).text,
-    "Saved Atlas",
+    "Saved DeskMate",
   );
   const ax = await run("await tab.getAXState({disableDiffing:true});");
   assert.match(ax.content[0].text, /button "Save"/);

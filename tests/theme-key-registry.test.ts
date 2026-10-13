@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -36,6 +37,15 @@ const source = readSource();
 const read = (relative: string) => readFileSync(path.join(REPO_ROOT, relative), "utf8");
 
 describe("the generated theme-key registry", () => {
+  it("runs the generator's CLI check instead of silently skipping its entry point", () => {
+    const output = execFileSync(
+      process.execPath,
+      [path.join(REPO_ROOT, "scripts/generate-theme-keys.mjs"), "--check"],
+      { encoding: "utf8" },
+    );
+    expect(output).toContain("theme keys: every generated file matches");
+  });
+
   it("has a source with every key described", () => {
     // Floor guard: an empty parse would make every assertion below vacuous.
     expect(source.keys.length).toBeGreaterThan(50);

@@ -4,7 +4,7 @@
   headless Chrome at 1200×630, 2× density, then encoded to WebP. Edit here,
   re-render, commit the WebP.
 
-  A centred brand card: the Atlas mark and wordmark as one lockup in the middle
+  A centred brand card: the DeskMate mark and wordmark as one lockup in the middle
   of the frame, the tagline under it, and the app's drifting ASCII field frozen
   on one frame behind. The field keeps its centre hollow — the same radial
   hollow the live backdrop uses — so the lockup sits on black rather than on
@@ -55,7 +55,7 @@
         justify-content: center;
       }
       /* The mark and the wordmark are one object: optically centred as a pair,
-         so the frame's midline falls between them rather than through "Atlas". */
+         so the frame's midline falls between them rather than through "DeskMate". */
       .lockup {
         display: flex;
         align-items: center;
@@ -99,12 +99,12 @@
     <canvas class="layer" id="field"></canvas>
     <div class="layer grain"></div>
     <div class="content">
-      <div class="lockup"><img src="../../landing/icon-sm.svg" alt="" /><span>Atlas</span></div>
+      <div class="lockup"><img src="../../landing/icon-sm.svg" alt="" /><span>DeskMate</span></div>
       <div class="rule"></div>
       <div class="tagline">Source control for agents</div>
     </div>
     <script>
-      // The Atlas app's drifting ASCII dither field (src/ui/dither-field.tsx),
+      // The DeskMate app's drifting ASCII dither field (src/ui/dither-field.tsx),
       // one frame of it, with the hollow in the centre under the lockup.
       const W = 1200;
       const H = 630;

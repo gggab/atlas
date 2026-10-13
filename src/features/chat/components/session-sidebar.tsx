@@ -69,7 +69,7 @@ interface SidebarItem {
   /** The agent's session id, or a stand-in while the thread is still a draft.
    *  Only used to match the row against a live tab. */
   id: string;
-  /** Atlas's own id for the conversation — what opening and deleting use. */
+  /** DeskMate's own id for the conversation — what opening and deleting use. */
   threadId: string;
   kind: "agent";
   title: string;

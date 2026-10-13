@@ -82,7 +82,7 @@ pub const BLOCK_END: &str = "<!-- atlas:mirrored-instructions END -->";
 /// a marker is a near miss: an edited, re-spaced or re-indented marker.
 const MARKER_TAG: &str = "atlas:mirrored-instructions";
 
-const NOTICE: &str = "<!-- Mirrored by Atlas from CLAUDE.md, .claude/ and the files they import, \
+const NOTICE: &str = "<!-- Mirrored by DeskMate from CLAUDE.md, .claude/ and the files they import, \
 for agents that read AGENTS.md. Edit those files; this block is rewritten whenever they change. -->";
 
 const AGENTS_MD: &str = "AGENTS.md";

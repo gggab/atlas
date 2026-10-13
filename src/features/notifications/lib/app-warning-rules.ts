@@ -218,7 +218,7 @@ export function decideConfigError(
   const event: NotificationEvent = {
     kind: "config-error",
     title: "config.toml has an error",
-    body: `${summarizeConfigError(error)} Atlas is using the last settings that loaded.`,
+    body: `${summarizeConfigError(error)} DeskMate is using the last settings that loaded.`,
     target: { type: "config-file" },
     dedupeKey: configErrorDedupeKey(error),
   };

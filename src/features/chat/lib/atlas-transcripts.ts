@@ -29,7 +29,7 @@ export interface AtlasTranscriptMeta {
   plugin_id: string;
 }
 
-/** Every session Atlas recorded for `cwd`, whichever agent ran it. */
+/** Every session DeskMate recorded for `cwd`, whichever agent ran it. */
 export function listAtlasTranscripts(cwd: string): Promise<AtlasTranscriptMeta[]> {
   return invoke<AtlasTranscriptMeta[]>("agent_transcripts_list", { cwd });
 }

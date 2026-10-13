@@ -1372,13 +1372,13 @@ pub async fn capture_health(
             Err(atlas_checkpoint::Error::SchemaTooNew { .. }) => {
                 return Ok(atlas_checkpoint::CaptureHealth {
                     state: atlas_checkpoint::HealthState::Stopped,
-                    summary: "This Project's session store was written by a newer Atlas".into(),
+                    summary: "This Project's session store was written by a newer DeskMate".into(),
                     issues: vec![atlas_checkpoint::health::HealthIssue {
                         state: atlas_checkpoint::HealthState::Stopped,
                         reason: "This Project's session store was written by a newer version \
-                                 of Atlas, so this build cannot record to it."
+                                 of DeskMate, so this build cannot record to it."
                             .into(),
-                        next_step: "Update Atlas to keep capturing here.".into(),
+                        next_step: "Update DeskMate to keep capturing here.".into(),
                     }],
                     flagged_sessions: 0,
                 });
@@ -2002,7 +2002,7 @@ fn open_in(stores: &StoreRegistry, root: &Path) -> Result<StoreHandle, String> {
         tracing::info!(
             target: "atlas::capture",
             project = %root.display(),
-            "another Atlas process is recording this project; capture deferred"
+            "another DeskMate process is recording this project; capture deferred"
         );
     }
 

@@ -103,12 +103,12 @@ describe("shellLine", () => {
   it("invokes the Windows adapter login with PowerShell's call operator", () => {
     expect(
       shellLine(
-        "C:\\Atlas Dev\\node.exe",
+        "C:\\DeskMate Dev\\node.exe",
         ["C:\\agents\\index.js", "--cli", "auth", "login"],
         [],
         true,
       ),
-    ).toBe("& 'C:\\Atlas Dev\\node.exe' 'C:\\agents\\index.js' '--cli' 'auth' 'login'");
+    ).toBe("& 'C:\\DeskMate Dev\\node.exe' 'C:\\agents\\index.js' '--cli' 'auth' 'login'");
     expect(shellQuote("it's $literal`", true)).toBe("'it''s $literal`'");
   });
 

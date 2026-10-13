@@ -22,7 +22,7 @@ export interface ThemeKeySource {
   note?: string;
 }
 
-/** One `[[derived]]` entry: a colour Atlas writes but no theme may set. */
+/** One `[[derived]]` entry: a colour DeskMate writes but no theme may set. */
 export interface DerivedVarSource {
   name: string;
   description: string;

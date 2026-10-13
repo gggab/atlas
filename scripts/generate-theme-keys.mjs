@@ -315,7 +315,11 @@ function sourceChainShort(key) {
 
 /** Spelled-out source chain, for hovers and the key list. */
 function sourceChainLong(key) {
-  return [key.palette && `palette.${key.palette}`, key.base && `base.${key.base}`, "Atlas default"]
+  return [
+    key.palette && `palette.${key.palette}`,
+    key.base && `base.${key.base}`,
+    "DeskMate default",
+  ]
     .filter(Boolean)
     .join(" → ");
 }
@@ -362,7 +366,7 @@ export interface ThemeKeyRule {
   palette?: PaletteKey;
   /** Second derivation source after the palette. */
   base?: string;
-  /** Per-appearance Atlas default, used only when both sources are absent. */
+  /** Per-appearance DeskMate default, used only when both sources are absent. */
   atlasDefault: Record<Appearance, string>;
   transform?: ColorTransform;
   description: string;
@@ -459,7 +463,7 @@ export function describeDerivation(definition: ThemeKeyDefinition): string {
   const sources = [
     definition.rule.palette ? \`palette.\${definition.rule.palette}\` : null,
     definition.rule.base ? \`base.\${definition.rule.base}\` : null,
-    "Atlas appearance default",
+    "DeskMate appearance default",
   ].filter(Boolean);
   return sources.join(" → ");
 }
@@ -525,8 +529,8 @@ function renderDocs({ groups, keys, derived }, current) {
     "## Full key list and derivation sources",
     "",
     `All **${keys.length}** keys, in the order and grouping of \`${SOURCE_REL}\`.`,
-    "**Source** is the first thing Atlas tries after an explicit `keys` value:",
-    "`P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the",
+    "**Source** is the first thing DeskMate tries after an explicit `keys` value:",
+    "`P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the DeskMate default for the",
     "active appearance, shown here as dark / light. **Transform** is applied to",
     "whichever of those three supplied the colour, and never to an explicit value.",
     "",
@@ -553,7 +557,7 @@ function renderDocs({ groups, keys, derived }, current) {
     out.push(
       "## Derived variables",
       "",
-      `Atlas writes these **${derived.length}** \`--atlas-…\` custom properties too, but`,
+      `DeskMate writes these **${derived.length}** \`--atlas-…\` custom properties too, but`,
       "they are **not** theme keys: each is a pure transform of a key that is, so a",
       "theme steers it through that key. Writing one in a theme file is an",
       "unknown-key warning.",
@@ -684,7 +688,7 @@ function check() {
   process.exitCode = 1;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (process.argv.includes("--check")) check();
     else write();

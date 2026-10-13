@@ -1,13 +1,13 @@
 # Local workbench scope
 
-This build hosts installed external ACP CLIs using their vendor login. It has no Atlas account or official model gateway.
+This build hosts installed external ACP CLIs using their vendor login. It has no DeskMate account or official model gateway.
 
 ## Dependency boundary
 
 - External CLI: `atlas-agent-store` → `atlas-agent-servers` → `atlas-agent-manager` → `AgentHost` / delta projector. Capability gates control authentication, models and session restoration. Tabs do not own process lifetime, so several sessions can run concurrently.
-- History: global `atlas-thread-metadata` metadata, Atlas transcripts, and per-project `atlas-checkpoint` recording / Git checkpoints remain separate from memory.
+- History: global `atlas-thread-metadata` metadata, DeskMate transcripts, and per-project `atlas-checkpoint` recording / Git checkpoints remain separate from memory.
 - Memory: `atlas-memory` record and index, `SharedMemoryStore`, scope resolver, indexer and loopback MCP remain. The main worktree is the scope for all worktrees. Session tokens prevent unbound callers from reading or writing it.
-- Browser Use: HTTP-MCP-capable sessions receive a [local browser tool server](browser-use.md), independent of memory sharing. Once authorized, Atlas Browser connects automatically and creates grouped task tabs. Completion closes Agent-created pages except necessary handoffs, removes groups, and preserves existing tabs/login.
+- Browser Use: HTTP-MCP-capable sessions receive a [local browser tool server](browser-use.md), independent of memory sharing. Once authorized, DeskMate Browser connects automatically and creates grouped task tabs. Completion closes Agent-created pages except necessary handoffs, removes groups, and preserves existing tabs/login.
 - The gateway extraction orchestrator, jobs and UI entry points are removed. MCP active writes and local event capture remain. No replacement account, paid API or execution engine was introduced.
 - Retained historical sync columns and native source tags support existing records only; no cloud client or native launcher remains.
 
@@ -51,8 +51,8 @@ creation, leaving the panel blank after entering a URL. The threading contract
 is checked by `tests/browser-command-contract.test.ts`; rendering and navigation
 still require verification in `bun run dev:app`, not the browser mock.
 
-Verified on Windows in Atlas Dev on 2026-10-07: the live Google page rendered,
-address-bar navigation to `https://example.com` completed, and a separate Atlas
+Verified on Windows in DeskMate Dev on 2026-10-07: the live Google page rendered,
+address-bar navigation to `https://example.com` completed, and a separate DeskMate
 Browser window loaded that page. The focused contracts / overlay tests (16
 checks), test TypeScript check, and `cargo check --locked -p atlas --lib` passed.
 
@@ -100,7 +100,7 @@ organization or native-agent functionality:
 - Selected parts of `3721dce4`: Open Folder shows its live shortcut, the command
   palette no longer offers the unimplemented Task Board, and About reads the
   bundled app version with explicit loading and unavailable states. Stored task
-  tabs and the Atlas改 / Atlas改 Dev branding remain compatible.
+  tabs and the 同桌 DeskMate / 同桌 DeskMate Dev branding remain compatible.
 
 Focused development checks:
 
@@ -129,7 +129,7 @@ The existing optional BYOK handoff summary remains available through MCP. Raw ha
 | Memory + AgentServers + AgentStore + Process + thread metadata | 333 passed, 6 existing ignores, 6 platform cases excluded (listed below) |
 | Desktop library compile / check | Passed |
 | Desktop unit tests | 461 passed, 5 existing ignores; 14 Windows path/symlink cases excluded after an unfiltered run exposed them |
-| Browser mock | No Atlas login gate or cloud organization/team UI; external picker and chat stream, Memory Graph and Shared management loaded |
+| Browser mock | No DeskMate login gate or cloud organization/team UI; external picker and chat stream, Memory Graph and Shared management loaded |
 | IPC / event / configuration / workspace contracts, script syntax, diff whitespace | Passed |
 
 The AgentServers exclusions are `a_dying_agent_reports_what_it_said_on_stderr`, `an_agent_that_exits_immediately_reports_its_exit_status`, `an_agent_that_never_answers_initialize_times_out_at_the_deadline`, `the_pump_stops_when_the_thread_is_gone` and `the_pump_turns_a_running_command_into_thread_events`: their fixtures invoke `/bin/sh`. AgentStore's `a_custom_command_path_expands_a_leading_tilde` expects Unix `HOME`; the unchanged product implementation correctly resolved the Windows home instead.
@@ -140,4 +140,4 @@ For the installed MSVC 2019 toolchain, local validation used `NK_TARGET_HASWELL=
 
 Python-backed subprocess tests originally returned early because the fixtures look for an extensionless `python3`. Validation supplied a temporary Python entry point and its real standard library, then reran them. The two test-only process liveness helpers use Windows `tasklist` on Windows and retain `kill -0` elsewhere; successful spawn, permission streaming, model selection, cancellation and process teardown were then observed.
 
-Not verified: real vendor subscription login / billed turns / vendor session restore, a native desktop GUI launch or installer, the ignored model-dependent/benchmark cases, the excluded platform cases, or runtime packet capture of a packaged app. No Atlas account/service/upload endpoint or corresponding command registration remains in production source. This source/contract audit is separate from network capture. No commit, push, publishing or deployment was performed.
+Not verified: real vendor subscription login / billed turns / vendor session restore, a native desktop GUI launch or installer, the ignored model-dependent/benchmark cases, the excluded platform cases, or runtime packet capture of a packaged app. No DeskMate account/service/upload endpoint or corresponding command registration remains in production source. This source/contract audit is separate from network capture. No commit, push, publishing or deployment was performed.

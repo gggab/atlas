@@ -68,7 +68,10 @@ describe("decideTerminalNotification", () => {
       badge: true,
       sound: false,
     });
-    expect(d?.native).toEqual({ title: "Atlas: atlas", body: "npm test finished in 12s — atlas" });
+    expect(d?.native).toEqual({
+      title: "同桌 DeskMate: atlas",
+      body: "npm test finished in 12s — atlas",
+    });
   });
 
   it("stays quiet for a short successful command", () => {

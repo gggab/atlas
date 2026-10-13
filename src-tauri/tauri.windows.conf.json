@@ -3,7 +3,7 @@
   "app": {
     "windows": [
       {
-        "title": "Atlas改",
+        "title": "同桌 DeskMate",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -24,8 +24,8 @@
     "targets": [
       "msi"
     ],
-    "publisher": "Atlas",
-    "homepage": "https://tryatlas.cc/",
+    "publisher": "DeskMate",
+    "homepage": "https://github.com/gggab/atlas",
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",

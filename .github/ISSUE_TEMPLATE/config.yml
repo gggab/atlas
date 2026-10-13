@@ -5,9 +5,9 @@
 # anything that fits neither form somewhere to go.
 blank_issues_enabled: true
 contact_links:
-  - name: Question about Atlas
+  - name: Question about upstream Atlas
     url: https://discord.gg/GmnFggaPfP
     about: Ask in #dev on Discord rather than opening an issue.
-  - name: Report a security vulnerability
+  - name: Upstream security policy
     url: https://github.com/pacifio/atlas/security/policy
     about: Don't open a public issue for a vulnerability — see .github/SECURITY.md for how to report it privately.

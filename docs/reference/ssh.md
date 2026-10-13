@@ -1,6 +1,6 @@
-# Atlas-managed SSH
+# DeskMate-managed SSH
 
-Atlas owns password-based SSH connections on Windows and macOS. Agents use the
+DeskMate owns password-based SSH connections on Windows and macOS. Agents use the
 `atlas_ssh` MCP server; they never receive a saved password or a credential-file path.
 
 ## Set up a server
@@ -13,7 +13,7 @@ Atlas owns password-based SSH connections on Windows and macOS. Agents use the
 4. Use **Test connection** to test password login. This does not associate a project.
 
 Passwords live in Windows Credential Manager or macOS Keychain, under the current
-Atlas profile. SQLite in the app configuration directory stores connection metadata,
+DeskMate profile. SQLite in the app configuration directory stores connection metadata,
 project associations and redacted command history. There is no plaintext fallback.
 Editing a connection invalidates its prior authorization. Changing the host, port or
 username also clears the trusted fingerprint. Deletion removes its saved credentials.
@@ -33,8 +33,8 @@ the project's shared-memory switch. Available connections are queried only when 
 | `ssh_job_cancel` | Request cancellation |
 | `ssh_disconnect` | Disconnect this session's SSH handle |
 
-`ssh_connect` waits while Atlas displays the authorization request. Approve or deny
-it in Atlas. Approval automatically continues the same tool call, connects and
+`ssh_connect` waits while DeskMate displays the authorization request. Approve or deny
+it in DeskMate. Approval automatically continues the same tool call, connects and
 returns the connection handle to the requesting agent, so it can proceed without
 a manual follow-up message or another `ssh_connect` call. Denial returns an error;
 editing the connection, cancelling the request or ending the Agent session also
@@ -44,7 +44,7 @@ authorizations; a resumed session requires fresh approval. Discovery never grant
 
 Authorization covers a connection's approved configuration and the actual Agent
 session identity. The server account's existing permissions apply, including root
-or administrator access where configured. Atlas does not infer permissions from
+or administrator access where configured. DeskMate does not infer permissions from
 command text. `sudo=true` uses `/usr/bin/sudo -S -k` with a quoted `/bin/sh` payload;
 the password goes through SSH channel stdin and the payload closes stdin. Servers
 without compatible sudo/sh cannot use this helper.
@@ -59,7 +59,7 @@ stays visible. Approval opens this panel without changing the central tab. SSH
 output remains accessible with no project open. Connection tabs separate each SSH
 handle and show its server and Agent session; **All output** combines them. New
 connections add tabs without switching the user's selection. Disconnected tabs
-remain available while they have history. Reconnecting creates a new tab if Atlas
+remain available while they have history. Reconnecting creates a new tab if DeskMate
 creates a new SSH handle. The selected tab is remembered while the app stays open,
 including when switching to Source Control and back.
 It follows new output at the bottom and preserves the reading position when
@@ -74,7 +74,7 @@ results remain in the bounded app-session cache for the agent's `ssh_job_status`
 calls until evicted or the app exits, so clearing does not interrupt its work.
 App interruption leaves an unknown outcome.
 Cancellation and disconnect are best effort: check server state before retrying a
-command with an unknown outcome. Atlas does not automatically replay commands.
+command with an unknown outcome. DeskMate does not automatically replay commands.
 
 ## Project associations
 
@@ -94,7 +94,7 @@ V1 provides password login and read-only execution display. Interactive remote s
 manual terminal takeover, file transfer, other service APIs and credential sync are
 outside this version.
 
-The guarantee is that Atlas does not hand saved credentials to model context or
+The guarantee is that DeskMate does not hand saved credentials to model context or
 logs. Known login/sudo passwords are redacted across output chunk boundaries; raw
 SSH/credential-library logging is disabled. Arbitrary server output may contain
 other secrets, and commands can change or expose remote data. Unrestricted local

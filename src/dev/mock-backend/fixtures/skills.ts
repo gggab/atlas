@@ -82,7 +82,7 @@ const TOOLS: ToolInfo[] = [
   },
   {
     id: "atlas",
-    displayName: "Atlas",
+    displayName: "DeskMate",
     detectedGlobal: true,
     detectedProject: true,
     supportsSymlink: true,
@@ -162,7 +162,7 @@ interface MockSkill {
   name: string;
   description: string;
   scope: Scope;
-  /** Lives in Atlas's canonical store — `false` is an external skill Atlas only
+  /** Lives in DeskMate's canonical store — `false` is an external skill DeskMate only
    *  found, which is what the "Make for all agents" adopt flow acts on. */
   managed: boolean;
   /** Owning pack, when a pack provided this skill. Its cells are derived from
@@ -181,7 +181,7 @@ type Cell = MockSkill["cells"][string];
 /** Functions, not shared constants: `skills_freeze` rewrites `mode` in place,
  *  and one aliased object would freeze every skill that borrowed it. */
 const synced = (): Cell => ({ status: "synced", mode: "symlink" });
-/** Frozen: the symlink was replaced by a real copy, so uninstalling Atlas can't
+/** Frozen: the symlink was replaced by a real copy, so uninstalling DeskMate can't
  *  take the skill with it. */
 const frozen = (): Cell => ({ status: "synced", mode: "copy" });
 
@@ -1579,7 +1579,7 @@ export const skillsHandlers: TypedHandlers<SkillsResponses> = {
     entry.updateAvailable = false;
     return null;
   },
-  /** Accepting a detection: Atlas runs the copy the user already has, so the
+  /** Accepting a detection: DeskMate runs the copy the user already has, so the
    *  entry points at the found binary rather than at a download. */
   acp_registry_install_detected: ({ agentId }): null => {
     const id = String(agentId);

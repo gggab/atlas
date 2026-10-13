@@ -88,7 +88,7 @@ describe("what a user bubble shows", () => {
     expect(row).toMatchObject({ text: "the prose the store kept", contextBlocks: 1 });
   });
 
-  it("drops the memory blocks Atlas injected into the prompt", () => {
+  it("drops the memory blocks DeskMate injected into the prompt", () => {
     expect(bubble(`${MEMORY}\nfix the build`).text).toBe("fix the build");
   });
 

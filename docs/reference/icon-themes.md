@@ -1,11 +1,11 @@
 # Icon themes
 
-Atlas file and folder icons use **VS Code's `iconThemes` contribution format,
+DeskMate file and folder icons use **VS Code's `iconThemes` contribution format,
 verbatim** (theme-system decision 4). A theme published for VS Code installs
-here unchanged — there is no Atlas icon-theme format, no conversion step, and
+here unchanged — there is no DeskMate icon-theme format, no conversion step, and
 no separate schema to learn.
 
-This page is the reference for what Atlas reads, in what order, from where, and
+This page is the reference for what DeskMate reads, in what order, from where, and
 what it deliberately does not do. The colour side of theming is
 `docs/reference/theme-keys.md`; the two are separate tracks and are chosen
 separately in Settings.
@@ -27,12 +27,12 @@ iconTheme = "material-icon-theme"   # or "minimal", or an installed id
 
 The value is a single path segment (letters, digits, `.`, `-`, `_`) because it
 names a directory under the icon-themes folder. Anything else is refused at
-validation, so a config edit cannot make Atlas read outside that directory.
+validation, so a config edit cannot make DeskMate read outside that directory.
 
 ### "Minimal"
 
 `minimal` is not an empty icon theme, it is **no** icon theme: every row falls
-back to the lucide icon Atlas drew before icon themes existed. It is also what
+back to the lucide icon DeskMate drew before icon themes existed. It is also what
 you see for a split second while a resolution is in flight, and what you see
 for anything the active theme has no answer for — one code path, so switching
 to Minimal never changes the shape of anything twice.
@@ -41,13 +41,13 @@ to Minimal never changes the shape of anything twice.
 
 Material Icon Theme 5.38.1, MIT, vendored whole with its `LICENSE.txt` and a
 provenance note (`ATTRIBUTION.txt`) alongside it. vscode-icons is deliberately
-**not** bundled: its icons are CC BY-SA, which Atlas cannot redistribute on the
+**not** bundled: its icons are CC BY-SA, which DeskMate cannot redistribute on the
 same terms.
 
 ### Installing from Open VSX
 
 **Settings → Icons → Install from Open VSX.** Open VSX is the only remote
-source Atlas has for icons. Type a query, press Enter, pick a result, install.
+source DeskMate has for icons. Type a query, press Enter, pick a result, install.
 
 A few properties worth knowing:
 
@@ -67,7 +67,7 @@ Themes are installed under `<namespace>.<name>` — `PKief.material-icon-theme`.
 
 ## The format
 
-Everything below is VS Code's, not Atlas's. The authority is the theme document
+Everything below is VS Code's, not DeskMate's. The authority is the theme document
 named by `contributes.iconThemes[0].path` in the extension's `package.json`.
 
 ### `iconDefinitions`
@@ -101,9 +101,9 @@ Glyph themes (Seti and its descendants) declare their web fonts:
 }
 ```
 
-Atlas reads the font file and hands the webview a `data:` URL, so the font
+DeskMate reads the font file and hands the webview a `data:` URL, so the font
 loads with no file access. `fontCharacter`'s `\E001` escape is decoded to the
-actual codepoint — VS Code passes it to CSS `content:`, Atlas renders it as
+actual codepoint — VS Code passes it to CSS `content:`, DeskMate renders it as
 text.
 
 Fonts are fetched **only after a glyph icon has actually been resolved**, so an
@@ -134,7 +134,7 @@ siblings.
 ### `hidesExplorerArrows`
 
 A theme whose folder icons already say open or closed can ask the explorer to
-drop its twisty chevrons. Atlas honours it for file-tree rows; the indent
+drop its twisty chevrons. DeskMate honours it for file-tree rows; the indent
 spacer stays, so names still line up.
 
 ## Precedence
@@ -207,10 +207,10 @@ Where a theme sets colour, the theme wins: a glyph's `fontColor` is used as
 written, and an SVG's own `fill` values are drawn as authored (all 1,251
 Material icons paint this way).
 
-Where a theme leaves colour to Atlas, Atlas's colour theme supplies it. SVGs
+Where a theme leaves colour to DeskMate, DeskMate's colour theme supplies it. SVGs
 are **inlined** rather than pointed at by an `<img>` precisely so that an icon
 drawn in `currentColor` inherits the row's colour and follows the active theme.
-The lucide fallbacks are Atlas's own icons and always follow the theme.
+The lucide fallbacks are DeskMate's own icons and always follow the theme.
 
 Inlining third-party markup means every icon is sanitised first: a drawing-only
 element allowlist, no `on*` handlers, no external references, and no `<style>`
@@ -224,7 +224,7 @@ The file tree, the editor tab strip (for tabs opened from a path), and the
 file-search palette (`⌘P`). Rows that do not stand for a real path — a
 knowledge page, a chat — keep their own icons.
 
-## What Atlas does not support
+## What DeskMate does not support
 
 Known and deliberate. None of these stop a theme from loading; the affected
 icon falls back.
@@ -233,13 +233,13 @@ icon falls back.
   sanitiser, for the reasons above.
 - **`foreignObject` and embedded raster `<image>` elements** inside an SVG icon.
   Not on the drawing allowlist.
-- **Product icon themes** (`contributes.productIconThemes`). Atlas reads file
+- **Product icon themes** (`contributes.productIconThemes`). DeskMate reads file
   icon themes only; an extension that contributes just a product icon theme is
   filtered out of search and refused at install.
 - **More than one icon theme per extension.** The first
   `contributes.iconThemes` entry is the one used.
 - **`showLanguageModeIcons`.** Parsed and ignored — it controls a VS Code
-  status-bar affordance Atlas does not have.
+  status-bar affordance DeskMate does not have.
 - **Theme-supplied localisation** (`package.nls.*.json`). A theme's display
   name is read from the manifest as published, untranslated.
 - **Hot reload of an installed theme's files.** Colour themes watch
@@ -247,5 +247,5 @@ icon falls back.
   and remove refresh the catalog; editing a theme's files in place needs a
   restart.
 - **Nothing outside the icon theme is taken from the `.vsix`** — the compiled
-  extension host, its commands and its settings are dropped on unpack. Atlas
+  extension host, its commands and its settings are dropped on unpack. DeskMate
   does not run extensions.

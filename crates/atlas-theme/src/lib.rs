@@ -817,7 +817,7 @@ fn parse_style(value: &toml::Value, key: &str) -> Result<Option<ThemeKeyStyle>, 
     };
     if table.contains_key("font_style") {
         return Err(format!(
-            "{key} sets font_style, which Atlas does not apply — a theme key is a color. \
+            "{key} sets font_style, which DeskMate does not apply — a theme key is a color. \
              Remove it; leaving it in would silently render upright."
         ));
     }

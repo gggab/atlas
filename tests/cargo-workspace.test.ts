@@ -150,7 +150,7 @@ describe("root cargo workspace", () => {
     expect(expectedMembers().filter((m) => !members.includes(m))).toEqual([]);
   });
 
-  it("adds nothing to the members list but Atlas crates and the vendored engine", () => {
+  it("adds nothing to the members list but DeskMate crates and the vendored engine", () => {
     // The complement of the assertion above: a member that is neither ours nor
     // under `vendor/atlas-engine/` is someone wiring in a third tree without saying so.
     const stray = workspaceList("members").filter(

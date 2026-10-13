@@ -28,7 +28,7 @@ const env = (over: Partial<NotificationEnv> = {}): NotificationEnv => ({
   away: false,
   ...over,
 });
-const project: ProjectRef = { projectId: "p1", projectName: "Atlas", projectActive: true };
+const project: ProjectRef = { projectId: "p1", projectName: "DeskMate", projectActive: true };
 
 function feedFetch(errors: (string | null)[]) {
   let state: AutoFetchWarnState = INITIAL_AUTOFETCH_STATE;
@@ -205,13 +205,13 @@ describe("decisions", () => {
     const here = decideAutoFetchFailing(project, w, env(), {})!;
     expect(here.kind).toBe("git-autofetch-failing");
     expect(here.tier).toBe("warning");
-    expect(here.target).toEqual({ type: "git-panel", projectId: "p1", projectName: "Atlas" });
+    expect(here.target).toEqual({ type: "git-panel", projectId: "p1", projectName: "DeskMate" });
     expect(here.subtitle).toBeUndefined();
     expect(here.body).toBe("Could not resolve host");
     expect(here.dedupeKey).toBe("autofetch:p1:2");
     expect(here.channels).toMatchObject({ center: true, toast: true, native: false });
     const other = decideAutoFetchFailing({ ...project, projectActive: false }, w, env(), {})!;
-    expect(other.subtitle).toBe("Atlas");
+    expect(other.subtitle).toBe("DeskMate");
   });
 
   it("behind: keyed by the remote head, pluralises", () => {

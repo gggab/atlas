@@ -234,7 +234,7 @@ fn an_imported_row_keeps_the_time_the_agent_reported() {
     );
     assert_eq!(
         rows[0].interacted_at, None,
-        "Atlas did not see the user send anything — it was not here"
+        "DeskMate did not see the user send anything — it was not here"
     );
 }
 

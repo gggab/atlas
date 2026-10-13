@@ -155,47 +155,47 @@ const SYNTAX_MAP: &[(&str, &[&str])] = &[
 /// Zed style keys that exist, are understood, and have nowhere to go.
 /// Listed by prefix so the report can say *why* rather than "unknown".
 const IGNORED_PREFIXES: &[(&str, &str, &str)] = &[
-    ("icon", "icon roles", "Atlas icons take their color from the text roles"),
-    ("players", "collaboration", "Atlas has no multiplayer cursors"),
-    ("editor.wrap_guide", "editor furniture", "Atlas's editor draws no wrap guides"),
-    ("editor.active_wrap_guide", "editor furniture", "Atlas's editor draws no wrap guides"),
-    ("editor.invisible", "editor furniture", "Atlas does not render invisibles"),
-    ("editor.subheader", "editor furniture", "Atlas has no editor subheader"),
-    ("editor.highlighted_line", "editor furniture", "Atlas highlights only the active line"),
-    ("editor.document_highlight.write", "editor furniture", "Atlas has one bracket/occurrence highlight, not a read/write pair"),
-    ("status_bar", "app chrome", "Atlas's status bar follows the panel tokens"),
-    ("title_bar", "app chrome", "Atlas's title bar follows the panel tokens"),
-    ("toolbar", "app chrome", "Atlas's toolbars follow the panel tokens"),
-    ("tab_bar", "app chrome", "Atlas's tab strip follows the accent and sidebar tokens"),
-    ("tab", "app chrome", "Atlas's tab strip follows the accent and sidebar tokens"),
-    ("pane", "app chrome", "Atlas has no per-pane border role"),
-    ("panel.focused_border", "app chrome", "Atlas has one focus border role"),
-    ("drop_target", "app chrome", "Atlas draws drop targets from the primary token"),
-    ("link_text", "app chrome", "Atlas links follow `primary`"),
-    ("success.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
-    ("warning.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
-    ("error.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
-    ("info.background", "status", "Atlas derives the tinted status fill from the status foreground, so there is nothing to set"),
-    ("modified.background", "vcs", "Atlas tints only additions and removals"),
+    ("icon", "icon roles", "DeskMate icons take their color from the text roles"),
+    ("players", "collaboration", "DeskMate has no multiplayer cursors"),
+    ("editor.wrap_guide", "editor furniture", "DeskMate's editor draws no wrap guides"),
+    ("editor.active_wrap_guide", "editor furniture", "DeskMate's editor draws no wrap guides"),
+    ("editor.invisible", "editor furniture", "DeskMate does not render invisibles"),
+    ("editor.subheader", "editor furniture", "DeskMate has no editor subheader"),
+    ("editor.highlighted_line", "editor furniture", "DeskMate highlights only the active line"),
+    ("editor.document_highlight.write", "editor furniture", "DeskMate has one bracket/occurrence highlight, not a read/write pair"),
+    ("status_bar", "app chrome", "DeskMate's status bar follows the panel tokens"),
+    ("title_bar", "app chrome", "DeskMate's title bar follows the panel tokens"),
+    ("toolbar", "app chrome", "DeskMate's toolbars follow the panel tokens"),
+    ("tab_bar", "app chrome", "DeskMate's tab strip follows the accent and sidebar tokens"),
+    ("tab", "app chrome", "DeskMate's tab strip follows the accent and sidebar tokens"),
+    ("pane", "app chrome", "DeskMate has no per-pane border role"),
+    ("panel.focused_border", "app chrome", "DeskMate has one focus border role"),
+    ("drop_target", "app chrome", "DeskMate draws drop targets from the primary token"),
+    ("link_text", "app chrome", "DeskMate links follow `primary`"),
+    ("success.background", "status", "DeskMate derives the tinted status fill from the status foreground, so there is nothing to set"),
+    ("warning.background", "status", "DeskMate derives the tinted status fill from the status foreground, so there is nothing to set"),
+    ("error.background", "status", "DeskMate derives the tinted status fill from the status foreground, so there is nothing to set"),
+    ("info.background", "status", "DeskMate derives the tinted status fill from the status foreground, so there is nothing to set"),
+    ("modified.background", "vcs", "DeskMate tints only additions and removals"),
     ("border", "base tokens", "Zed's border roles are carried into the shadcn `border` and `ring` tokens"),
     ("background", "base tokens", "carried into the shadcn `background` token"),
     ("elevated_surface", "base tokens", "carried into the shadcn `card` and `popover` tokens"),
     ("text.muted", "base tokens", "carried into the shadcn `muted-foreground` token"),
     ("text.accent", "base tokens", "carried into the shadcn `primary` token"),
-    ("text.placeholder", "text roles", "Atlas's placeholder follows `muted-foreground`"),
-    ("ghost_element", "element overlays", "Atlas has one overlay ladder, not a ghost variant"),
-    ("panel.background", "app chrome", "Atlas's project rail follows the panel tokens"),
-    ("scrollbar.track", "app chrome", "Atlas paints the scrollbar track transparent"),
-    ("conflict", "vcs", "Atlas shows conflicts through the status tokens"),
-    ("renamed", "vcs", "Atlas has no renamed-file color"),
-    ("ignored", "vcs", "Atlas has no ignored-file color"),
-    ("hidden", "vcs", "Atlas has no hidden-file color"),
-    ("unreachable", "vcs", "Atlas has no unreachable-code color"),
-    ("predictive", "editor furniture", "Atlas has no inline-prediction color"),
-    ("hint", "editor furniture", "Atlas has no inlay-hint color"),
-    ("terminal.bright_foreground", "terminal", "Atlas has one terminal foreground"),
-    ("terminal.dim_foreground", "terminal", "Atlas has one terminal foreground"),
-    ("terminal.ansi.dim", "terminal", "Atlas exposes the 16-color ANSI set, not Zed's dim ramp"),
+    ("text.placeholder", "text roles", "DeskMate's placeholder follows `muted-foreground`"),
+    ("ghost_element", "element overlays", "DeskMate has one overlay ladder, not a ghost variant"),
+    ("panel.background", "app chrome", "DeskMate's project rail follows the panel tokens"),
+    ("scrollbar.track", "app chrome", "DeskMate paints the scrollbar track transparent"),
+    ("conflict", "vcs", "DeskMate shows conflicts through the status tokens"),
+    ("renamed", "vcs", "DeskMate has no renamed-file color"),
+    ("ignored", "vcs", "DeskMate has no ignored-file color"),
+    ("hidden", "vcs", "DeskMate has no hidden-file color"),
+    ("unreachable", "vcs", "DeskMate has no unreachable-code color"),
+    ("predictive", "editor furniture", "DeskMate has no inline-prediction color"),
+    ("hint", "editor furniture", "DeskMate has no inlay-hint color"),
+    ("terminal.bright_foreground", "terminal", "DeskMate has one terminal foreground"),
+    ("terminal.dim_foreground", "terminal", "DeskMate has one terminal foreground"),
+    ("terminal.ansi.dim", "terminal", "DeskMate exposes the 16-color ANSI set, not Zed's dim ramp"),
 ];
 
 pub(crate) fn import(
@@ -272,7 +272,7 @@ fn import_one(
 
     record_ignored(style, &mut report);
     report.note(
-        "Atlas's theme keys were modeled on Zed's roles, so the editor, terminal, syntax and diff colors transfer directly",
+        "DeskMate's theme keys were modeled on Zed's roles, so the editor, terminal, syntax and diff colors transfer directly",
     );
     report.note(
         "Zed has no shadcn layer, so all 45 base tokens were derived from the style — check `primary`, `accent` and `card` first if the chrome looks off",
@@ -316,7 +316,7 @@ fn map_players(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mu
         report.ignore(
             format!("players[1..{}]", extra + 1),
             "collaboration",
-            "Atlas has no multiplayer cursors; only the local player's cursor and selection are used",
+            "DeskMate has no multiplayer cursors; only the local player's cursor and selection are used",
         );
     }
 }
@@ -361,7 +361,7 @@ fn map_syntax(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mut
         report.ignore(
             format!("syntax.{scope}.font_style"),
             "font styles",
-            "an Atlas theme key carries a color only; the scope is imported with its color and no italics",
+            "an DeskMate theme key carries a color only; the scope is imported with its color and no italics",
         );
     }
     let unused = syntax.keys().filter(|scope| !used.contains(*scope)).count();
@@ -369,7 +369,7 @@ fn map_syntax(style: &Map<String, Value>, draft: &mut VariantDraft, report: &mut
         report.ignore(
             format!("syntax.* ({unused} scopes)"),
             "syntax scopes",
-            "Zed's finer scopes collapse onto Atlas's syntax roles (see SYNTAX_MAP), and the surplus is dropped",
+            "Zed's finer scopes collapse onto DeskMate's syntax roles (see SYNTAX_MAP), and the surplus is dropped",
         );
     }
 }
@@ -448,7 +448,7 @@ fn record_ignored(style: &Map<String, Value>, report: &mut ImportReport) {
         report.ignore(
             key,
             "unmapped zed role",
-            "no Atlas theme key carries this role",
+            "no DeskMate theme key carries this role",
         );
     }
 }

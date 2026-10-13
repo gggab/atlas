@@ -22,7 +22,7 @@ impl std::fmt::Display for Error {
         match self {
             Error::SchemaTooNew { found, supported } => write!(
                 f,
-                "thread history was written by a newer Atlas (schema epoch {found}, this build reads up to {supported})"
+                "thread history was written by a newer DeskMate (schema epoch {found}, this build reads up to {supported})"
             ),
             Error::Storage(msg) => write!(f, "thread-metadata store: {msg}"),
             Error::Sqlite(e) => write!(f, "thread-metadata store: {e}"),

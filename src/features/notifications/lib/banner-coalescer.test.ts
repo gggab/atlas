@@ -12,7 +12,7 @@ const decision = (title: string, key: string): NotificationDecision => ({
   groupKey: `session:${key}`,
   channels: { center: true, toast: true, native: true, badge: true, sound: false },
   toast: { variant: "success", durationMs: 5_000 },
-  native: { title: "Atlas: atlas", body: `${title} — Task finished.` },
+  native: { title: "DeskMate: atlas", body: `${title} — Task finished.` },
 });
 
 describe("createBannerCoalescer", () => {

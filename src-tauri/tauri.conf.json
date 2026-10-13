@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
-  "productName": "Atlas改",
+  "productName": "同桌 DeskMate",
   "version": "0.4.1",
   "identifier": "dev.atlas.ide",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "Atlas改",
+        "title": "同桌 DeskMate",
         "width": 1280,
         "height": 800,
         "minWidth": 480,
@@ -50,9 +50,9 @@
       "licenses/Material-Icon-Theme-LICENSE.txt": "licenses/Material-Icon-Theme-LICENSE.txt"
     },
     "category": "DeveloperTool",
-    "shortDescription": "Atlas改 — local Agent workbench",
-    "longDescription": "Atlas改 is a local Tauri desktop workbench for external ACP CLI agents, with project files, terminal and Git, shared memory, browser control, and managed SSH connections.",
-    "copyright": "https://tryatlas.cc/ Report bugs to Github: https://github.com/pacifio/atlas/issues/",
+    "shortDescription": "同桌 DeskMate — local Agent workbench",
+    "longDescription": "同桌 DeskMate is a local Tauri desktop workbench for external ACP CLI agents, with project files, terminal and Git, shared memory, browser control, and managed SSH connections.",
+    "copyright": "DeskMate contributors; based on Atlas. Report bugs: https://github.com/gggab/atlas/issues/",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

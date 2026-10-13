@@ -43,7 +43,7 @@ use crate::commands::shared_memory::{self, SharedMemoryStore, Writer};
 /// nothing pushes. Claude Code shows it as the server's instructions; the
 /// engine shows it as the description of the `atlas_memory` tool namespace.
 pub const INSTRUCTIONS: &str = "\
-Atlas shared memory for this repository: what every agent, in any session, has learned here. \
+DeskMate shared memory for this repository: what every agent, in any session, has learned here. \
 Nothing from it is pushed into your context; you pull it with these tools.
 1. At the start of a session, before reading files or answering, call memory_briefing. It returns \
 the active plan, recent file changes, an index of decisions, facts, failures and architecture \
@@ -56,7 +56,7 @@ recorded since you last looked.
 fits together, call memory_remember. Plans and file edits are captured automatically; do not \
 remember them.
 5. memory_get expands an index line; memory_forget deletes an entry that is wrong.
-Treat every result as background from Atlas: do not copy it into your own memory files.";
+Treat every result as background from DeskMate: do not copy it into your own memory files.";
 
 /// `memory_search`'s default and largest result count.
 const SEARCH_DEFAULT_LIMIT: usize = 10;

@@ -1,13 +1,13 @@
-# Atlas keybindings (`keybindings.json`)
+# DeskMate keybindings (`keybindings.json`)
 
-Every rebindable shortcut in Atlas is an **action** with a stable id
+Every rebindable shortcut in DeskMate is an **action** with a stable id
 (`panels.left`, `tabs.close`, `terminal.nextTab` …). The registry of actions,
 their titles, default chords and the focus context they fire in lives in
 `src/features/keybindings/lib/actions.ts`; Settings → Keybindings renders that
 registry and lets you rebind each row.
 
 Bindings are grouped into **profiles**. The built-in `Default` profile is
-locked and always reflects Atlas's shipped defaults; duplicate it (or create an
+locked and always reflects DeskMate's shipped defaults; duplicate it (or create an
 empty profile) to customise. Only one profile is active at a time.
 
 The welcome screen's **Open Folder** hint follows the active `workspace.add`
@@ -18,12 +18,12 @@ binding and disappears when that action is unbound.
 A profile can be **based on** another editor's keys: `vscode`, `cursor`,
 `zed` or `jetbrains` (`src/features/keybindings/lib/presets.ts`). A preset
 names only the commands that editor has a well-known equivalent for; every
-other command keeps Atlas's chord. Each table follows that editor's macOS
-default keymap, and none carries a multi-stroke chord (`⌘K ⌘S`), which Atlas
+other command keeps DeskMate's chord. Each table follows that editor's macOS
+default keymap, and none carries a multi-stroke chord (`⌘K ⌘S`), which DeskMate
 cannot match.
 
-On first launch — while there is no `keybindings.json` — Atlas asks which
-editor you're coming from. Picking one creates a profile based on it; "Atlas"
+On first launch — while there is no `keybindings.json` — DeskMate asks which
+editor you're coming from. Picking one creates a profile based on it; "DeskMate"
 and "Decide later" keep the Default profile. Every answer writes the file, so
 the question is asked once, and deleting the file asks it again. Change a
 profile's preset later with **Keys from** in Settings → Keybindings.
@@ -35,7 +35,7 @@ profile's preset later with **Keys from** in Settings → Keybindings.
 ```
 
 A sibling of `config.toml`, for the same reason: it is a document you may edit
-by hand. Atlas re-reads it whenever the window regains focus, so edits land
+by hand. DeskMate re-reads it whenever the window regains focus, so edits land
 without a relaunch. "Open keybindings.json" in the editor's toolbar opens it.
 
 ## Format
@@ -65,10 +65,10 @@ A profile stores **overrides only**:
 - `"action.id": ["chord", …]` replaces the action's default chords;
 - `"action.id": null` unbinds it;
 - an absent key means "use the default" — the preset's chords if the
-  profile's `basedOn` preset names the action, otherwise Atlas's — so new
-  actions shipped in a later Atlas version work in every existing profile.
+  profile's `basedOn` preset names the action, otherwise DeskMate's — so new
+  actions shipped in a later DeskMate version work in every existing profile.
 
-An unknown `basedOn` (a newer Atlas wrote it, or a typo) is kept on disk and
+An unknown `basedOn` (a newer DeskMate wrote it, or a typo) is kept on disk and
 ignored, with a warning in Settings.
 
 ### Chord syntax
@@ -124,9 +124,9 @@ active profile in a stable, versioned form:
 ```
 
 It carries the preset and the overrides, never the resolved chords, so the
-recipient stays on Atlas's moving defaults for everything else. **Import a
+recipient stays on DeskMate's moving defaults for everything else. **Import a
 profile…** takes that JSON and adds it as a new, active profile. A newer
-`atlasKeybindings` version is rejected; commands and presets this Atlas
+`atlasKeybindings` version is rejected; commands and presets this DeskMate
 doesn't know are kept.
 
 ## Reserved chords
@@ -145,11 +145,11 @@ without one.
 
 ## Validation
 
-Atlas checks the file's shape when loading and before every save: unique
+DeskMate checks the file's shape when loading and before every save: unique
 profile ids, non-empty names, a present and empty `default` profile, an
 `activeProfileId` that exists, and syntactically valid chords. A file that
-fails to parse is **left untouched** — Atlas runs on the Default profile and
-shows the error at the top of Settings → Keybindings. Action ids Atlas doesn't
+fails to parse is **left untouched** — DeskMate runs on the Default profile and
+shows the error at the top of Settings → Keybindings. Action ids DeskMate doesn't
 recognise are preserved verbatim and listed under "Unknown commands".
 
 ## Not rebindable

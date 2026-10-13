@@ -94,7 +94,7 @@ describe("matchesScope", () => {
   it("matches a git-panel item by project", () => {
     const behind = item({
       kind: "git-behind",
-      target: { type: "git-panel", projectId: "p1", projectName: "Atlas" },
+      target: { type: "git-panel", projectId: "p1", projectName: "DeskMate" },
     });
     expect(matchesScope(behind, [{ kind: "git-behind", projectId: "p1" }])).toBe(true);
     expect(matchesScope(behind, [{ kind: "git-behind", projectId: "p2" }])).toBe(false);

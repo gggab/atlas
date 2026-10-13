@@ -2,7 +2,7 @@
 name = "atlas-search"
 version = "0.1.0"
 edition = "2021"
-description = "In-process code search for Atlas: ripgrep-engine grep and glob/fuzzy file finding over a session root, with one compact, budgeted output format for agent tools."
+description = "In-process code search for DeskMate: ripgrep-engine grep and glob/fuzzy file finding over a session root, with one compact, budgeted output format for agent tools."
 
 [lib]
 name = "atlas_search"

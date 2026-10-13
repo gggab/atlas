@@ -80,7 +80,7 @@ jobs:
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Building Atlas ${VERSION} for tag ${TAG}"
+          echo "Building DeskMate ${VERSION} for tag ${TAG}"
 
       - name: Install system build dependencies
         run: |
@@ -233,9 +233,9 @@ jobs:
           fi
           # Copy AppImage from Tauri bundles and normalize name to tryatlas package convention
           find "${SEARCH_DIRS[@]}" -type f -name "*.AppImage" -exec cp -t dist/artifacts/ {} +
-          for appimage in dist/artifacts/*Atlas*.AppImage; do
+          for appimage in dist/artifacts/*DeskMate*.AppImage; do
             if [ -f "$appimage" ]; then
-              mv "$appimage" "${appimage//Atlas/tryatlas}"
+              mv "$appimage" "${appimage//DeskMate/tryatlas}"
             fi
           done
 

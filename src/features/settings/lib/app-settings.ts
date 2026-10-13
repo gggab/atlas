@@ -21,7 +21,7 @@ import type { ThemeOverride } from "@/features/theme/resolve-theme";
 export interface AppSettings {
   /** Auto-add `.atlas/` to each opened git project's `.gitignore`. */
   autoAddAtlasGitignore: boolean;
-  /** Record Atlas-internal events (sign-in, agent lifecycle, etc.) into
+  /** Record DeskMate-internal events (sign-in, agent lifecycle, etc.) into
    *  the Logs panel under the `atlas` source. */
   enableAtlasLogs: boolean;
   /** Show dotfiles / dot-directories in the explorer file tree. */
@@ -68,7 +68,7 @@ export interface AppSettings {
   /** Background `git fetch` of the open project (on open, on window focus,
    *  every few minutes) so the Pull badge reflects the remote. Never pulls. */
   gitAutoFetch: boolean;
-  /** Keep the computer awake while an Atlas agent is actively running.
+  /** Keep the computer awake while an DeskMate agent is actively running.
    *  Default OFF. Prevents idle system sleep; display can still turn off. */
   keepAwakeWhileRunning: boolean;
   /** Mirror the active project's convention files (`CLAUDE.md`,
@@ -82,7 +82,7 @@ export interface AppSettings {
    *  Cmd/Ctrl+Enter sends, bare Enter always inserts a newline (the old
    *  default). Cmd/Ctrl+Enter always sends regardless of this setting. */
   enterToSend: boolean;
-  /** Let agents search this project's code through Atlas's code tool server:
+  /** Let agents search this project's code through DeskMate's code tool server:
    *  `grep` and `find_files`, in-process, respecting .gitignore and hiding
    *  secret files unless explicitly named by path (ADR-0015). Off: new sessions are not offered the
    *  tools and every call in a running one is refused. Default ON. */

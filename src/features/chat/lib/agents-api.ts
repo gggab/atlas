@@ -106,7 +106,7 @@ export const agents = {
    *  holds for the plugin, in-flight or live, and the next `spawn` starts
    *  fresh. Pair with `resetAgent` so the renderer forgets it too. */
   killPlugin: (pluginId: string) => invoke<void>("agents_kill_plugin", { pluginId }),
-  /** Plain-text start diagnostics (install state, npm + Atlas log tails) for a support report. */
+  /** Plain-text start diagnostics (install state, npm + DeskMate log tails) for a support report. */
   startDiagnostics: (pluginId: string) => invoke<string>("agents_start_diagnostics", { pluginId }),
 
   /** `additionalDirectories` are extra project roots (P3.2). Fixed for the
@@ -121,7 +121,7 @@ export const agents = {
   loadSession: (agentId: AgentId, sessionId: AcpSessionId, cwd: string) =>
     invoke<SessionKey>("agents_load_session", { agentId, sessionId, cwd }),
 
-  /** Atlas's own recording of a session — no agent spawn, no `session/load`
+  /** DeskMate's own recording of a session — no agent spawn, no `session/load`
    *  round-trip. Paints a resumed thread immediately while the real (slow)
    *  bind runs concurrently. `[]` means Atlas has no record of it, so there is
    *  no fast path; the bind's own replay fills the thread instead.

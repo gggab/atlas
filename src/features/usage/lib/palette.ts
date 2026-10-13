@@ -119,7 +119,7 @@ function modelVendor(model: string): ModelVendor | null {
   return null;
 }
 
-/** The same question for an agent id. The native agent is Atlas itself, so it
+/** The same question for an agent id. The native agent is DeskMate itself, so it
  *  wears the app's own identity chip (the neutral pair below) rather than a
  *  vendor's hue — the same choice `agent-brand.ts` makes for it. */
 function agentVendor(agent: string): ModelVendor | null {

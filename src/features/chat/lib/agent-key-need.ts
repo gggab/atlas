@@ -12,7 +12,7 @@
 //
 // Pure and table-driven so the matching is testable without a live agent.
 
-/** A BYOK provider Atlas can collect a key for, with the labels the prompt
+/** A BYOK provider DeskMate can collect a key for, with the labels the prompt
  *  needs and the strings that identify it in an agent's error text. */
 interface ProviderNeed {
   /** BYOK provider id — the key `byok.set` stores under. */

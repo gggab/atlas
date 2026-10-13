@@ -241,7 +241,7 @@ describe("turn_finished copy", () => {
 
   it("can no longer produce the old generic banner", () => {
     const d = decideAgentNotification(finished(), ctx, away, prefs);
-    expect(d?.native.title).not.toMatch(/Atlas/);
+    expect(d?.native.title).not.toMatch(/DeskMate/);
     expect(d?.native.body).not.toMatch(/Agent task finished|Task finished/);
   });
 

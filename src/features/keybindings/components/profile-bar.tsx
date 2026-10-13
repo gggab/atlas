@@ -295,7 +295,7 @@ function PresetPicker({
   value: string | null;
   onChange: (presetId: (typeof PRESETS)[number]["id"] | null) => void;
 }) {
-  const current = value ? (PRESET_BY_ID.get(value)?.label ?? value) : "Atlas";
+  const current = value ? (PRESET_BY_ID.get(value)?.label ?? value) : "DeskMate";
   return (
     <DropdownMenu.Root>
       <Hint label="Which editor's keys this profile starts from">
@@ -319,7 +319,7 @@ function PresetPicker({
       <DropdownMenu.Portal>
         <DropdownMenu.Positioner className="z-popover" align="start" sideOffset={4}>
           <DropdownMenu.Popup className={CONTENT_CLASS}>
-            {[{ id: null, label: "Atlas" } as const, ...PRESETS].map((p) => (
+            {[{ id: null, label: "DeskMate" } as const, ...PRESETS].map((p) => (
               <DropdownMenu.Item
                 key={p.id ?? "atlas"}
                 onClick={() => onChange(p.id)}

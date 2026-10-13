@@ -1049,8 +1049,8 @@ fn the_machinery_predicate_is_narrow_enough_to_keep_real_titles() {
     for title in [
         "Next steps for 0.3.4",
         "Plan the next steps after the release",
-        "Atlas",
-        "Atlas theme keys",
+        "DeskMate",
+        "DeskMate theme keys",
         "Fix the flaky auth test",
         "",
         "   ",

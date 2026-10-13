@@ -62,7 +62,7 @@ mod imp {
     impl PlatformGuard {
         pub fn acquire() -> Option<Self> {
             let assertion_type = NSString::from_str("PreventUserIdleSystemSleep");
-            let assertion_name = NSString::from_str("Atlas agent is working");
+            let assertion_name = NSString::from_str("DeskMate agent is working");
             let mut id: IOPMAssertionID = 0;
             // SAFETY: both strings outlive the call, and IOKit copies what it keeps.
             let ret = unsafe {
@@ -117,7 +117,10 @@ mod imp {
                 )
                 .await?;
                 let fd: OwnedFd = proxy
-                    .call("Inhibit", &("idle", "Atlas", "Agent is working", "block"))
+                    .call(
+                        "Inhibit",
+                        &("idle", "DeskMate", "Agent is working", "block"),
+                    )
                     .await?;
                 Ok::<_, zbus::Error>((conn, fd))
             });

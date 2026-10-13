@@ -2,7 +2,7 @@
 name = "atlas-memory"
 version = "0.1.0"
 edition = "2021"
-description = "Atlas's on-device RAG/memory engine: MiniLM → usearch HNSW behind the MemorySearchFn seam, plus the shared-memory record store."
+description = "DeskMate's on-device RAG/memory engine: MiniLM → usearch HNSW behind the MemorySearchFn seam, plus the shared-memory record store."
 
 [lib]
 name = "atlas_memory"

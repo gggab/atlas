@@ -138,7 +138,7 @@ export const skills = {
   promote: (name: string, projectPath: string) =>
     afterSkillMutation(invoke<SkillMeta>("skills_promote", { name, projectPath })),
 
-  /** Freeze every Atlas symlink projection into a real copy (uninstall safety). */
+  /** Freeze every DeskMate symlink projection into a real copy (uninstall safety). */
   freeze: (scope: Scope, projectPath?: string | null) =>
     afterSkillMutation(
       invoke<void>("skills_freeze", {

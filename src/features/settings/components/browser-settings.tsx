@@ -34,7 +34,7 @@ export function BrowserSettings() {
       />
       {isBrowserMock ? (
         <p className="text-xs text-muted-foreground">
-          Browser control requires the Atlas desktop app.
+          Browser control requires the DeskMate desktop app.
         </p>
       ) : error ? (
         <div role="alert" className="space-y-2 text-xs text-destructive">
@@ -49,7 +49,7 @@ export function BrowserSettings() {
         <>
           <SettingRow
             label="Allow browser control"
-            description="Pausing releases active task pages. This preference is kept when Atlas restarts."
+            description="Pausing releases active task pages. This preference is kept when DeskMate restarts."
           >
             <Toggle
               checked={!data.paused}
@@ -148,9 +148,9 @@ export function BrowserSettings() {
             </button>
           )}
           <p className="text-xs text-muted-foreground">
-            Each chat reuses its Atlas tab group and previously retained pages. New task pages close
-            by default when finished. Kept pages release control between turns. Your existing tabs
-            and login are preserved. Use the extension popup to share a tab or take over.
+            Each chat reuses its DeskMate tab group and previously retained pages. New task pages
+            close by default when finished. Kept pages release control between turns. Your existing
+            tabs and login are preserved. Use the extension popup to share a tab or take over.
           </p>
         </>
       )}

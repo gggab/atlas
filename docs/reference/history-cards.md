@@ -5,7 +5,7 @@ as cards. A title occupies up to two lines; the current conversation is marked,
 and each card shows its original Agent. Historical native Agent marks identify
 old records only and do not restore the removed engine.
 
-Cards also show the last Git branch Atlas observed for that session. Older or
+Cards also show the last Git branch DeskMate observed for that session. Older or
 imported rows can have no branch; the current project's checkout is never used
 to guess their past branch. See [History migrations](history-migrations.md) for
 recording behavior, backups, compatibility and rollback.
@@ -53,7 +53,7 @@ trigger opening. Existing handlers remain responsible for all operations:
 - Archive removes a thread from the active list but keeps it in All history.
   Reopening or new activity within the discovery window unarchives it; archive
   does not cancel an active turn.
-- Delete removes Atlas's history row and asks the Agent to delete its copy only
+- Delete removes DeskMate's history row and asks the Agent to delete its copy only
   when it advertises that capability. It does not guarantee erasing all CLI
   data or checkpoints. A still-running conversation may be recorded again.
   A session marked live in another process cannot be deleted. Deleted IDs are

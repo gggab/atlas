@@ -226,7 +226,7 @@ export class ExtensionRelay extends EventEmitter {
     this.closing = true;
     this.connected = false;
     // Disconnecting never sends Browser.close, Page.close or chrome.tabs.remove.
-    this.socket?.close(1000, "Atlas released control");
+    this.socket?.close(1000, "DeskMate released control");
     const force = setTimeout(() => this.socket?.terminate(), 500);
     if (this.sockets) await new Promise((resolve) => this.sockets.close(resolve));
     clearTimeout(force);

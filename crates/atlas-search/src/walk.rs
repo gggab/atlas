@@ -94,7 +94,7 @@ pub(crate) fn resolve(root: &Path, path: Option<&Path>) -> Result<(PathBuf, Path
     });
     if inside_atlas {
         return Err(SearchError::Path(format!(
-            "{} is Atlas's own data, which is never searched",
+            "{} is DeskMate's own data, which is never searched",
             path.display()
         )));
     }

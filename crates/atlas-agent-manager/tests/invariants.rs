@@ -786,7 +786,7 @@ async fn a_chained_connect_failure_keeps_its_cause() {
     let server = TestServer::with_behaviour(
         "claude-code",
         ConnectBehaviour::FailsChained {
-            cause: "Atlas can't be reached (error sending request)".into(),
+            cause: "DeskMate can't be reached (error sending request)".into(),
             context: "starting the in-process app-server runtime".into(),
         },
     );
@@ -801,7 +801,7 @@ async fn a_chained_connect_failure_keeps_its_cause() {
         "the context survives: {text}"
     );
     assert!(
-        text.contains("Atlas can't be reached"),
+        text.contains("DeskMate can't be reached"),
         "the cause survives: {text}"
     );
 }

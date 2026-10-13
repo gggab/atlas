@@ -615,7 +615,7 @@ export const terminalHandlers: TypedHandlers<TerminalResponses> = {
       write(
         session,
         [
-          paint(C.bold + C.magenta, "Atlas mock shell") +
+          paint(C.bold + C.magenta, "DeskMate mock shell") +
             paint(C.dim, "  —  zsh 5.9 (arm64-apple-darwin24)"),
           paint(C.grey, "No PTY was harmed. Type ") +
             paint(C.cyan, "help") +

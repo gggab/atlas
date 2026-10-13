@@ -270,7 +270,7 @@ else
     # even when signing + notarization succeed). We still get a fully signed,
     # notarized, stapled .app from Tauri; the DMG is then built manually
     # with hdiutil — same path the UNIVERSAL=1 branch uses.
-    log "Building Atlas for ${target} (.app only — Tauri's DMG packager is skipped)"
+    log "Building DeskMate for ${target} (.app only — Tauri's DMG packager is skipped)"
     bun run tauri build --target "${target}" --bundles app
 
     local app_path="${bundle_root}/macos/${PRODUCT_NAME}.app"
@@ -333,7 +333,7 @@ fi
 
 # ── 8. Done ─────────────────────────────────────────────────────────────────
 log ""
-ok "Atlas is ready to ship:"
+ok "DeskMate is ready to ship:"
 for dmg in "${DMG_PATHS[@]}"; do
   printf "      %s  (%s MB)\n" "${dmg}" "$(du -m "${dmg}" | awk '{print $1}')"
 done

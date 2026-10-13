@@ -316,7 +316,8 @@ impl BrowserUseState {
         };
         if !path.join("worker.mjs").is_file() {
             return Err(
-                "Browser runtime missing: run bun run browser:bundle before building Atlas".into(),
+                "Browser runtime missing: run bun run browser:bundle before building DeskMate"
+                    .into(),
             );
         }
         Ok(path)
@@ -394,7 +395,7 @@ impl BrowserUseState {
                 };
                 let outcome=tokio::select!{biased;_=stopped.changed()=>Err("Browser stopped; an already sent action may have taken effect".into()),outcome=tokio::time::timeout(std::time::Duration::from_millis(request.timeout_ms),operation)=>outcome.unwrap_or_else(|_|Err("Browser timed out and was stopped; inspect the result before retrying".into()))};
                 let cleanup_failed=request.cleanup && outcome.as_ref().is_ok_and(|value|value["isError"].as_bool()==Some(true));
-                if cleanup_failed { self.bridge.report_error("Task page cleanup failed. Inspect Atlas Browser and release its task pages before continuing."); }
+                if cleanup_failed { self.bridge.report_error("Task page cleanup failed. Inspect DeskMate Browser and release its task pages before continuing."); }
                 let fatal=outcome.is_err() || cleanup_failed;
                 let empty_after_cleanup=request.cleanup && outcome.as_ref().is_ok_and(|value|value["keepAlive"].as_bool()==Some(false));
                 if let Some(info)=self.registry.lock().sessions.get_mut(&owner){info.status=if fatal{"stopping"}else if info.pairing_url.is_some() && info.tabs.as_array().is_some_and(|tabs|tabs.is_empty()){"waiting"}else{"idle"}.into();}self.changed();
@@ -516,9 +517,9 @@ struct Args {
 fn tools_list() -> ListToolsResult {
     let tools=[
             ("browser_status","Read this session's browser status and Browser Use documentation. Does not launch a browser.",json!({}),vec![]),
-            ("browser_start","Connect the authorized Chrome/Edge extension, restore this session's retained pages and reuse its group. Create a blank tab only if no page is available. Query browser.tabs.list() and reuse pages before opening more. Use Atlas tools, never shell/OS URL handlers. Preserve pages with markKeep(). First-time setup requires installing and authorizing Atlas Browser. Never copy login profiles.",json!({}),vec![]),
+            ("browser_start","Connect the authorized Chrome/Edge extension, restore this session's retained pages and reuse its group. Create a blank tab only if no page is available. Query browser.tabs.list() and reuse pages before opening more. Use DeskMate tools, never shell/OS URL handlers. Preserve pages with markKeep(). First-time setup requires installing and authorizing DeskMate Browser. Never copy login profiles.",json!({}),vec![]),
             ("browser_repl","Execute persistent JavaScript using cua/browser/agent and nodeRepl. Preserve full observed hrefs; resolve with new URL(href, sourceURL), never scheme concatenation. Navigate/inspect one page at a time; stop and hand off on verification. Reuse handles and emit observations. Errors do not roll back actions. Trusted local execution, not a security sandbox.",json!({"code":{"type":"string","maxLength":64000},"title":{"type":"string","maxLength":120},"timeout_ms":{"type":"integer","minimum":1000,"maximum":120000}}),vec!["code"]),
-            ("browser_reset","Release debugging and clear handles. Agent-created pages close by default unless marked keep, deliverable or handoff. Retained pages stay in their original Atlas task group. Existing user tabs and browser login remain.",json!({}),vec![]),
+            ("browser_reset","Release debugging and clear handles. Agent-created pages close by default unless marked keep, deliverable or handoff. Retained pages stay in their original DeskMate task group. Existing user tabs and browser login remain.",json!({}),vec![]),
         ].into_iter().map(|(name,description,properties,required)|Tool::new(name,description,Arc::new(json!({"type":"object","properties":properties,"required":required,"additionalProperties":false}).as_object().cloned().unwrap_or_default()))).collect();
     ListToolsResult::with_all_items(tools)
         .with_ttl_ms(60_000)

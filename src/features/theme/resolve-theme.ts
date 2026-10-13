@@ -20,7 +20,7 @@ export interface ResolvedTheme {
   base: Record<string, string>;
   palette: Record<string, string>;
   keys: Record<ThemeKey, string>;
-  /** Colours Atlas derives from a key; see `DERIVED_VAR_REGISTRY`. */
+  /** Colours DeskMate derives from a key; see `DERIVED_VAR_REGISTRY`. */
   derived: Record<DerivedVar, string>;
   cssVars: Record<`--${string}`, string>;
 }

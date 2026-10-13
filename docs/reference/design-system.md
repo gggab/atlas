@@ -1,6 +1,6 @@
 # Design system
 
-The non-colour half of Atlas's design system: the scales, what they are called,
+The non-colour half of DeskMate's design system: the scales, what they are called,
 which primitive to reach for, and the test that stops the app drifting back off
 them. Colour is the other half and lives in [`theme-keys.md`](./theme-keys.md).
 
@@ -42,7 +42,7 @@ round **up** to the next step.
 |---|---|---|---|
 | `text-3xs` | 9 | 12 | a badge on a dense row |
 | `text-2xs` | 10 | 14 | eyebrows, captions, keycaps |
-| `text-xs` | 11 | 15 | control text; the most common size in Atlas |
+| `text-xs` | 11 | 15 | control text; the most common size in DeskMate |
 | `text-sm` | 12 | 16 | list rows, secondary chrome |
 | `text-base` | 13 | 18 | body text, chat messages |
 | `text-md` | 14 | 20 | panel and dialog titles |
@@ -113,7 +113,7 @@ Rendered today: **4 / 6 / 8 / 12**. Before Foundations it was 2 / 4 / 6 with no
   layer, after the generated rules. It therefore beats `.rounded` and still
   loses to `.rounded-lg` on an element carrying both.
 - **The scale reads `--radius-base`, which is now plain `var(--radius)`.** It
-  briefly carried a `max(…, 8px)` floor: Atlas sets its root font-size to 13px
+  briefly carried a `max(…, 8px)` floor: DeskMate sets its root font-size to 13px
   (`globals.css`, `@layer base`), so a `rem` here is 13px, and every built-in
   theme file shipped `radius = "0.375rem"` — 4.875px, with `r − 4px` collapsing
   to 0.875px, i.e. square everywhere whatever the theme asked for. The theme
@@ -140,7 +140,7 @@ colour) at a much lower alpha instead.
 
 `shadow-xl` and `shadow-2xl` are pointed at the dialog level as well, because
 left alone they render Tailwind's 10%-black default, which is invisible on
-Atlas's near-black chrome. Do not introduce a fourth level.
+DeskMate's near-black chrome. Do not introduce a fourth level.
 
 Two more utilities belong here:
 
@@ -324,7 +324,7 @@ exported `<name>Variants`, same `variant` / `size` prop pair, same `data-slot` �
 so later `shadcn add` output drops in with the classes swapped rather than the
 structure rewritten. Two deliberate departures:
 
-- **Sizes are Atlas control heights**, not shadcn's 32/36/40px.
+- **Sizes are DeskMate control heights**, not shadcn's 32/36/40px.
 - **No `asChild` on `Button`.** shadcn's buttons lean on a Slot primitive;
   `Button` and `IconButton` are built directly on `@base-ui/react/button`
   instead and take its own `render` prop — `<Button render={<a href="/x" />}>`
@@ -342,7 +342,7 @@ prop, default `false`, unchanged from Base UI's default). A disabled control
 is out of the tab order unless a call site opts in. Reach for it specifically
 where a disabled control also carries a `Hint`/`Tooltip` explaining *why* it
 is disabled — otherwise the tooltip can never be reached by keyboard. Most
-disabled controls in Atlas explain nothing, so the default stays `false`
+disabled controls in DeskMate explain nothing, so the default stays `false`
 rather than flipping every disabled control into the tab order; see the
 `IconButton` gallery section (`?scenario=design-system`) for the three states
 side by side.
@@ -394,7 +394,7 @@ built stylesheet, where all 195 `color-mix()` calls sit inside that guard. See
 theme resolution never happens in CSS.**
 
 Decision 14 and ADR-0009 originally read as a blanket ban on `color-mix()`,
-justified by "Atlas's minimum is macOS 11". The evidence does not support that
+justified by "DeskMate's minimum is macOS 11". The evidence does not support that
 version argument, and the ADR's *other* argument is the load-bearing one:
 
 - `color-mix()` needs Safari **16.2**; relative colour syntax (`rgb(from …)`)
@@ -476,10 +476,10 @@ Which means the exits have to be real ones:
 
 - **`EXEMPT_FILES`** — a whole file, with the argument written next to the path.
   Two shapes qualify: the file *defines* the scale (`theme-key-registry.ts`,
-  `color.ts`), or the colour is *not Atlas's to choose* — a third party's brand
+  `color.ts`), or the colour is *not DeskMate's to choose* — a third party's brand
   mark (`agent-brand.ts`, `agent-icons.tsx`), a palette the **user** picks a
   value from (spaces sticky notes, knowledge covers, PDF ink), or something that
-  has to survive being shown over content Atlas did not draw.
+  has to survive being shown over content DeskMate did not draw.
 - **`EXEMPT_DIRS`** — the same bar, for a directory. One shape qualifies: the
   files' colours *are* their content.
 - **`ratchet-allow: <reason>`** — one site inside an otherwise ordinary file.

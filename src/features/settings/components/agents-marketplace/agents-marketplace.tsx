@@ -264,7 +264,7 @@ export function AgentsMarketplace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature, query, filter]);
 
-  /** Cards for agents Atlas found rather than installed, rendered under their
+  /** Cards for agents DeskMate found rather than installed, rendered under their
    *  own heading so "you already have this" reads as a fact, not an offer. */
   const detectedIds = useMemo(
     () =>

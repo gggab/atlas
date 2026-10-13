@@ -64,7 +64,7 @@ fn main() {
             None => assert!(
                 Path::new(d).join(atlas_embed::SPEC_FILE).is_file(),
                 "{d} has no {}: without it the model runs with mean pooling, 512 tokens and \
-                 no query prefix, which is not how Atlas drives it",
+                 no query prefix, which is not how DeskMate drives it",
                 atlas_embed::SPEC_FILE
             ),
         }

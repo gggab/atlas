@@ -208,7 +208,7 @@ describe("bindFailureAction", () => {
     }
   });
 
-  it("reports plainly for agents Atlas cannot sign in", () => {
+  it("reports plainly for agents DeskMate cannot sign in", () => {
     catalog = { "atlas-agent": { kind: "native", login: null } };
     expect(
       bindFailureAction({ agentType: "atlas-agent", err: authErr, alreadyAttempted: false }),

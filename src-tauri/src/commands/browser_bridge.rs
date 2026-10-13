@@ -185,7 +185,7 @@ impl BrowserBridge {
             std::fs::create_dir_all(target.parent().ok_or("Missing extension directory")?)
                 .map_err(|e| e.to_string())?;
             std::fs::copy(source.join(name), target)
-                .map_err(|e| format!("Could not prepare Atlas Browser {name}: {e}"))?;
+                .map_err(|e| format!("Could not prepare DeskMate Browser {name}: {e}"))?;
         }
         std::fs::write(
             destination.join("config.js"),
@@ -266,14 +266,14 @@ impl BrowserBridge {
                 .is_some_and(|browser| browser != &selected.browser)
             {
                 return Err(
-                    "Another browser is selected in Atlas Settings > Browser control".into(),
+                    "Another browser is selected in DeskMate Settings > Browser control".into(),
                 );
             }
             if binding
                 .as_ref()
                 .is_some_and(|bound| bound.client_id != selected.client_id)
             {
-                return Err("Another browser profile is selected. Forget it in Atlas Settings > Browser control first.".into());
+                return Err("Another browser profile is selected. Forget it in DeskMate Settings > Browser control first.".into());
             }
             if client.is_some() {
                 return Err("This browser profile is already connected".into());
@@ -355,7 +355,9 @@ impl BrowserBridge {
             return Ok(());
         };
         if !supported {
-            return Err("Update/reload Atlas Browser to return browser control from chat.".into());
+            return Err(
+                "Update/reload DeskMate Browser to return browser control from chat.".into(),
+            );
         }
         if self.paused() && resume {
             return Ok(());
@@ -373,7 +375,7 @@ impl BrowserBridge {
             let reply = tokio::time::timeout(std::time::Duration::from_secs(5), result)
                 .await
                 .map_err(|_| {
-                    "Returning browser control timed out. Reload Atlas Browser and try again."
+                    "Returning browser control timed out. Reload DeskMate Browser and try again."
                 })?
                 .map_err(|_| "Browser profile disconnected")?;
             if let Some(error) = reply["error"].as_str() {
@@ -404,12 +406,12 @@ impl BrowserBridge {
                 .lock()
                 .as_ref()
                 .map(|bound| bound.browser.clone())
-                .ok_or("Install Atlas Browser from Settings > Browser control first")?;
+                .ok_or("Install DeskMate Browser from Settings > Browser control first")?;
             let ready = self.ready.notified();
             tokio::pin!(ready);
             ready.as_mut().enable();
             self.launch_browser(&browser, None)?;
-            tokio::time::timeout(std::time::Duration::from_secs(35), ready).await.map_err(|_|"The selected browser profile is offline. Open that profile and enable Atlas Browser.")?;
+            tokio::time::timeout(std::time::Duration::from_secs(35), ready).await.map_err(|_|"The selected browser profile is offline. Open that profile and enable DeskMate Browser.")?;
             self.client
                 .lock()
                 .as_ref()
@@ -521,7 +523,7 @@ impl BrowserBridge {
         Ok(())
     }
     pub fn register(&self) -> Result<(), String> {
-        let manifest = json!({"name":browser_native::host_name(),"description":"Atlas Browser local connection","path":std::env::current_exe().map_err(|e|e.to_string())?,"type":"stdio","allowed_origins":browser_native::extension_origins()});
+        let manifest = json!({"name":browser_native::host_name(),"description":"DeskMate Browser local connection","path":std::env::current_exe().map_err(|e|e.to_string())?,"type":"stdio","allowed_origins":browser_native::extension_origins()});
         let path = self
             .binding_path()?
             .with_file_name("browser-native-host.json");

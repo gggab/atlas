@@ -142,8 +142,8 @@ const SETTINGS_WRITE_ATTEMPTS = 3;
 function configErrorFrom(status: ConfigStatus | undefined): string | null {
   if (!status || status.status === "ok") return null;
   return status.status === "usingDefaults"
-    ? `config.toml could not be loaded, so Atlas is running on default settings — your saved preferences are not applied. ${status.error}`
-    : `config.toml is currently invalid; Atlas is running on the last settings that loaded cleanly. ${status.error}`;
+    ? `config.toml could not be loaded, so DeskMate is running on default settings — your saved preferences are not applied. ${status.error}`
+    : `config.toml is currently invalid; DeskMate is running on the last settings that loaded cleanly. ${status.error}`;
 }
 
 export const useSettingsStore = createSelectors(

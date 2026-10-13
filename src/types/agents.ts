@@ -282,7 +282,7 @@ export type AgentDelta =
       url?: string | null;
     }
   | {
-      /** The agent named its own session (P3.1). Beats Atlas's
+      /** The agent named its own session (P3.1). Beats DeskMate's
        *  first-40-characters-of-the-prompt title. */
       kind: "title_updated";
       agent_id: AgentId;

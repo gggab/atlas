@@ -1,7 +1,7 @@
 #:schema ../schema/theme-v1.json
 schema = 1
 id = "atlas"
-name = "Atlas"
+name = "DeskMate"
 author = "Atlas contributors"
 license = "Apache-2.0"
 

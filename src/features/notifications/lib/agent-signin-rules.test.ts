@@ -30,7 +30,7 @@ describe("sign-in episodes", () => {
     expect(resolveSignInEpisode(INITIAL_SIGN_IN_EPISODE)).toBe(INITIAL_SIGN_IN_EPISODE);
   });
 
-  it("keys differ per agent and from the Atlas sign-out", () => {
+  it("keys differ per agent and from the DeskMate sign-out", () => {
     expect(signInDedupeKey("a", 0)).not.toBe(signInDedupeKey("b", 0));
     expect(signedOutDedupeKey(0)).not.toBe(signedOutDedupeKey(1));
   });

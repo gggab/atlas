@@ -176,7 +176,7 @@ fn minimal_summary() -> IconThemeSummary {
     IconThemeSummary {
         id: MINIMAL_ICON_THEME_ID.to_string(),
         name: "Minimal".to_string(),
-        author: "Atlas".to_string(),
+        author: "DeskMate".to_string(),
         license: "MIT".to_string(),
         built_in: true,
         hides_explorer_arrows: false,

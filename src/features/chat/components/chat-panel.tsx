@@ -1702,7 +1702,7 @@ const ChatComposer = memo(function ChatComposer({
           onStop={onStop}
           running={running}
           stopping={stopping}
-          placeholder="Ask Atlas what to do ..."
+          placeholder="Ask DeskMate what to do ..."
         />
       </div>
     </>
@@ -1779,7 +1779,7 @@ function WelcomeState() {
         className="[mask-image:radial-gradient(ellipse_70%_60%_at_50%_45%,#000_55%,transparent_100%)]"
       />
       <div className="relative w-full max-w-[440px] flex flex-col items-center text-center">
-        {/* Hero: the Atlas mark on black. It used to sit on a 260px accent
+        {/* Hero: the DeskMate mark on black. It used to sit on a 260px accent
             radial gradient; on AMOLED black that halo read as a smudge behind
             the mark rather than a light source, and it competed with the
             dither field's own centre. The ring and the drop shadow are what
@@ -1799,7 +1799,7 @@ function WelcomeState() {
 
         {/* ratchet-allow: the one-off welcome headline sits between text-xl (20px) and text-2xl (24px) */}
         <h2 className="bg-gradient-to-b from-foreground to-foreground/55 bg-clip-text text-[22px] font-semibold tracking-tight text-transparent">
-          Atlas
+          DeskMate
         </h2>
         <p className="mt-1.5 text-base text-[var(--muted-foreground)]">
           Code with Agents. Tools, plans, and edits all live.

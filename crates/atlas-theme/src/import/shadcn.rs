@@ -245,13 +245,13 @@ fn build(
                 report.ignore(
                     format!("--{name}"),
                     "shadow recipe",
-                    "Atlas takes the composed shadow-2xs…shadow-2xl ramp, not the parts it was built from",
+                    "DeskMate takes the composed shadow-2xs…shadow-2xl ramp, not the parts it was built from",
                 );
             } else {
                 report.ignore(
                     format!("--{name} ({where_})"),
                     "unmapped shadcn token",
-                    "no Atlas base token or theme key carries this",
+                    "no DeskMate base token or theme key carries this",
                 );
             }
         }
@@ -259,7 +259,7 @@ fn build(
 
     for (original, px) in &converted_radii {
         report.note(format!(
-            "`radius` {original} was converted to {px}: the source assumes a {CSS_DEFAULT_ROOT_PX}px root, and Atlas's smaller root would have shrunk the whole radius scale"
+            "`radius` {original} was converted to {px}: the source assumes a {CSS_DEFAULT_ROOT_PX}px root, and DeskMate's smaller root would have shrunk the whole radius scale"
         ));
     }
 
@@ -269,11 +269,11 @@ fn build(
     {
         // Decision 20: kept in the file, honoured by nothing.
         report.warn(
-            "`spacing` was kept in the theme file but Atlas ignores it — spacing and the type scale are app-owned (decision 20)",
+            "`spacing` was kept in the theme file but DeskMate ignores it — spacing and the type scale are app-owned (decision 20)",
         );
     }
     report.note(
-        "shadcn themes describe application chrome only: Atlas's editor, terminal, syntax and diff keys fall back to the built-in defaults for the appearance",
+        "shadcn themes describe application chrome only: DeskMate's editor, terminal, syntax and diff keys fall back to the built-in defaults for the appearance",
     );
 
     finish_theme(drafts, report, options).map(|theme| vec![theme])

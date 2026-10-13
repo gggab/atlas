@@ -203,7 +203,7 @@ pub async fn search_github(query: String) -> Result<Vec<GithubRepo>, String> {
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("Atlas-IDE")
+        .user_agent("DeskMate-IDE")
         .build()
         .unwrap_or_default();
 
@@ -572,7 +572,7 @@ pub async fn fetch_cloned_repo_meta(
     let url = format!("https://api.github.com/repos/{owner}/{repo}");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
-        .user_agent("Atlas-IDE")
+        .user_agent("DeskMate-IDE")
         .build()
         .map_err(|e| e.to_string())?;
     let resp = client

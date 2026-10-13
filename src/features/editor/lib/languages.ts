@@ -103,7 +103,7 @@ const LANGUAGE_LOADERS = {
   },
 } satisfies Record<string, LanguageLoader>;
 
-/** A language Atlas can actually parse — one of `LANGUAGE_LOADERS`' keys. */
+/** A language DeskMate can actually parse — one of `LANGUAGE_LOADERS`' keys. */
 export type LanguageId = keyof typeof LANGUAGE_LOADERS;
 
 /** What a buffer records: a parseable language, or explicit plaintext. */

@@ -1,12 +1,12 @@
 # `atlas-memory` — Migration & Operations
 
-How Atlas's RAG/memory moved from the in-Tauri **brute-force O(n) cosine** over a
+How DeskMate's RAG/memory moved from the in-Tauri **brute-force O(n) cosine** over a
 flat `memory-index/index.json` to the on-device **MiniLM → usearch HNSW** engine
 in this crate (the grafeo graph that briefly sat beside it was removed in #89).
 Covers the on-disk layout, the legacy migration, the feature flags, the
 retained rollback fallbacks, and the **manual** 3-agent runtime verification.
 
-External ACP agents access the same local store through the loopback MCP server. Atlas accounts, the native agent, gateway extraction and pushed prompt context are no longer part of this build.
+External ACP agents access the same local store through the loopback MCP server. DeskMate accounts, the native agent, gateway extraction and pushed prompt context are no longer part of this build.
 
 ## 1. On-disk layout
 

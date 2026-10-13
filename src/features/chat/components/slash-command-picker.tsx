@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
  *   as `<local-command-stdout>…</local-command-stdout>` blocks which flow
  *   through the normal `agent_message_chunk` pipeline and render in the
  *   chat thread alongside regular assistant output. */
-/** Exactly two outcomes (S1): `/login` — the one command Atlas synthesizes —
+/** Exactly two outcomes (S1): `/login` — the one command DeskMate synthesizes —
  *  and passthrough for everything the agent advertises itself. The former
  *  per-agent login handlers, the `/skills` settings row and the dimmed
  *  "unavailable" guard rows are gone; Atlas renders what ACP gives, nothing

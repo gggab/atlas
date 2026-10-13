@@ -121,7 +121,7 @@ export function KeybindingRecorder({
               The Default profile is locked
             </div>
             <p className="text-xs leading-relaxed text-secondary-foreground">
-              Default always keeps Atlas's built-in shortcuts. Duplicate it into a new profile to
+              Default always keeps DeskMate's built-in shortcuts. Duplicate it into a new profile to
               change <span className="text-foreground">{def.title}</span> and anything else.
             </p>
             <div className="flex justify-end gap-2 pt-0.5">
@@ -175,7 +175,7 @@ export function KeybindingRecorder({
             <div className="flex h-4 items-center justify-center text-xs">
               {reserved ? (
                 <span className="text-[var(--atlas-status-warning-foreground)]">
-                  {reserved} Atlas may never see it.
+                  {reserved} DeskMate may never see it.
                 </span>
               ) : combo && same.length > 0 ? (
                 <button

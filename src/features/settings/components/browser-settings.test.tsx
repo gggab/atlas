@@ -16,7 +16,7 @@ function mount(connected = false, storeInstall = false, edgeAvailable = false) {
   mocks.invoke.mockResolvedValue({
     paused: false,
     sessions: [],
-    extensionPath: "C:/Atlas/browser-extension",
+    extensionPath: "C:/DeskMate/browser-extension",
     connection: {
       connected,
       browser: connected ? "chrome" : null,
@@ -91,7 +91,7 @@ it("shows the matching browser logos beside the browser names", async () => {
     expect(icon?.getAttribute("alt")).toBe("");
   }
 });
-it("manages a connected extension and pauses browser actions from Atlas", async () => {
+it("manages a connected extension and pauses browser actions from DeskMate", async () => {
   mount(true);
   expect(await screen.findByText("Connected · v0.3.0")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Manage Google Chrome extension" }));

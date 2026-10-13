@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn the_sessions_dir_uses_the_cwd_slug() {
-        let dir = sessions_dir_in(Path::new("/r"), Path::new("/Users/a/Test Atlas"));
-        assert_eq!(dir, Path::new("/r/-Users-a-Test-Atlas"));
+        let dir = sessions_dir_in(Path::new("/r"), Path::new("/Users/a/Test DeskMate"));
+        assert_eq!(dir, Path::new("/r/-Users-a-Test-DeskMate"));
     }
 }

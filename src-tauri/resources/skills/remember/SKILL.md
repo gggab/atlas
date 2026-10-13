@@ -1,12 +1,12 @@
 ---
 name: remember
-description: Save the decisions, facts, dead ends and architecture this conversation established to Atlas's shared memory, so other agents and future sessions can build on them.
+description: Save the decisions, facts, dead ends and architecture this conversation established to DeskMate's shared memory, so other agents and future sessions can build on them.
 argument-hint: "[focus]"
 ---
 
 # Remember
 
-Please save what this conversation has established to Atlas's shared memory, so other agents and future sessions can build on it.
+Please save what this conversation has established to DeskMate's shared memory, so other agents and future sessions can build on it.
 
 Use the `memory_remember` tool from the `atlas_memory` MCP server, one call per item, with `kind` set to:
 
@@ -15,7 +15,7 @@ Use the `memory_remember` tool from the `atlas_memory` MCP server, one call per 
 - `failure`: a dead end or mistake not to repeat
 - `architecture`: how a part of the system fits together
 
-First check what is already stored with `memory_search` or `memory_list`, and skip anything already recorded; to update an entry, reuse its `key`. Don't record plans, task progress or file edits, which Atlas captures by itself. Write each entry in the language of this conversation, complete enough to make sense on its own.
+First check what is already stored with `memory_search` or `memory_list`, and skip anything already recorded; to update an entry, reuse its `key`. Don't record plans, task progress or file edits, which DeskMate captures by itself. Write each entry in the language of this conversation, complete enough to make sense on its own.
 
 If the user gave a focus after the command (for example `/remember the retry rule`), concentrate on that; otherwise cover the whole conversation.
 

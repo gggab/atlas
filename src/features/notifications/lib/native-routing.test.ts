@@ -32,7 +32,7 @@ describe("banner payload round trip", () => {
       { type: "settings", section: "models" },
       { type: "settings", section: "agents" },
       { type: "config-file" },
-      { type: "git-panel", projectId: "p1", projectName: "Atlas" },
+      { type: "git-panel", projectId: "p1", projectName: "DeskMate" },
     ] satisfies NotificationTarget[]) {
       expect(targetForResponse(click(encodeBannerPayload(target)))).toEqual(target);
     }

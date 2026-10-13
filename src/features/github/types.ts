@@ -36,7 +36,7 @@ export interface ClonedRepo {
   has_readme: boolean;
   /** The checked-out branch, or `null` when HEAD is detached. */
   branch: string | null;
-  /** `null` for a clone made before Atlas cached any; `fetch_cloned_repo_meta` fills it. */
+  /** `null` for a clone made before DeskMate cached any; `fetch_cloned_repo_meta` fills it. */
   meta: RepoMeta | null;
 }
 

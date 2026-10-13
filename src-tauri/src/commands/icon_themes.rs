@@ -130,7 +130,7 @@ pub struct OpenVsxIconTheme {
 fn http_client(timeout: Duration) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(timeout)
-        .user_agent("Atlas-IDE")
+        .user_agent("DeskMate-IDE")
         .build()
         .map_err(|error| format!("could not build an HTTP client: {error}"))
 }
@@ -144,7 +144,9 @@ fn network_error(context: &str, error: &reqwest::Error) -> String {
         return format!("{context} timed out — Open VSX did not answer in time.");
     }
     if error.is_connect() {
-        return format!("{context} failed — Atlas could not reach open-vsx.org. Are you online?");
+        return format!(
+            "{context} failed — DeskMate could not reach open-vsx.org. Are you online?"
+        );
     }
     format!("{context} failed: {error}")
 }
@@ -194,10 +196,9 @@ pub async fn search_icon_themes(query: String) -> Result<Vec<OpenVsxIconTheme>, 
             response.status()
         ));
     }
-    let body: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|error| format!("Open VSX sent a search result Atlas could not read: {error}"))?;
+    let body: serde_json::Value = response.json().await.map_err(|error| {
+        format!("Open VSX sent a search result DeskMate could not read: {error}")
+    })?;
 
     let installed = tokio::task::spawn_blocking(atlas_icon_theme::list)
         .await
@@ -334,7 +335,7 @@ pub async fn install_icon_theme(
         .map_err(|error| network_error("Looking up the extension", &error))?
         .json()
         .await
-        .map_err(|error| format!("Open VSX sent metadata Atlas could not read: {error}"))?;
+        .map_err(|error| format!("Open VSX sent metadata DeskMate could not read: {error}"))?;
     let download = metadata
         .get("files")
         .and_then(|files| files.get("download"))
@@ -344,7 +345,7 @@ pub async fn install_icon_theme(
 
     let too_big = |size: usize| {
         format!(
-            "\"{id}\" is {} MB, past the {} MB Atlas accepts for an icon theme.",
+            "\"{id}\" is {} MB, past the {} MB DeskMate accepts for an icon theme.",
             size / (1024 * 1024),
             MAX_VSIX_BYTES / (1024 * 1024),
         )

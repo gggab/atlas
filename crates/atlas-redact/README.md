@@ -1,6 +1,6 @@
 # atlas-redact
 
-Atlas's single source of truth for secret redaction. String in, redacted string
+DeskMate's single source of truth for secret redaction. String in, redacted string
 out, plus a tally of what was replaced.
 
 ```rust
@@ -11,7 +11,7 @@ assert_eq!(out.counts.total(), 1);
 
 ## Where it sits
 
-Redaction runs **before persistence, not before upload**. Atlas records agent
+Redaction runs **before persistence, not before upload**. DeskMate records agent
 Sessions to disk; an agent that reads a `.env` puts its contents verbatim into
 the transcript, and a shell command that prints a token puts it in the tool
 result. Scrubbing on the way in means the local store is never itself a place a

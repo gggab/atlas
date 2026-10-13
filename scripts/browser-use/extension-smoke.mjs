@@ -16,7 +16,7 @@ await cp(fileURLToPath(new URL("./extension/", import.meta.url)), extension, { r
 // This CDP fixture must never auto-connect to the user's real Atlas host.
 await writeFile(
   path.join(extension, "config.js"),
-  `export const HOST_NAME = "com.atlas.browser.fixture.unregistered";\nexport const APP_NAME = "Atlas";\n`,
+  `export const HOST_NAME = "com.atlas.browser.fixture.unregistered";\nexport const APP_NAME = "DeskMate";\n`,
 );
 let blockedRequests = 0;
 const linkQuery = "?tracking=" + "x".repeat(200) + "&priceTId=tail-value&spm=a%2Bb";
@@ -57,7 +57,7 @@ const fixture = createServer((req, res) => {
       ? "<title>Website approval fixture</title><p>Fixture page</p>"
       : req.url === "/frame"
         ? '<label>Name<input aria-label="Name"></label>'
-        : `<title>Atlas extension fixture</title><label>Name<input aria-label="Name"></label><button onclick="document.querySelector('output').textContent=document.querySelector('input').value">Save</button><output></output><iframe src="http://localhost:${fixture.address().port}/frame"></iframe>`,
+        : `<title>DeskMate extension fixture</title><label>Name<input aria-label="Name"></label><button onclick="document.querySelector('output').textContent=document.querySelector('input').value">Save</button><output></output><iframe src="http://localhost:${fixture.address().port}/frame"></iframe>`,
   );
 });
 await new Promise((resolve) => fixture.listen(0, "127.0.0.1", resolve));
@@ -65,7 +65,7 @@ const url = `http://127.0.0.1:${fixture.address().port}`;
 let context, runtime, host, workerFixture;
 try {
   console.log(
-    `[extension:smoke] Launching isolated headed ${process.argv[2] === "chrome" ? "Chrome" : "Edge"} with Atlas extension`,
+    `[extension:smoke] Launching isolated headed ${process.argv[2] === "chrome" ? "Chrome" : "Edge"} with DeskMate extension`,
   );
   const chromeTest = process.argv[2] === "chrome";
   context = await chromium.launchPersistentContext(path.join(directory, "profile"), {
@@ -153,9 +153,9 @@ try {
     return result;
   };
   await run(
-    'let tab = await browser.tabs.selected(); await tab.playwright.getByRole("textbox", {name:"Name",exact:true}).fill("Atlas"); await tab.playwright.getByRole("button", {name:"Save",exact:true}).click();',
+    'let tab = await browser.tabs.selected(); await tab.playwright.getByRole("textbox", {name:"Name",exact:true}).fill("DeskMate"); await tab.playwright.getByRole("button", {name:"Save",exact:true}).click();',
   );
-  assert.equal(await shared.locator("output").innerText(), "Atlas");
+  assert.equal(await shared.locator("output").innerText(), "DeskMate");
   console.log("[extension:smoke] Input, frame reads, AX refs and screenshots");
   await run(
     'nodeRepl.write(await tab.playwright.frameLocator("iframe").getByRole("textbox", {name:"Name",exact:true}).count());',

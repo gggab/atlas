@@ -300,7 +300,7 @@ export function App() {
             status: "failure",
           });
           toast.error(
-            "Atlas couldn't load your projects. Your saved data is safe on disk — restart Atlas to get it back.",
+            "DeskMate couldn't load your projects. Your saved data is safe on disk — restart DeskMate to get it back.",
             { duration: Infinity },
           );
           startTransition(() => {

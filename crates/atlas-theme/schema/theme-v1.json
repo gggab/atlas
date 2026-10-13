@@ -44,7 +44,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Agent identity chip fill. Source: base.foreground → Atlas default. Transform: alpha 0.06."
+              "description": "Agent identity chip fill. Source: base.foreground → DeskMate default. Transform: alpha 0.06."
             },
             "agent.chip.foreground": {
               "allOf": [
@@ -52,7 +52,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Agent identity chip text. Source: base.foreground → Atlas default."
+              "description": "Agent identity chip text. Source: base.foreground → DeskMate default."
             },
             "border.strong": {
               "allOf": [
@@ -60,7 +60,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "High-emphasis border, including a focused control's. Source: base.border → Atlas default."
+              "description": "High-emphasis border, including a focused control's. Source: base.border → DeskMate default."
             },
             "border.subtle": {
               "allOf": [
@@ -68,7 +68,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Low-emphasis separator. Source: base.sidebar-border → Atlas default."
+              "description": "Low-emphasis separator. Source: base.sidebar-border → DeskMate default."
             },
             "diff.added.background": {
               "allOf": [
@@ -76,7 +76,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Added line or hunk. Source: palette.green → Atlas default. Transform: alpha 0.13."
+              "description": "Added line or hunk. Source: palette.green → DeskMate default. Transform: alpha 0.13."
             },
             "diff.added.emphasis": {
               "allOf": [
@@ -84,7 +84,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Changed words inside an added line. Source: palette.green → Atlas default. Transform: alpha 0.34."
+              "description": "Changed words inside an added line. Source: palette.green → DeskMate default. Transform: alpha 0.34."
             },
             "diff.added.text": {
               "allOf": [
@@ -92,7 +92,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Added diff text, and the +N line statistic. Source: palette.green → Atlas default."
+              "description": "Added diff text, and the +N line statistic. Source: palette.green → DeskMate default."
             },
             "diff.context.background": {
               "allOf": [
@@ -100,7 +100,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Unchanged diff context. Source: base.background → Atlas default."
+              "description": "Unchanged diff context. Source: base.background → DeskMate default."
             },
             "diff.removed.background": {
               "allOf": [
@@ -108,7 +108,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Removed line or hunk. Source: palette.red → Atlas default. Transform: alpha 0.13."
+              "description": "Removed line or hunk. Source: palette.red → DeskMate default. Transform: alpha 0.13."
             },
             "diff.removed.emphasis": {
               "allOf": [
@@ -116,7 +116,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Changed words inside a removed line. Source: palette.red → Atlas default. Transform: alpha 0.34."
+              "description": "Changed words inside a removed line. Source: palette.red → DeskMate default. Transform: alpha 0.34."
             },
             "diff.removed.text": {
               "allOf": [
@@ -124,7 +124,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Removed diff text, and the -N line statistic. Source: palette.red → Atlas default."
+              "description": "Removed diff text, and the -N line statistic. Source: palette.red → DeskMate default."
             },
             "editor.active_line.background": {
               "allOf": [
@@ -132,7 +132,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Active editor line. Source: base.foreground → Atlas default. Transform: alpha 0.04."
+              "description": "Active editor line. Source: base.foreground → DeskMate default. Transform: alpha 0.04."
             },
             "editor.active_line.gutter_foreground": {
               "allOf": [
@@ -140,7 +140,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Active line number. Source: base.foreground → Atlas default."
+              "description": "Active line number. Source: base.foreground → DeskMate default."
             },
             "editor.background": {
               "allOf": [
@@ -148,7 +148,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Code editor background. Source: base.background → Atlas default."
+              "description": "Code editor background. Source: base.background → DeskMate default."
             },
             "editor.caret": {
               "allOf": [
@@ -156,7 +156,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Code editor caret. Source: base.foreground → Atlas default."
+              "description": "Code editor caret. Source: base.foreground → DeskMate default."
             },
             "editor.foreground": {
               "allOf": [
@@ -164,7 +164,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Code editor foreground. Source: base.foreground → Atlas default."
+              "description": "Code editor foreground. Source: base.foreground → DeskMate default."
             },
             "editor.gutter.background": {
               "allOf": [
@@ -172,7 +172,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Code editor gutter background. Source: base.background → Atlas default."
+              "description": "Code editor gutter background. Source: base.background → DeskMate default."
             },
             "editor.gutter.foreground": {
               "allOf": [
@@ -180,7 +180,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Code editor line numbers. Source: base.muted-foreground → Atlas default."
+              "description": "Code editor line numbers. Source: base.muted-foreground → DeskMate default."
             },
             "editor.match_bracket.background": {
               "allOf": [
@@ -188,7 +188,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Matching bracket background. Source: base.accent → Atlas default."
+              "description": "Matching bracket background. Source: base.accent → DeskMate default."
             },
             "editor.match_bracket.border": {
               "allOf": [
@@ -196,7 +196,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Matching bracket outline. Source: base.ring → Atlas default."
+              "description": "Matching bracket outline. Source: base.ring → DeskMate default."
             },
             "editor.selection.background": {
               "allOf": [
@@ -204,7 +204,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Editor selection. Source: base.primary → Atlas default. Transform: alpha 0.24."
+              "description": "Editor selection. Source: base.primary → DeskMate default. Transform: alpha 0.24."
             },
             "element.active": {
               "allOf": [
@@ -212,7 +212,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Pressed overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.08."
+              "description": "Pressed overlay for ordinary elements. Source: base.foreground → DeskMate default. Transform: alpha 0.08."
             },
             "element.highlight": {
               "allOf": [
@@ -220,7 +220,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Top-edge highlight on a raised surface. Source: base.foreground → Atlas default. Transform: alpha 0.06."
+              "description": "Top-edge highlight on a raised surface. Source: base.foreground → DeskMate default. Transform: alpha 0.06."
             },
             "element.hover": {
               "allOf": [
@@ -228,7 +228,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Hover overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.04."
+              "description": "Hover overlay for ordinary elements. Source: base.foreground → DeskMate default. Transform: alpha 0.04."
             },
             "element.selected": {
               "allOf": [
@@ -236,7 +236,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Selected overlay for ordinary elements. Source: base.foreground → Atlas default. Transform: alpha 0.06."
+              "description": "Selected overlay for ordinary elements. Source: base.foreground → DeskMate default. Transform: alpha 0.06."
             },
             "panel.background": {
               "allOf": [
@@ -244,7 +244,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Panel background. Source: base.sidebar → Atlas default."
+              "description": "Panel background. Source: base.sidebar → DeskMate default."
             },
             "panel.input.background": {
               "allOf": [
@@ -252,7 +252,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Panel input background. Source: base.background → Atlas default."
+              "description": "Panel input background. Source: base.background → DeskMate default."
             },
             "primary.hover": {
               "allOf": [
@@ -260,7 +260,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Hovered primary-brand fill. Source: base.primary → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "Hovered primary-brand fill. Source: base.primary → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "primary.muted": {
               "allOf": [
@@ -268,7 +268,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Muted primary-brand fill. Source: base.primary → Atlas default. Transform: alpha 0.06."
+              "description": "Muted primary-brand fill. Source: base.primary → DeskMate default. Transform: alpha 0.06."
             },
             "scrollbar.thumb.background": {
               "allOf": [
@@ -276,7 +276,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.16."
+              "description": "Scrollbar thumb. Source: base.foreground → DeskMate default. Transform: alpha 0.16."
             },
             "scrollbar.thumb.hover": {
               "allOf": [
@@ -284,7 +284,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Hovered scrollbar thumb. Source: base.foreground → Atlas default. Transform: alpha 0.26."
+              "description": "Hovered scrollbar thumb. Source: base.foreground → DeskMate default. Transform: alpha 0.26."
             },
             "search.match.active_background": {
               "allOf": [
@@ -292,7 +292,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "The match the cursor is on. Source: palette.yellow → Atlas default. Transform: alpha 0.5."
+              "description": "The match the cursor is on. Source: palette.yellow → DeskMate default. Transform: alpha 0.5."
             },
             "search.match.background": {
               "allOf": [
@@ -300,7 +300,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "A search match in the document. Source: palette.yellow → Atlas default. Transform: alpha 0.22."
+              "description": "A search match in the document. Source: palette.yellow → DeskMate default. Transform: alpha 0.22."
             },
             "selection.background": {
               "allOf": [
@@ -308,7 +308,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Document text selection. Source: base.primary → Atlas default. Transform: alpha 0.18."
+              "description": "Document text selection. Source: base.primary → DeskMate default. Transform: alpha 0.18."
             },
             "status.error.foreground": {
               "allOf": [
@@ -316,7 +316,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Error status foreground. Source: palette.red → base.destructive → Atlas default."
+              "description": "Error status foreground. Source: palette.red → base.destructive → DeskMate default."
             },
             "status.info.foreground": {
               "allOf": [
@@ -324,7 +324,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Informational status foreground. Source: palette.blue → Atlas default."
+              "description": "Informational status foreground. Source: palette.blue → DeskMate default."
             },
             "status.success.foreground": {
               "allOf": [
@@ -332,7 +332,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Success status foreground, and the live-capture indicator. Source: palette.green → Atlas default."
+              "description": "Success status foreground, and the live-capture indicator. Source: palette.green → DeskMate default."
             },
             "status.warning.foreground": {
               "allOf": [
@@ -340,7 +340,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Warning status foreground. Source: palette.yellow → Atlas default."
+              "description": "Warning status foreground. Source: palette.yellow → DeskMate default."
             },
             "syntax.attribute": {
               "allOf": [
@@ -348,7 +348,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Markup attributes. Source: palette.yellow → Atlas default."
+              "description": "Markup attributes. Source: palette.yellow → DeskMate default."
             },
             "syntax.comment": {
               "allOf": [
@@ -356,7 +356,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Comments and prose quotes. Source: base.muted-foreground → Atlas default."
+              "description": "Comments and prose quotes. Source: base.muted-foreground → DeskMate default."
             },
             "syntax.constant": {
               "allOf": [
@@ -364,7 +364,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Constants and atoms. Source: palette.orange → Atlas default."
+              "description": "Constants and atoms. Source: palette.orange → DeskMate default."
             },
             "syntax.definition": {
               "allOf": [
@@ -372,7 +372,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Definitions and strong prose. Source: base.foreground → Atlas default."
+              "description": "Definitions and strong prose. Source: base.foreground → DeskMate default."
             },
             "syntax.escape": {
               "allOf": [
@@ -380,7 +380,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Escape sequences. Source: palette.pink → Atlas default."
+              "description": "Escape sequences. Source: palette.pink → DeskMate default."
             },
             "syntax.function": {
               "allOf": [
@@ -388,7 +388,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Functions and headings. Source: palette.blue → base.primary → Atlas default."
+              "description": "Functions and headings. Source: palette.blue → base.primary → DeskMate default."
             },
             "syntax.keyword": {
               "allOf": [
@@ -396,7 +396,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Keywords and control flow. Source: palette.purple → Atlas default."
+              "description": "Keywords and control flow. Source: palette.purple → DeskMate default."
             },
             "syntax.number": {
               "allOf": [
@@ -404,7 +404,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Numbers. Source: palette.orange → Atlas default."
+              "description": "Numbers. Source: palette.orange → DeskMate default."
             },
             "syntax.operator": {
               "allOf": [
@@ -412,7 +412,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Operators. Source: palette.cyan → Atlas default."
+              "description": "Operators. Source: palette.cyan → DeskMate default."
             },
             "syntax.property": {
               "allOf": [
@@ -420,7 +420,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Properties and object keys. Source: palette.cyan → Atlas default."
+              "description": "Properties and object keys. Source: palette.cyan → DeskMate default."
             },
             "syntax.regexp": {
               "allOf": [
@@ -428,7 +428,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Regular expressions. Source: palette.red → Atlas default."
+              "description": "Regular expressions. Source: palette.red → DeskMate default."
             },
             "syntax.string": {
               "allOf": [
@@ -436,7 +436,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Strings. Source: palette.green → Atlas default."
+              "description": "Strings. Source: palette.green → DeskMate default."
             },
             "syntax.tag": {
               "allOf": [
@@ -444,7 +444,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Markup tags. Source: palette.red → Atlas default."
+              "description": "Markup tags. Source: palette.red → DeskMate default."
             },
             "syntax.type": {
               "allOf": [
@@ -452,7 +452,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Types, classes, and namespaces. Source: palette.cyan → Atlas default."
+              "description": "Types, classes, and namespaces. Source: palette.cyan → DeskMate default."
             },
             "syntax.variable": {
               "allOf": [
@@ -460,7 +460,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Variables. Source: base.foreground → Atlas default."
+              "description": "Variables. Source: base.foreground → DeskMate default."
             },
             "terminal.ansi.black": {
               "allOf": [
@@ -468,7 +468,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI black. Source: base.background → Atlas default. Transform: mix 0.12 toward base.foreground."
+              "description": "ANSI black. Source: base.background → DeskMate default. Transform: mix 0.12 toward base.foreground."
             },
             "terminal.ansi.blue": {
               "allOf": [
@@ -476,7 +476,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI blue. Source: palette.blue → Atlas default."
+              "description": "ANSI blue. Source: palette.blue → DeskMate default."
             },
             "terminal.ansi.bright_black": {
               "allOf": [
@@ -484,7 +484,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright black. Source: base.muted-foreground → Atlas default."
+              "description": "ANSI bright black. Source: base.muted-foreground → DeskMate default."
             },
             "terminal.ansi.bright_blue": {
               "allOf": [
@@ -492,7 +492,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright blue. Source: palette.blue → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright blue. Source: palette.blue → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_cyan": {
               "allOf": [
@@ -500,7 +500,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright cyan. Source: palette.cyan → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright cyan. Source: palette.cyan → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_green": {
               "allOf": [
@@ -508,7 +508,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright green. Source: palette.green → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright green. Source: palette.green → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_magenta": {
               "allOf": [
@@ -516,7 +516,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright magenta. Source: palette.purple → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright magenta. Source: palette.purple → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_red": {
               "allOf": [
@@ -524,7 +524,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright red. Source: palette.red → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright red. Source: palette.red → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.bright_white": {
               "allOf": [
@@ -532,7 +532,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright white. Source: base.foreground → Atlas default. Transform: lighten 0.18."
+              "description": "ANSI bright white. Source: base.foreground → DeskMate default. Transform: lighten 0.18."
             },
             "terminal.ansi.bright_yellow": {
               "allOf": [
@@ -540,7 +540,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI bright yellow. Source: palette.yellow → Atlas default. Transform: mix 0.15 toward base.foreground."
+              "description": "ANSI bright yellow. Source: palette.yellow → DeskMate default. Transform: mix 0.15 toward base.foreground."
             },
             "terminal.ansi.cyan": {
               "allOf": [
@@ -548,7 +548,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI cyan. Source: palette.cyan → Atlas default."
+              "description": "ANSI cyan. Source: palette.cyan → DeskMate default."
             },
             "terminal.ansi.green": {
               "allOf": [
@@ -556,7 +556,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI green. Source: palette.green → Atlas default."
+              "description": "ANSI green. Source: palette.green → DeskMate default."
             },
             "terminal.ansi.magenta": {
               "allOf": [
@@ -564,7 +564,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI magenta. Source: palette.purple → Atlas default."
+              "description": "ANSI magenta. Source: palette.purple → DeskMate default."
             },
             "terminal.ansi.red": {
               "allOf": [
@@ -572,7 +572,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI red. Source: palette.red → Atlas default."
+              "description": "ANSI red. Source: palette.red → DeskMate default."
             },
             "terminal.ansi.white": {
               "allOf": [
@@ -580,7 +580,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI white. Source: base.foreground → Atlas default."
+              "description": "ANSI white. Source: base.foreground → DeskMate default."
             },
             "terminal.ansi.yellow": {
               "allOf": [
@@ -588,7 +588,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "ANSI yellow. Source: palette.yellow → Atlas default."
+              "description": "ANSI yellow. Source: palette.yellow → DeskMate default."
             },
             "terminal.background": {
               "allOf": [
@@ -596,7 +596,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Terminal background. Source: base.background → Atlas default."
+              "description": "Terminal background. Source: base.background → DeskMate default."
             },
             "terminal.cursor": {
               "allOf": [
@@ -604,7 +604,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Terminal cursor. Source: base.foreground → Atlas default."
+              "description": "Terminal cursor. Source: base.foreground → DeskMate default."
             },
             "terminal.foreground": {
               "allOf": [
@@ -612,7 +612,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Terminal default foreground. Source: base.foreground → Atlas default."
+              "description": "Terminal default foreground. Source: base.foreground → DeskMate default."
             },
             "text.disabled": {
               "allOf": [
@@ -620,7 +620,7 @@
                   "$ref": "#/definitions/ThemeKeyValue"
                 }
               ],
-              "description": "Disabled and unavailable text. Source: base.muted-foreground → Atlas default. Transform: mix 0.2 toward base.background."
+              "description": "Disabled and unavailable text. Source: base.muted-foreground → DeskMate default. Transform: mix 0.2 toward base.background."
             }
           },
           "type": "object"

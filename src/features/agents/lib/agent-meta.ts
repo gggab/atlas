@@ -42,7 +42,7 @@ export function catalogEntry(agentTypeOrPluginId: string): AgentCatalogEntry | n
   return useAgentRegistryStore.getState().catalogById[agentTypeOrPluginId] ?? null;
 }
 
-/** The identities Atlas ships a brand mark and a fixed label for. Their chip
+/** The identities DeskMate ships a brand mark and a fixed label for. Their chip
  *  is the neutral `agent.chip.*` pair; their MARK is tinted from
  *  `agent-brand.ts`, which is a constant rather than a theme key (ADR-0002). */
 const FIRST_PARTY: readonly FirstPartyAgent[] = [

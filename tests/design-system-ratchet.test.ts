@@ -145,7 +145,7 @@ const EXEMPT_FILES: Record<string, string> = {
   "src/features/app/components/app-error-boundary.tsx":
     "The render-crash recovery screen remains independent of theme and style loading so it still works when either subsystem failed.",
   "src/features/theme/theme-key-registry.ts":
-    "Shape 1. The one table of Atlas's per-appearance default for every theme " +
+    "Shape 1. The one table of DeskMate's per-appearance default for every theme " +
     "key, so every entry is a colour literal by construction.",
   "src/features/agents/lib/agent-brand.ts":
     "Shape 2. The first-party agents' OWN brand colours — the one kind of " +

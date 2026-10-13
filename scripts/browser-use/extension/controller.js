@@ -10,7 +10,7 @@ export function validateEndpoint(value) {
     url.hash ||
     !/^\/extension\/[a-f0-9]{64}$/.test(url.pathname)
   )
-    throw new Error("Paste the local connection address from Atlas Browser controls.");
+    throw new Error("Paste the local connection address from DeskMate Browser controls.");
   return url.href;
 }
 
@@ -183,7 +183,7 @@ export class ExtensionController {
       for (const tabId of failed) this.targets.set(tabId, { targetId: "pending" });
       await this.api.action.setBadgeText({ text: "!" });
       throw new Error(
-        "Could not release browser debugging. Reload Atlas Browser in Extensions before continuing.",
+        "Could not release browser debugging. Reload DeskMate Browser in Extensions before continuing.",
       );
     }
     this.lastError = null;
@@ -244,7 +244,7 @@ export class ExtensionController {
         ...(this.groupId !== undefined ? { groupId: this.groupId } : {}),
       });
       await this.api.tabGroups.update(this.groupId, {
-        title: `Atlas · ${this.title || "Agent working"}`.slice(0, 100),
+        title: `DeskMate · ${this.title || "Agent working"}`.slice(0, 100),
         color: "blue",
         collapsed: false,
       });
@@ -308,7 +308,7 @@ export class ExtensionController {
         const handoff = tabs.filter((tab) => this.handoffTabs?.has(tab.id));
         if (handoff.length)
           await this.api.tabGroups.update(this.groupId, {
-            title: "Atlas · Waiting for handoff",
+            title: "DeskMate · Waiting for handoff",
             color: "orange",
           });
       } catch (error) {
@@ -329,7 +329,7 @@ export class ExtensionController {
     if (this.lastError) throw new Error(this.lastError);
     this.accessError = null;
     if (this.socket || this.disconnecting)
-      throw new Error("Disconnect the current Atlas session before connecting another.");
+      throw new Error("Disconnect the current DeskMate session before connecting another.");
     endpoint = validateEndpoint(endpoint);
     const generation = ++this.generation;
     this.permissions?.begin();
@@ -344,11 +344,11 @@ export class ExtensionController {
     this.sessions = new Map(atlasSessions.map((session) => [session.sessionId, session]));
     if (atlasHandoff?.tabs?.length && atlasHandoff.sessionId !== sessionId)
       throw new Error(
-        "Another session is waiting for handoff. Resume that session or release its waiting pages in Atlas Browser first.",
+        "Another session is waiting for handoff. Resume that session or release its waiting pages in DeskMate Browser first.",
       );
     if (atlasHandoff?.tabs?.length && !atlasHandoff.ready)
       throw new Error(
-        "Waiting for user takeover. After verification, send continue in the original Atlas chat.",
+        "Waiting for user takeover. After verification, send continue in the original DeskMate chat.",
       );
     const session = this.sessions.get(sessionId);
     const candidates = [
@@ -381,7 +381,10 @@ export class ExtensionController {
     try {
       await new Promise((resolve, reject) => {
         const timer = setTimeout(
-          () => reject(new Error("Atlas connection timed out. Prepare a new connection in Atlas.")),
+          () =>
+            reject(
+              new Error("DeskMate connection timed out. Prepare a new connection in DeskMate."),
+            ),
           10_000,
         );
         this.socket.onopen = () => {
@@ -390,7 +393,7 @@ export class ExtensionController {
         };
         this.socket.onerror = () => {
           clearTimeout(timer);
-          reject(new Error("Cannot connect to Atlas. Prepare a new connection in Atlas."));
+          reject(new Error("Cannot connect to DeskMate. Prepare a new connection in DeskMate."));
         };
       });
       const targetInfo =
@@ -421,7 +424,7 @@ export class ExtensionController {
           ...(this.groupId !== undefined ? { groupId: this.groupId } : {}),
         });
         await this.api.tabGroups.update(this.groupId, {
-          title: `Atlas · ${this.title}`.slice(0, 100),
+          title: `DeskMate · ${this.title}`.slice(0, 100),
           color: "blue",
           collapsed: false,
         });
@@ -525,7 +528,7 @@ export class ExtensionController {
       const tabs = await this.api.tabs.query({ groupId: atlasHandoff.groupId });
       if (tabs.length)
         await this.api.tabGroups.update(atlasHandoff.groupId, {
-          title: "Atlas · Retained pages",
+          title: "DeskMate · Retained pages",
           color: "blue",
         });
     }

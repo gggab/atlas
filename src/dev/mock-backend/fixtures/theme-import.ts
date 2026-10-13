@@ -125,10 +125,10 @@ const SHADCN: ThemeImportPreview = {
       fidelity: "native",
       variants: ["dark", "light"],
       summary: [
-        "shadcn themes describe application chrome only: Atlas's editor, terminal, syntax and diff keys fall back to the built-in defaults for the appearance.",
+        "shadcn themes describe application chrome only: DeskMate's editor, terminal, syntax and diff keys fall back to the built-in defaults for the appearance.",
       ],
       warnings: [
-        "`spacing` was kept in the theme file but Atlas ignores it — spacing and the type scale are app-owned (decision 20).",
+        "`spacing` was kept in the theme file but DeskMate ignores it — spacing and the type scale are app-owned (decision 20).",
       ],
       mapped: [
         {
@@ -168,7 +168,7 @@ const SHADCN: ThemeImportPreview = {
         {
           source: "--shadow-color, --shadow-opacity, --shadow-blur, …",
           category: "shadow recipe",
-          reason: "Atlas takes the composed shadow ramp, not the parts it was built from",
+          reason: "DeskMate takes the composed shadow ramp, not the parts it was built from",
           weight: 6,
         },
       ],
@@ -187,7 +187,7 @@ const ZED: ThemeImportPreview = {
       fidelity: "near-lossless",
       variants: ["dark"],
       summary: [
-        "Atlas's theme keys were modeled on Zed's roles, so the editor, terminal, syntax and diff colors transfer directly.",
+        "DeskMate's theme keys were modeled on Zed's roles, so the editor, terminal, syntax and diff colors transfer directly.",
         "Zed has no shadcn layer, so all 45 base tokens were derived from the style — check `primary`, `accent` and `card` first if the chrome looks off.",
       ],
       mapped: [
@@ -203,26 +203,26 @@ const ZED: ThemeImportPreview = {
         {
           source: "5 icon roles key(s)",
           category: "icon roles",
-          reason: "Atlas icons take their color from the text roles",
+          reason: "DeskMate icons take their color from the text roles",
           weight: 5,
         },
         {
           source: "9 app chrome key(s)",
           category: "app chrome",
-          reason: "Atlas's chrome follows the panel tokens",
+          reason: "DeskMate's chrome follows the panel tokens",
           weight: 9,
         },
         {
           source: "syntax.* (13 scopes)",
           category: "syntax scopes",
-          reason: "Atlas has 20 syntax roles; Zed's finer scopes collapse onto them",
+          reason: "DeskMate has 20 syntax roles; Zed's finer scopes collapse onto them",
           weight: 13,
         },
         {
           source: "syntax.keyword.font_style",
           category: "font styles",
           reason:
-            "an Atlas theme key carries a color only; the scope is imported with its color and no italics",
+            "an DeskMate theme key carries a color only; the scope is imported with its color and no italics",
           weight: 1,
         },
       ],
@@ -233,7 +233,7 @@ const ZED: ThemeImportPreview = {
       sourceName: "Rosé Pine Dawn",
       fidelity: "near-lossless",
       variants: ["light"],
-      summary: ["A family member becomes its own Atlas theme with a single appearance."],
+      summary: ["A family member becomes its own DeskMate theme with a single appearance."],
       mapped: [
         { target: "light.keys.border.subtle", source: "border", value: "#f4ede8ff" },
         { target: "light.keys.syntax.string", source: "syntax.string", value: "#ea9d34ff" },
@@ -243,13 +243,13 @@ const ZED: ThemeImportPreview = {
         {
           source: "5 icon roles key(s)",
           category: "icon roles",
-          reason: "Atlas icons take their color from the text roles",
+          reason: "DeskMate icons take their color from the text roles",
           weight: 5,
         },
         {
           source: "9 app chrome key(s)",
           category: "app chrome",
-          reason: "Atlas's chrome follows the panel tokens",
+          reason: "DeskMate's chrome follows the panel tokens",
           weight: 9,
         },
       ],
@@ -269,7 +269,7 @@ const VSCODE: ThemeImportPreview = {
       variants: ["dark"],
       summary: [
         "resolved `include`: ./vscode-base.json",
-        "a VS Code theme is a starting point, not a copy: it describes a workbench Atlas does not have, and Atlas's chrome (panels, tabs, comms, agent chips) is derived rather than stated.",
+        "a VS Code theme is a starting point, not a copy: it describes a workbench DeskMate does not have, and DeskMate's chrome (panels, tabs, comms, agent chips) is derived rather than stated.",
       ],
       warnings: [
         "`semanticTokenColors` carries 2 selectors with modifiers; a conditional rule cannot be applied unconditionally, so they were left out.",
@@ -291,26 +291,26 @@ const VSCODE: ThemeImportPreview = {
         {
           source: "18 editor furniture key(s)",
           category: "editor furniture",
-          reason: "minimap, rulers, indent guides, inlay hints — Atlas draws none of them",
+          reason: "minimap, rulers, indent guides, inlay hints — DeskMate draws none of them",
           weight: 18,
         },
         {
           source: "14 widget key(s)",
           category: "widget",
-          reason: "Atlas's popovers, menus and toasts follow the popover tokens",
+          reason: "DeskMate's popovers, menus and toasts follow the popover tokens",
           weight: 14,
         },
         {
           source: "9 app chrome key(s)",
           category: "app chrome",
-          reason: "Atlas's status and title bars follow the panel tokens",
+          reason: "DeskMate's status and title bars follow the panel tokens",
           weight: 9,
         },
         {
           source: "tokenColors (11 rules)",
           category: "textmate scopes",
           reason:
-            "Atlas has 20 syntax roles; grammar-specific and markup scopes have no equivalent",
+            "DeskMate has 20 syntax roles; grammar-specific and markup scopes have no equivalent",
           weight: 11,
         },
         {
@@ -323,7 +323,7 @@ const VSCODE: ThemeImportPreview = {
           source: "tokenColors[keyword].fontStyle",
           category: "font styles",
           reason:
-            "an Atlas theme key carries a color only; the scope is imported with its color and no italics",
+            "an DeskMate theme key carries a color only; the scope is imported with its color and no italics",
           weight: 3,
         },
       ],
@@ -404,8 +404,8 @@ function exportOf(id: string): ShadcnExport {
       dropped,
       droppedByCategory: countFamilies(theme),
       notes: [
-        "Base tokens cross verbatim: shadcn's names are Atlas's names, so the chrome is exact.",
-        `${dropped} Atlas values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff, comms and agent colors. To move this theme to another Atlas install, copy the TOML instead.`,
+        "Base tokens cross verbatim: shadcn's names are DeskMate's names, so the chrome is exact.",
+        `${dropped} DeskMate values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff, comms and agent colors. To move this theme to another DeskMate install, copy the TOML instead.`,
       ],
     },
   };

@@ -1,8 +1,8 @@
 # Theme import
 
-Converting a shadcn, Zed or VS Code theme into an Atlas theme file. The
+Converting a shadcn, Zed or VS Code theme into an DeskMate theme file. The
 conversion lives in `crates/atlas-theme/src/import/`; this page is the contract
-it implements — what each format can carry, what Atlas invents, and what it
+it implements — what each format can carry, what DeskMate invents, and what it
 leaves behind. Colour roles are in [`theme-keys.md`](./theme-keys.md).
 
 An import is a **one-time conversion** (decision 15). The output is an ordinary
@@ -13,12 +13,12 @@ edits; nothing keeps a link back to the source and nothing re-reads it.
 
 | format | fidelity | why |
 |---|---|---|
-| shadcn / tweakcn | **native** | Atlas's base tokens *are* shadcn's names (decision 9), so the chrome crosses verbatim |
-| Zed | **near-lossless** | Atlas's theme keys were modelled on Zed's roles; only the shadcn layer has to be invented |
+| shadcn / tweakcn | **native** | DeskMate's base tokens *are* shadcn's names (decision 9), so the chrome crosses verbatim |
+| Zed | **near-lossless** | DeskMate's theme keys were modelled on Zed's roles; only the shadcn layer has to be invented |
 | VS Code | **lossy** | a workbench theme and an app theme are different things |
 
 Every import returns a report — keys **mapped** (the source said this), **derived**
-(Atlas worked it out, and from what) and **ignored** (nowhere to put it, grouped
+(DeskMate worked it out, and from what) and **ignored** (nowhere to put it, grouped
 by category). The panel in Settings → Appearance → Import shows all three before
 anything is written.
 
@@ -30,7 +30,7 @@ Two steps run after every importer's own mapping, in this order.
 keys resolve through — the four status foregrounds, 12 of the 16 ANSI slots, 12
 of the 15 syntax roles, both search matches and both diff families — plus the
 four derived status fills on top of those. An import that skipped it would
-produce a theme whose editor is the author's and whose chrome is Atlas's. Each
+produce a theme whose editor is the author's and whose chrome is DeskMate's. Each
 colour is taken from the first of:
 
 | palette | source, in order |
@@ -47,7 +47,7 @@ colour is taken from the first of:
 **Required base tokens.** All 45 are mandatory, so anything the source did not
 supply is filled from a chain of tokens already set (`popover` → `card` →
 `background`, `input` → `border`, `ring` → `primary`, the chart ramp from the
-palette), then from Atlas's default for the appearance. Two are a contrast
+palette), then from DeskMate's default for the appearance. Two are a contrast
 question rather than a chain: `primary-foreground` and `destructive-foreground`
 pick whichever of a light or dark default reads against their surface.
 
@@ -62,10 +62,10 @@ Two source shapes, one mapping:
 - a pasted **`globals.css`** — `:root { --background: … }` plus `.dark { … }`,
   including `@theme inline` and `@layer base { :root { … } }`.
 
-**Maps.** Every shadcn token name straight onto the Atlas base token of the same
+**Maps.** Every shadcn token name straight onto the DeskMate base token of the same
 name, per variant, with `cssVars.theme` / `@theme` behind both. Colour values
 keep the author's notation: an oklch theme stays oklch. tweakcn's extras land
-where Atlas has a home — `font-sans` / `font-serif` / `font-mono`, `radius`,
+where DeskMate has a home — `font-sans` / `font-serif` / `font-mono`, `radius`,
 `tracking-normal` (also read from tweakcn's `--letter-spacing`) and the composed
 `shadow-2xs`…`shadow-2xl` ramp.
 
@@ -73,7 +73,7 @@ where Atlas has a home — `font-sans` / `font-serif` / `font-mono`, `radius`,
 which current shadcn registries no longer emit.
 
 **Drops.** `--shadow-color` / `-opacity` / `-blur` / `-spread` / `-offset-x` /
-`-offset-y` (Atlas takes the composed ramp, not its ingredients), a registry
+`-offset-y` (DeskMate takes the composed ramp, not its ingredients), a registry
 item's raw `css` block, and any CSS rule that is not `:root`, `.dark` or
 `@theme`. `--color-x: var(--x)` entries in `@theme inline` are re-exports, not
 values, and are skipped silently.
@@ -83,10 +83,10 @@ app-owned, so the value stays in the file — dropping it would lose the author'
 intent on a round trip — and the report warns that nothing honours it.
 
 **Not carried, by construction.** shadcn describes application chrome and stops
-there: no editor, no terminal, no syntax, no diff. *Every* Atlas theme key —
+there: no editor, no terminal, no syntax, no diff. *Every* DeskMate theme key —
 the set `crates/atlas-theme/keys.toml` declares and
 [`theme-keys.md`](./theme-keys.md) tabulates — resolves from the base tokens or
-from Atlas's defaults.
+from DeskMate's defaults.
 
 **Appearance.** `cssVars.light` / `cssVars.dark` are trusted. In pasted CSS,
 `:root` is the light variant *when a `.dark` block exists to be the other half*;
@@ -96,12 +96,12 @@ which the report says.
 ## Zed
 
 A family (`{name, author, themes: [{name, appearance, style}]}`) becomes **one
-Atlas theme per member**, each with the single variant its `appearance` names —
+DeskMate theme per member**, each with the single variant its `appearance` names —
 "Rosé Pine", "Moon" and "Dawn" are siblings, not variants of one design, which
 is also how the built-ins already treat that family.
 
-**Maps.** 44 style keys onto Atlas theme keys — 67 of the 73 in all, once the
-syntax and player maps are counted. Zed's border roles collapse onto Atlas's
+**Maps.** 44 style keys onto DeskMate theme keys — 67 of the 73 in all, once the
+syntax and player maps are counted. Zed's border roles collapse onto DeskMate's
 two: Zed's `border.variant` and `border.disabled` become `border.subtle`,
 `border.selected` becomes `border.strong`, and Zed's bare `border` and
 `border.focused` are not theme keys at all — they carry into the shadcn
@@ -110,26 +110,26 @@ transfer exactly. `players[0].cursor` becomes `editor.caret` and
 `terminal.cursor`; `players[0].selection` becomes `selection.background` and
 `editor.selection.background` — two keys, not three, because `terminal.selection`
 is derived from `primary` and no theme may set it. The `syntax` map collapses
-onto Atlas's 15 roles. `font_style` does **not** cross: an Atlas theme
+onto DeskMate's 15 roles. `font_style` does **not** cross: an DeskMate theme
 key is a colour, and the loader rejects a `font_style` by name rather than
 accept one nothing reads, so an italic scope imports upright and the drop is
 listed under "font styles".
 
 **Derives.** All 45 base tokens, since Zed has no shadcn layer. Every source
-below is a ZED style key, not an Atlas one. The judgements worth knowing:
+below is a ZED style key, not an DeskMate one. The judgements worth knowing:
 `primary` ← Zed's `text.accent`, `accent` ← Zed's `element.hover` (shadcn's
 `accent` is a hover *surface*, which is the audit's "accent collision"), `card`
 and `popover` ← `elevated_surface.background`, `sidebar` and `secondary` ←
 `surface.background`, `destructive` ← `error`, `ring` ← Zed's `border.focused`,
 the chart ramp ← the ANSI blue/green/yellow/magenta/red.
 
-**Drops**, by category: icon roles (Atlas icons follow the text roles), the
-`players[1..]` collaboration colours, editor furniture Atlas does not draw (wrap
+**Drops**, by category: icon roles (DeskMate icons follow the text roles), the
+`players[1..]` collaboration colours, editor furniture DeskMate does not draw (wrap
 guides, invisibles, subheaders, the read/write highlight pair), app chrome that
 follows the panel tokens (status bar, title bar, toolbar, tab bar, pane borders,
-drop targets), the VCS states Atlas has no colour for (`conflict`, `renamed`,
+drop targets), the VCS states DeskMate has no colour for (`conflict`, `renamed`,
 `ignored`, `hidden`, `unreachable`), `hint` and `predictive`, Zed's dim ANSI
-ramp, and whichever `syntax` scopes are finer than Atlas's 15 roles.
+ramp, and whichever `syntax` scopes are finer than DeskMate's 15 roles.
 
 ## VS Code
 
@@ -144,7 +144,7 @@ lightness.
 
 ### Workbench keys
 
-Mapped where an Atlas equivalent exists: `editor.background` / `.foreground` /
+Mapped where an DeskMate equivalent exists: `editor.background` / `.foreground` /
 `.lineHighlightBackground` / `.selectionBackground`,
 `editorCursor.foreground`, `editorGutter.background`, `editorLineNumber.*`,
 `editorBracketMatch.*`, `scrollbarSlider.background` / `.hoverBackground`,
@@ -165,10 +165,10 @@ and `sideBar.*`.
 
 Everything else is counted by category: editor furniture (minimap, rulers,
 indent guides, inlay hints, code lens, ghost text, and `editor.foldBackground` —
-Atlas draws the fold placeholder from the secondary surface), widgets (suggest,
+DeskMate draws the fold placeholder from the secondary surface), widgets (suggest,
 hover, peek, notifications, quick input, menus, breadcrumbs, debug, testing), app
 chrome (status bar, title bar, badges, panel and sidebar headers, welcome page,
-settings, keybinding labels, `activityBar.*`, and `tab.*` — Atlas's tab strip
+settings, keybinding labels, `activityBar.*`, and `tab.*` — DeskMate's tab strip
 follows the accent and sidebar tokens), text roles
 (`input.placeholderForeground`), VCS (merge editor, the rest of
 `gitDecoration`, the SCM panel), icon roles, and terminal decorations.
@@ -182,10 +182,10 @@ matching selector, later rules winning a tie**. A descendant selector
 (`meta.tag entity.name`) is a context rule, so only its rightmost element is
 considered.
 
-This importer inverts that: for each Atlas key it holds representative scopes
+This importer inverts that: for each DeskMate key it holds representative scopes
 and asks which rule VS Code would apply to each, first match winning.
 
-| Atlas key | scopes, in order |
+| DeskMate key | scopes, in order |
 |---|---|
 | `syntax.comment` | `comment`, `comment.line`, `punctuation.definition.comment` |
 | `syntax.keyword` | `keyword.control`, `keyword`, `storage.type`, `storage.modifier` |
@@ -214,7 +214,7 @@ surviving punctuation probe is `punctuation.definition.comment`.
 
 `settings.fontStyle: italic` is dropped and reported under "font styles"; the
 rule's `foreground` still lands. `markup.*` and grammar-specific scopes have no
-Atlas role and are counted as dropped too.
+DeskMate role and are counted as dropped too.
 
 ### Semantic tokens
 
@@ -231,12 +231,12 @@ applied unconditionally, so it is reported rather than used.
 
 ## Export
 
-`export_theme_shadcn` turns any Atlas theme into a `registry:style` item:
+`export_theme_shadcn` turns any DeskMate theme into a `registry:style` item:
 base tokens verbatim per appearance, with `radius`, the three font stacks,
 `tracking-normal` and `spacing` hoisted into `cssVars.theme`. Lossy in the
 mirror image of the shadcn importer — the palette and every theme key the
 source set describe surfaces shadcn has no vocabulary for and are dropped, with
-the counts by family in the result. To move a theme between two Atlas installs, copy the
+the counts by family in the result. To move a theme between two DeskMate installs, copy the
 TOML instead.
 
 ## Commands

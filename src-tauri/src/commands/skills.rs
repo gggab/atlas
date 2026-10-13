@@ -413,7 +413,7 @@ static TOOL_REGISTRY: LazyLock<[ToolDef; 3]> = LazyLock::new(|| {
         },
         ToolDef {
             id: ATLAS_TOOL_ID,
-            display_name: "Atlas",
+            display_name: "DeskMate",
             // The native in-process "Atlas" agent. Enabled skills are
             // symlinked into a DEDICATED dir that only the in-process `AtlasSkillTool`
             // reads — kept separate from `.agents/skills` (the canonical store) so this
@@ -651,8 +651,8 @@ fn bundled_skill(
             out.push_str(&format!("name: {DEV_BUNDLED_SKILL_NAME}{eol}"));
         } else if line.starts_with("description: ") {
             out.push_str(&format!(
-                "description: Inspect and safely update the preferences of Atlas Dev (a source \
-                 build of Atlas, run with `bun run dev:app`) through its own config.toml.{eol}"
+                "description: Inspect and safely update the preferences of DeskMate Dev (a source \
+                 build of DeskMate, run with `bun run dev:app`) through its own config.toml.{eol}"
             ));
         } else {
             out.push_str(
@@ -663,10 +663,10 @@ fn bundled_skill(
             if !noted && line.starts_with("# ") {
                 noted = true;
                 out.push_str(&format!(
-                    "{eol}> This copy is for **Atlas Dev**, a source build of Atlas (`bun run \
-                     dev:app`) that keeps its own data beside an installed Atlas. It edits Atlas \
-                     Dev's file, named below. The installed Atlas's `{installed_config}` is not \
-                     Atlas Dev's: leave it alone.{eol}"
+                    "{eol}> This copy is for **DeskMate Dev**, a source build of DeskMate (`bun run \
+                     dev:app`) that keeps its own data beside an installed DeskMate. It edits DeskMate \
+                     Dev's file, named below. The installed DeskMate's `{installed_config}` is not \
+                     DeskMate Dev's: leave it alone.{eol}"
                 ));
             }
         }
@@ -5906,7 +5906,7 @@ mod tests {
         // leave it alone.
         let outside_note: String = dev
             .lines()
-            .filter(|l| !l.starts_with("> This copy is for **Atlas Dev**"))
+            .filter(|l| !l.starts_with("> This copy is for **DeskMate Dev**"))
             .collect();
         assert!(!outside_note.contains("/atlas/config.toml"), "{dev}");
         assert!(!outside_note.contains("`.atlas/`"), "{dev}");
@@ -6002,7 +6002,7 @@ mod tests {
         let dev = skills_base(&root).join(DEV_BUNDLED_SKILL_NAME);
 
         ensure_bundled_skills_at(&root, Profile::Dev);
-        assert!(!installed.exists(), "seeded the installed Atlas's skill");
+        assert!(!installed.exists(), "seeded the installed DeskMate's skill");
         let (_, dev_md) = bundled_skill(&ATLAS_SELF_CONFIGURE, Profile::Dev);
         assert_eq!(fs::read_to_string(dev.join("SKILL.md")).unwrap(), dev_md);
         assert_eq!(

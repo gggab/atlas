@@ -30,7 +30,7 @@ function walk(directory: string): string[] {
   });
 }
 
-/** CSS engine variables are supplied by the popup engine at runtime, not Atlas. */
+/** CSS engine variables are supplied by the popup engine at runtime, not DeskMate. */
 const CSS_VAR_ALLOWLIST: Record<string, string> = {
   "--transform-origin": "Base UI runtime positioning",
   "--anchor-width": "Base UI runtime positioning",

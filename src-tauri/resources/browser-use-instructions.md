@@ -1,24 +1,24 @@
-# Atlas Browser Use
+# DeskMate Browser Use
 
 Use browser_status first. browser_start automatically connects the authorized
-Atlas Browser extension in daily Chrome/Edge. The same ACP session reuses its
+DeskMate Browser extension in daily Chrome/Edge. The same ACP session reuses its
 original group and restores its retained pages; a blank tab is created only when
 no existing page is available. After connecting, query browser.tabs.list() first,
 then reuse the appropriate page instead of opening the same URL again.
-First-time setup: the human opens Settings > Browser control in Atlas, chooses
+First-time setup: the human opens Settings > Browser control in DeskMate, chooses
 Chrome/Edge, and installs the extension from its store. Source builds use the
 local extension folder documented in development instructions. It connects automatically.
-Atlas manages installation guidance, connection and persistent global pause.
+DeskMate manages installation guidance, connection and persistent global pause.
 No addresses or secrets need to be copied. If setup is missing, explain these steps
 and wait. Never repeatedly retry an offline profile or copy a browser login profile.
 
 For browser tasks, open and navigate pages only through browser_start and
 browser_repl (cua.createBrowserTab, browser.tabs.new and tab.goto). Do not launch
 task links through PowerShell Start-Process, cmd start, shell browser commands,
-OS URL handlers or another browser surface. These pages bypass Atlas task
+OS URL handlers or another browser surface. These pages bypass DeskMate task
 ownership and grouping. Do not use them to avoid cleanup, website approval,
 verification or an offline tool. Use markKeep() to preserve pages instead.
-If Atlas browser tools are unavailable or reject access, report it and stop;
+If DeskMate browser tools are unavailable or reject access, report it and stop;
 never substitute a system browser launch. External CLI shell permissions remain
 owned by the CLI; this instruction is not an OS sandbox.
 
@@ -94,7 +94,7 @@ you explicitly markKeep(), markDeliverable() or markHandoff() before cleanup.
 No website/content category forces your decision. Existing user tabs/windows
 and login always remain, regardless of markers.
 Finished/failed turns detach debugging and clear handles. Retained ordinary pages
-stay in their original Atlas task group and do not require human continuation or
+stay in their original DeskMate task group and do not require human continuation or
 block the next turn. Keep/result decisions survive reconnection; markTemporary()
 can change a previously retained owned page to close at the next cleanup. New
 pages join this session's existing group. If every group page is closed, the
@@ -103,8 +103,8 @@ Do not ungroup retained pages or reopen them through the OS.
 Use await tab.markHandoff() only when returning control for human intervention.
 Before asking the human to complete login/CAPTCHA, mark the necessary page for
 handoff. The extension's Take over this page retains the necessary page and
-releases debugging. Ask the user to send continue (or 继续) in the original Atlas
-chat after verification. Atlas treats that human message as returning control;
+releases debugging. Ask the user to send continue (or 继续) in the original DeskMate
+chat after verification. DeskMate treats that human message as returning control;
 no extra extension click is needed. Never retake control while they are working.
 Then browser_start resumes retained pages
 automatically, with fresh JS handles. Resumed pages return to temporary task state;

@@ -418,7 +418,10 @@ mod tests {
         let catalog = build(&host);
         let found = entry(&catalog, "found-agent");
         assert_eq!(found.source, source::DETECTED);
-        assert!(!found.installed, "Atlas did not install it — the user did");
+        assert!(
+            !found.installed,
+            "DeskMate did not install it — the user did"
+        );
         assert_eq!(
             found.resolved_path.as_deref(),
             Some("/usr/local/bin/found-agent")

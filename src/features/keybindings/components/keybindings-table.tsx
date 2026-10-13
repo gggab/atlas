@@ -165,7 +165,7 @@ export function KeybindingsTable({
             <div key={id} className={cn(GRID, "h-[28px] px-2 text-xs text-muted-foreground")}>
               <span />
               <span className="truncate font-mono text-xs">{id}</span>
-              <span className="text-muted-foreground">not in this version of Atlas</span>
+              <span className="text-muted-foreground">not in this version of DeskMate</span>
               <span />
               <button
                 type="button"

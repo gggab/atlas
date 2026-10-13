@@ -32,14 +32,14 @@ const INJECTED_CORES = [
 const MEMORY_ENVELOPE_OPEN = "<atlas-memory>";
 const MEMORY_ENVELOPE_CLOSE = "</atlas-memory>";
 
-/** One Atlas-injected context block, recovered rather than discarded. */
+/** One DeskMate-injected context block, recovered rather than discarded. */
 export interface InjectedBlock {
   /** The marker's label — `SHARED MEMORY`, `RELEVANT PROJECT MEMORY`, … */
   label: string;
   body: string;
 }
 
-/** Split Atlas-injected context out of a prompt, returning both halves — the
+/** Split DeskMate-injected context out of a prompt, returning both halves — the
  *  `<atlas-memory>` envelope and the bare `--- LABEL ---` … `--- END LABEL ---`
  *  blocks it wraps. Line-based and position-agnostic; mirrors the Rust
  *  `strip_injected_context`.
@@ -106,7 +106,7 @@ export function extractInjectedContext(text: string): {
   return { prose: out.join("\n").trim(), blocks };
 }
 
-/** Strip Atlas-injected context blocks, keeping only the prose. */
+/** Strip DeskMate-injected context blocks, keeping only the prose. */
 export function stripInjectedContext(text: string): string {
   return extractInjectedContext(text).prose;
 }

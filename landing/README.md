@@ -1,6 +1,9 @@
-# Atlas landing site
+# DeskMate landing site
 
-Static landing page for [tryatlas.cc](https://www.tryatlas.cc/). Pure
+Static DeskMate landing source, derived from upstream Atlas. No deployment
+domain is assigned to this fork. Set its canonical and absolute preview-image
+URLs before publishing. Historical feature demos remain design references;
+[the main README](../README.md) defines the current local-workbench scope. Pure
 HTML + CSS + a tiny inline script, no build step, no framework, no Node
 dependency. The whole folder is what Vercel uploads.
 
@@ -18,7 +21,7 @@ landing/
 └── README.md             # this file
 ```
 
-Total deploy: ~1.3 MB. The Atlas product mock is rendered inline via CSS
+Total deploy: ~1.3 MB. The DeskMate product mock is rendered inline via CSS
 (see `.pw-*` / `.pm-*` classes in `index.html`) rather than embedded as
 screenshots, so we don't ship a screenshots directory.
 
@@ -103,7 +106,7 @@ sed -i '' 's|v0.2.6|v0.2.7|g' landing/index.html
 
 ## Image sizes (heads up)
 
-The page itself renders the Atlas mock inline via CSS (no screenshot
+The page itself renders the DeskMate mock inline via CSS (no screenshot
 embedding), so the only image we ship is `uploads/home.png` (~1 MB) —
 used as the Open Graph / Twitter preview when the URL is shared. Total
 deploy footprint is ~1.3 MB. No optimization needed for launch.

@@ -1270,7 +1270,7 @@ impl AcpThread {
                     // `title()` is in another crate, and the one that keeps a
                     // title the user never sees is the one that shows it.
                     if is_host_machinery_title(&title) {
-                        tracing::debug!(%title, "ignoring agent title naming Atlas's own prompt machinery");
+                        tracing::debug!(%title, "ignoring agent title naming DeskMate's own prompt machinery");
                         return Ok(());
                     }
                     if self.title.as_ref() != Some(&title) {

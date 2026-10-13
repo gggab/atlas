@@ -23,16 +23,16 @@ export type AgentSource =
   /** Nothing runnable — no install, no runner. */
   | "unavailable";
 
-/** `"builtin"` is deliberately absent: Atlas ships no external agents of its
+/** `"builtin"` is deliberately absent: DeskMate ships no external agents of its
  *  own (ADR-0002), so every agent is either the native one or external. */
 export type AgentKind = "native" | "external";
 
-/** Whether the agent keeps a record Atlas can read. `claude_jsonl` is gone:
+/** Whether the agent keeps a record DeskMate can read. `claude_jsonl` is gone:
  *  Atlas no longer parses `~/.claude/projects` (ADR-0001), so the only agent
  *  with a readable store of its own is the native one. */
 export type AgentTranscript = "none" | "native";
 
-/** The CLI login Atlas can run for this agent right now. Absent means "there
+/** The CLI login DeskMate can run for this agent right now. Absent means "there
  *  is no command to offer" — NOT "this agent has no sign-in". */
 export interface AgentLoginSpec {
   program: string;

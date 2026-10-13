@@ -90,7 +90,7 @@ function TierGroup({ tier, masterOn }: { tier: NotificationTier; masterOn: boole
       {tier === "needs-you" && (
         <SettingRow
           label="Banner actions on permission requests"
-          description="Show Allow once and Deny on a permission banner, so you can answer without opening Atlas. Off: the banner only opens the session."
+          description="Show Allow once and Deny on a permission banner, so you can answer without opening DeskMate. Off: the banner only opens the session."
         >
           <Toggle
             checked={settings.notifyPermissionActions}
@@ -127,7 +127,7 @@ export function NotificationsSettings() {
     <>
       <SectionTitle
         title="Notifications"
-        subtitle="What Atlas tells you, and how loudly. Nothing fires while you are looking at the thing it is about."
+        subtitle="What DeskMate tells you, and how loudly. Nothing fires while you are looking at the thing it is about."
       />
       <SettingRow
         label="Notifications"

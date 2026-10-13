@@ -79,7 +79,7 @@ export function ProvidersSettings() {
     if (!loaded) void load();
   }, [loaded, load]);
 
-  /** provider id → the entry Atlas resolved for it (any recognised spelling). */
+  /** provider id → the entry DeskMate resolved for it (any recognised spelling). */
   const byProvider = useMemo(() => {
     const m: Record<string, EnvEntry> = {};
     for (const e of entries) if (!m[e.provider]) m[e.provider] = e;
@@ -308,7 +308,7 @@ function ProviderTableRow({
           ) : (
             <span
               className="flex items-center gap-1 text-2xs font-medium text-muted-foreground border border-border rounded-full px-1.5 h-[18px]"
-              title="Set outside your shell profile — Atlas can read it but not edit it."
+              title="Set outside your shell profile — DeskMate can read it but not edit it."
             >
               <Lock size={9} />
               environment
@@ -393,7 +393,7 @@ function ProviderEditor({
     <div className="bg-[var(--card)]/40 border-t border-border-subtle px-3 py-3">
       {readOnly && (
         <p className="mb-2.5 max-w-[640px] text-xs leading-snug text-muted-foreground">
-          <span className="font-mono">{envVar}</span> is set outside your shell profile — Atlas
+          <span className="font-mono">{envVar}</span> is set outside your shell profile — DeskMate
           found it in the environment but not in any file it reads, so it can&apos;t edit or remove
           it here. Change it wherever it&apos;s exported (a login script, launchd, or a wrapper).
         </p>

@@ -290,7 +290,7 @@ impl Runtime {
                 drop(live);
                 self.changed();
                 return Ok(
-                    serde_json::json!({"status":"authorization_required","approval_id":id,"instruction":"Wait for the user to approve in Atlas, then call ssh_connect again. Do not retry a denied request."}),
+                    serde_json::json!({"status":"authorization_required","approval_id":id,"instruction":"Wait for the user to approve in DeskMate, then call ssh_connect again. Do not retry a denied request."}),
                 );
             }
             if let Some(s) = live.sessions.values().find(|s| {

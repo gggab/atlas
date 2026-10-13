@@ -499,9 +499,9 @@ function ComposerGroupsMenu({
                     );
                   })}
                 </div>
-                {/* And what you could have. Atlas ships no ACP agents (ADR-0002),
+                {/* And what you could have. DeskMate ships no ACP agents (ADR-0002),
                     so without this a fresh profile's picker lists exactly one
-                    thing and reads like Atlas supports one agent. */}
+                    thing and reads like DeskMate supports one agent. */}
                 <FeaturedAgentOffers
                   onInstalled={(agentType) => {
                     onSwitchAgent(agentType as SwitchableAgent);
@@ -684,7 +684,7 @@ export function MessageInput({
   running = false,
   stopping = false,
   disabled: disabledProp = false,
-  placeholder = "Message Atlas... (@ to mention, / for commands)",
+  placeholder = "Message DeskMate... (@ to mention, / for commands)",
 }: MessageInputProps) {
   const { enqueueMessage, removeQueueItem, setAcpModes, setAcpModesPending } =
     useChatStore.use.actions();
@@ -1717,7 +1717,7 @@ export function MessageInput({
         {/* The no-grant setup state (D15a), tucked into the top of the
             composer — the explanation for the input being locked below.
             Scoped to the native agent for the same reason the lock is: the
-            other agents do not use the Atlas gateway, so an org with no grant
+            other agents do not use the DeskMate gateway, so an org with no grant
             is not their problem and a bar over a working composer is noise. */}
 
         {/* The tab's agent was uninstalled — same strip, same reason: the

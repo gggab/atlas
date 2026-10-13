@@ -64,7 +64,7 @@ const SEEDS: Seed[] = [
   ["github", "clone", "acme/design-tokens", { sizeMb: 12.4 }],
   ["project", "open", "acme-app", { path: MOCK_PROJECT.path }],
   ["system", "index", "Codebase index rebuilt — 1,284 files", { durationMs: 8_120 }],
-  ["atlas", "settings", "Theme changed to Atlas Dark", { theme: "atlas-dark" }],
+  ["atlas", "settings", "Theme changed to DeskMate Dark", { theme: "atlas-dark" }],
 ];
 
 function seedEntries(): LogEntry[] {

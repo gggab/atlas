@@ -89,7 +89,7 @@ fn render_puts_claude_md_first_then_rules_with_their_scope() {
     )
     .unwrap();
 
-    assert!(inner.starts_with("<!-- Mirrored by Atlas"));
+    assert!(inner.starts_with("<!-- Mirrored by DeskMate"));
     let claude = inner.find("## Mirrored from `CLAUDE.md`").unwrap();
     let a = inner.find("## Mirrored from `.claude/rules/a.md`").unwrap();
     let b = inner.find("## Mirrored from `.claude/rules/b.md`").unwrap();
@@ -176,7 +176,7 @@ fn a_marker_quoted_in_the_users_text_is_not_the_block() {
     let user = format!(
         "# Notes
 
-Atlas keeps a block between `{BLOCK_START}` and `{BLOCK_END}` at the end.
+DeskMate keeps a block between `{BLOCK_START}` and `{BLOCK_END}` at the end.
 Keep this line.
 "
     );
@@ -371,7 +371,7 @@ fn a_source_documenting_the_markers_is_not_mirrored_and_nothing_grows() {
     let dir = project();
     let root = dir.path();
     fs::write(root.join("AGENTS.md"), "mine\n").unwrap();
-    let claude = format!("Atlas writes:\n\n```\n{BLOCK_START}\n...\n{BLOCK_END}\n```\n");
+    let claude = format!("DeskMate writes:\n\n```\n{BLOCK_START}\n...\n{BLOCK_END}\n```\n");
     fs::write(root.join("CLAUDE.md"), &claude).unwrap();
     for _ in 0..3 {
         assert_eq!(

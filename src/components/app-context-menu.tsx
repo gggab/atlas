@@ -106,7 +106,7 @@ function MenuItem({
 }: {
   icon: React.ReactNode;
   label: string;
-  /** A literal hint (native shortcuts like ⌘C that Atlas doesn't own). */
+  /** A literal hint (native shortcuts like ⌘C that DeskMate doesn't own). */
   shortcut?: string;
   /** A registry action — the hint follows the active keybinding profile. */
   actionId?: ActionId;

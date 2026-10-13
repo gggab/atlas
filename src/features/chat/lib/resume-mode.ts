@@ -83,7 +83,7 @@ function requestedMode(tabId: string): { isClaude: boolean; requested: string | 
   };
 }
 
-/** A mode's display name: what the agent calls it, else Atlas's own label
+/** A mode's display name: what the agent calls it, else DeskMate's own label
  *  for a Claude mode, else its id (a mode the agent no longer offers). */
 export function modeName(id: string, modes: readonly SessionModeInfo[]): string {
   return (

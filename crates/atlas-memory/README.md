@@ -1,10 +1,10 @@
 # atlas-memory — local shared memory
 
-This Tauri-free crate owns the on-device MiniLM embeddings, persistent usearch HNSW index, document store, SQLite memory records and cross-project global promotion. It has no native-agent or Atlas account dependency.
+This Tauri-free crate owns the on-device MiniLM embeddings, persistent usearch HNSW index, document store, SQLite memory records and cross-project global promotion. It has no native-agent or DeskMate account dependency.
 
 The app layer (`agent_memory`, `memory_indexer`, `memory_retrieve`, `shared_memory` and `memory_server`) gathers the corpus and exposes it to external ACP agents. An enabled project offers the loopback MCP tools `memory_briefing`, `memory_changes`, `memory_search`, `memory_get`, `memory_list`, `memory_remember` and `memory_forget`. Session-bound local tokens authorize each caller; they are independent of vendor subscription login.
 
-Repository worktrees resolve to the same main-worktree scope. Plans, completed tool calls and assistant turns are recorded locally. Durable facts and decisions can be written explicitly through `memory_remember` and viewed in Memory → Shared. The removed Atlas gateway no longer runs automatic extraction, and prompts are not given a new memory injection path.
+Repository worktrees resolve to the same main-worktree scope. Plans, completed tool calls and assistant turns are recorded locally. Durable facts and decisions can be written explicitly through `memory_remember` and viewed in Memory → Shared. The removed DeskMate gateway no longer runs automatic extraction, and prompts are not given a new memory injection path.
 
 ## Storage and indexing
 

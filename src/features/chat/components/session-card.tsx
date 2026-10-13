@@ -201,7 +201,7 @@ export function SidebarAgentIcon({ agent }: { agent: SidebarAgent }) {
 // ── Card ───────────────────────────────────────────────────────────────────
 
 export interface SessionCardProps {
-  /** Atlas's id for the thread — what the handlers are called with. */
+  /** DeskMate's id for the thread — what the handlers are called with. */
   threadId: string;
   title: string;
   projectName: string;
@@ -334,7 +334,7 @@ export const SessionCard = memo(function SessionCard({
       </div>
 
       {/* Hover actions (archive, delete) — they take the status's place. Both
-          work for every agent: the row is Atlas's, so neither depends on
+          work for every agent: the row is DeskMate's, so neither depends on
           reaching the agent that produced it. */}
       <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100">
         <Hint label="Archive — keeps it in History">

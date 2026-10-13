@@ -103,7 +103,7 @@ mod tests {
             schema: 1,
             id: "test".into(),
             name: "Test".into(),
-            author: "Atlas".into(),
+            author: "DeskMate".into(),
             license: "MIT".into(),
             dark: dark.map(variant),
             light: light.map(variant),

@@ -103,12 +103,12 @@ pub fn to_shadcn_registry_item(theme: &Theme) -> ShadcnExport {
 
     let dropped = dropped_by_category.values().sum();
     let mut notes = vec![
-        "Base tokens cross verbatim: shadcn's names are Atlas's names, so the chrome is exact."
+        "Base tokens cross verbatim: shadcn's names are DeskMate's names, so the chrome is exact."
             .to_string(),
     ];
     if dropped > 0 {
         notes.push(format!(
-            "{dropped} Atlas values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff and agent colors. To move this theme to another Atlas install, copy the TOML instead."
+            "{dropped} DeskMate values have no shadcn equivalent and were dropped — the editor, terminal, syntax, diff and agent colors. To move this theme to another DeskMate install, copy the TOML instead."
         ));
     }
     if theme.light.is_none() || theme.dark.is_none() {

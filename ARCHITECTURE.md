@@ -1,12 +1,13 @@
-# Atlas改 architecture
+# 同桌 DeskMate architecture
 
-The fork's display names are `Atlas改` and `Atlas改 Dev`, sourced from
+The fork's display names are `同桌 DeskMate` and `同桌 DeskMate Dev`, sourced from
 `atlas-profile` and matching Tauri product names. Existing bundle identifiers,
 storage paths, native host names and extension IDs are retained for compatibility.
+See [Branding](docs/reference/branding.md) for the naming boundary.
 
-Deep technical reference for Atlas. The README has the pitch and feature list; this has the file paths and invariants.
+Deep technical reference for DeskMate. The README has the pitch and feature list; this has the file paths and invariants.
 
-Atlas is a Tauri v2 desktop app: a React 19 frontend talking to a Rust backend over IPC. Almost every real feature crosses the whole stack:
+DeskMate is a Tauri v2 desktop app: a React 19 frontend talking to a Rust backend over IPC. Almost every real feature crosses the whole stack:
 
 ```
 src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (invoke + listen)
@@ -23,7 +24,7 @@ src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (inv
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│                          Atlas (Tauri shell)                           │
+│                          DeskMate (Tauri shell)                           │
 │                                                                        │
 │  ┌─────────────────────────────┐    ┌───────────────────────────────┐ │
 │  │  React 19 frontend          │    │  Rust backend                  │ │
@@ -158,7 +159,7 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 
 ## Agent runtime
 
-Atlas's agent stack hosts external ACP subprocesses speaking JSON-RPC over stdio. Vendor CLIs own credentials, subscription and model availability; there is no Atlas account, cloud organization or native execution engine.
+DeskMate's agent stack hosts external ACP subprocesses speaking JSON-RPC over stdio. Vendor CLIs own credentials, subscription and model availability; there is no DeskMate account, cloud organization or native execution engine.
 
 A fresh profile has no installed agents. PATH detection offers an install, and the installed map is the sole source of runnable agents. Before hydration or installation, selection stays empty; selecting and installing an external agent enables a session.
 
@@ -180,7 +181,7 @@ Three layers sit between the connection and the IPC surface:
 
 - **`AgentManager`** (`crates/atlas-agent-manager`) owns who is connected and which sessions are open on them — ported from Zed's `AgentConnectionStore`. Three behaviours worth knowing: a second connect request while the first is still connecting *joins* it rather than starting a second process; a failed connection does not stick (the entry records the error for waiters, then goes, so the next request retries instead of replaying the failure forever); and a version bump drops the connection, because the running process is on the old binary. Every eviction path also forgets that agent's sessions and cancels any connect still in flight — a session pins the connection `Arc`, so one left behind keeps a child alive that nothing, including the shutdown sweep, can reach.
 - **`AgentHost`** (`src-tauri/src/commands/agent_host.rs`) is what `commands/agents.rs` talks to. It holds the three things the ported stack deliberately does not do: the **identity map** between the frontend's per-spawn `AgentId`/`SessionKey` and the manager's own keys, the **history** row kept current in the thread-metadata store, and cheap **session metadata** (`snapshot_meta`) on the send path.
-- **`DeltaProjector`** (`crates/atlas-agent-delta`) turns thread events into the wire the rest of Atlas consumes.
+- **`DeltaProjector`** (`crates/atlas-agent-delta`) turns thread events into the wire the rest of DeskMate consumes.
 
 ### The session-delta wire
 
@@ -200,7 +201,7 @@ the extension connects automatically without an address or host selector.
 The packaged Chrome store key fixes both local and store extension identity.
 The native host accepts the exact Chrome and Edge store origins through a shared
 allowlist. Installation opens the chosen browser's assigned HTTPS store item in
-both app profiles. Store extensions target released Atlas; Atlas Dev source testing
+both app profiles. Store extensions target released DeskMate; DeskMate Dev source testing
 uses the documented local extension setup with the Chrome manifest key.
 A session Node REPL connects via a loopback extension relay
 and Playwright's CDP transport to user-shared Chrome/Edge tabs. The Manifest V3
@@ -229,12 +230,12 @@ resumption; ordinary chats without a waiting browser task send no handoff reques
 The frontend passes the original human text separately from the enriched Agent
 prompt; only that original text is matched for continuation. Recorded-turn
 replays omit it and cannot authorize a new handoff.
-Atlas's embedded WebView and CLI vendor authentication remain separate. See
+DeskMate's embedded WebView and CLI vendor authentication remain separate. See
 `docs/reference/browser-use.md` for setup, API and verification boundaries.
 
 ### Local memory MCP
 
-`commands/memory_server/` serves `/mcp` over a loopback listener. `MemorySessionOffers` offers it to sessions advertising HTTP MCP and whose project enables memory sharing. Ephemeral bearer tokens bind calls to session id, agent and cwd. They are local authorization, not Atlas account tokens. Tokens are revoked on session shutdown. Memory tools, sharing gates, scope resolution, retrieval, import and management UI remain.
+`commands/memory_server/` serves `/mcp` over a loopback listener. `MemorySessionOffers` offers it to sessions advertising HTTP MCP and whose project enables memory sharing. Ephemeral bearer tokens bind calls to session id, agent and cwd. They are local authorization, not DeskMate account tokens. Tokens are revoked on session shutdown. Memory tools, sharing gates, scope resolution, retrieval, import and management UI remain.
 
 Automatic gateway extraction is removed. Delta capture still records relevant events locally, and MCP `memory_remember` / `memory_forget` remain active. Indexing uses existing local embedding models. Optional existing BYOK summarization / research / session chat are separate, user-configured features; none is needed to launch an ACP CLI or persist memory.
 
@@ -246,8 +247,8 @@ Deltas return over the single `atlas:agents` channel, payload-typed by `kind`.
 
 ### Three invariants
 
-- **Atlas owns its history.** The sidebar reads the app-owned thread-metadata store (`crates/atlas-thread-metadata`, `threads.db`) and nothing else. Atlas does not read any agent CLI's private storage to build history — the per-agent scrape readers were deleted and must not come back. See [ADR-0001](docs/adr/0001-app-owned-thread-metadata-store.md), and `CONTEXT.md` for the thread/session/draft/archive vocabulary.
-- **A thread is not a session.** A *thread* is the conversation Atlas tracks, keyed by an id Atlas mints; it exists before any agent process and outlives one forgetting the session. A *session* is the agent-side conversation, keyed by an ACP session id. A thread references at most one session. Collapsing the two is the mistake the old `acpSessionId`-as-filename design made.
+- **DeskMate owns its history.** The sidebar reads the app-owned thread-metadata store (`crates/atlas-thread-metadata`, `threads.db`) and nothing else. DeskMate does not read any agent CLI's private storage to build history — the per-agent scrape readers were deleted and must not come back. See [ADR-0001](docs/adr/0001-app-owned-thread-metadata-store.md), and `CONTEXT.md` for the thread/session/draft/archive vocabulary.
+- **A thread is not a session.** A *thread* is the conversation DeskMate tracks, keyed by an id DeskMate mints; it exists before any agent process and outlives one forgetting the session. A *session* is the agent-side conversation, keyed by an ACP session id. A thread references at most one session. Collapsing the two is the mistake the old `acpSessionId`-as-filename design made.
 - **Streams are tab-independent.** The projector owns the broadcast, not any UI component — concurrent prompts in several tabs keep streaming regardless of focus. Switching tabs resubscribes; no in-flight state is created, paused, or lost.
 
 **PATH resolution.** macOS strips `PATH` from GUI-launched processes, so a bundled `.app` cannot see a user-installed agent CLI that a terminal in the same account finds fine. `crates/atlas-agent-servers/src/host_env.rs` resolves the real one: a fast guessed pass, then the user's actual login-shell `PATH` via `$SHELL -lc 'echo $PATH'` under a short timeout, because no static guess covers every version manager.
@@ -266,8 +267,8 @@ First-party crates use the root workspace, `Cargo.lock` and `target/`. There are
 | `atlas-agent-manager` | Who is connected, and which sessions are open on them. Ported from Zed's `AgentConnectionStore`, with the session ownership Zed spreads across its per-agent view folded in. |
 | `atlas-agent-delta` | Projects ported-thread events into the `SessionDelta` wire. Reconciles the thread's one-entry-per-message model with the wire's one-message-per-contiguous-run model. |
 | `atlas-agent-wire` | The additive-only session-delta wire shapes, enforced by `tests/contract.rs`. |
-| `atlas-agent-transcript` | Where an agent keeps its record of a conversation, and how to read Atlas's own text back out of one. The Claude JSONL replay it used to hold is gone. |
-| `atlas-thread-metadata` | The app-owned thread-metadata store (`threads.db`) — Atlas's only source for the sidebar and history. Metadata only, never transcript content. Ported from Zed's `ThreadMetadataStore`. See ADR-0001. |
+| `atlas-agent-transcript` | Where an agent keeps its record of a conversation, and how to read DeskMate's own text back out of one. The Claude JSONL replay it used to hold is gone. |
+| `atlas-thread-metadata` | The app-owned thread-metadata store (`threads.db`) — DeskMate's only source for the sidebar and history. Metadata only, never transcript content. Ported from Zed's `ThreadMetadataStore`. See ADR-0001. |
 | `atlas-bus` | Event broadcaster + middleware pipeline seam: a `tokio::sync::broadcast`-backed fan-out (lagging subscribers drop rather than block the producer), plus `OutboundPipeline`. Generic — no dependency on any agent or ACP type. |
 
 ### Everything else
@@ -288,7 +289,7 @@ First-party crates use the root workspace, `Cargo.lock` and `target/`. There are
 
 ## Persistence
 
-Most app state is plain files, by design — but **three subsystems are SQLite**, and all are Atlas's own databases rather than anyone else's:
+Most app state is plain files, by design — but **three subsystems are SQLite**, and all are DeskMate's own databases rather than anyone else's:
 
 | Store | Path | Crate |
 |---|---|---|
@@ -298,7 +299,7 @@ Most app state is plain files, by design — but **three subsystems are SQLite**
 
 `<app-config-dir>` is Tauri's `app_config_dir()` — `~/Library/Application Support/dev.atlas.ide/` on macOS. History is global because threads are grouped *across* projects; the checkpoint record is per-project because a Timeline is about one worktree. Shared memory is per *repository*: its scope root is the main worktree (found through the git common dir), or the launch directory outside git, so every worktree of a repository shares one record.
 
-**Atlas does not read another program's storage to build session history.** The per-agent scrape readers are deleted (ADR-0001). Two deliberate reads of CLI directories remain and are not history: the checkpoint importer, under its own preserved contract, and the memory/skills surfaces, which read instruction files (`CLAUDE.md`, `AGENTS.md`, skills) as documents. `CONTEXT.md` records one flagged exception — the Memory panel's Codex thread list.
+**DeskMate does not read another program's storage to build session history.** The per-agent scrape readers are deleted (ADR-0001). Two deliberate reads of CLI directories remain and are not history: the checkpoint importer, under its own preserved contract, and the memory/skills surfaces, which read instruction files (`CLAUDE.md`, `AGENTS.md`, skills) as documents. `CONTEXT.md` records one flagged exception — the Memory panel's Codex thread list.
 
 Everything else is per-project files under `<project-root>/.atlas/`:
 
@@ -328,7 +329,7 @@ Everything else is per-project files under `<project-root>/.atlas/`:
 └── log/pinned.jsonl          pinned activity-log rows (survive restart)
 ```
 
-**Profiles.** Every name above belongs to the default profile. `bun run dev:app` builds with `src-tauri/tauri.dev.conf.json` (identifier `dev.atlas.ide.dev`, product name "Atlas改 Dev"), and `crates/atlas-profile` derives the rest from that identifier at the top of `run()`: `<app-config-dir>` moves with the identifier, `.atlas/` becomes `.atlas-dev/` (in projects and in `~`), and `~/.config/atlas/` becomes `~/.config/atlas-dev/`. One switch, read from the binary rather than the environment, so it cannot half-apply and a child process cannot inherit it; a release build is always the default profile. Other programs' stores (`~/.claude`, `~/.codex`, `CLAUDE.md`, `AGENTS.md`, `.agents/skills`) are not Atlas's and are shared by both; in `~/.agents/skills` the dev profile seeds its bundled skill as `atlas-dev-self-configure`, beside the default profile's `atlas-self-configure` rather than over it. Beyond names, the dev profile changes three behaviours: it keeps `.atlas-dev/` out of git through the repository's `info/exclude` instead of the project's `.gitignore`, it does not refresh the `atlas` CLI helper.
+**Profiles.** Every name above belongs to the default profile. `bun run dev:app` builds with `src-tauri/tauri.dev.conf.json` (identifier `dev.atlas.ide.dev`, product name "同桌 DeskMate Dev"), and `crates/atlas-profile` derives the rest from that identifier at the top of `run()`: `<app-config-dir>` moves with the identifier, `.atlas/` becomes `.atlas-dev/` (in projects and in `~`), and `~/.config/atlas/` becomes `~/.config/atlas-dev/`. One switch, read from the binary rather than the environment, so it cannot half-apply and a child process cannot inherit it; a release build is always the default profile. Other programs' stores (`~/.claude`, `~/.codex`, `CLAUDE.md`, `AGENTS.md`, `.agents/skills`) are not DeskMate's and are shared by both; in `~/.agents/skills` the dev profile seeds its bundled skill as `atlas-dev-self-configure`, beside the default profile's `atlas-self-configure` rather than over it. Beyond names, the dev profile changes three behaviours: it keeps `.atlas-dev/` out of git through the repository's `info/exclude` instead of the project's `.gitignore`, it does not refresh the `atlas` CLI helper.
 
 **IPC** is Tauri's `invoke()` for request/response, `listen()` for event streams. All payloads are JSON.
 
@@ -344,4 +345,4 @@ Schema 5 clears tenant ownership on projects, groups and recents without changin
 
 - **`vite.config.ts`'s `dedupe` is load-bearing.** Lazy-loaded language packages (`lang-json`, `lang-rust`, …) each transitively import `@codemirror/{state,view,language}` and `@lezer/*`; without `dedupe`, Rollup can ship two copies in the production bundle. `EditorView.theme(...)` then registers against one copy's `StyleModule` while the `EditorView` construction uses the other, and the theme silently no-ops — text renders unstyled. Same story for `pdfjs-dist`: two copies mismatch the worker against the main-thread API version and PDF rendering fails. Dev mode does not reproduce either failure (Vite serves a single pre-bundled instance) — this only shows up in production builds.
 - **Release-profile `panic = "unwind"` is required.** The local-LLM loader (`atlas-embed`, used by memory chat) `catch_unwind`s candle's Metal kernel-compile panic to fall back to CPU. `panic = "abort"` would crash the app outright instead of degrading gracefully; the cost is a small amount of extra binary size for unwind tables.
-- **The single-instance plugin is release-only.** Registered behind `#[cfg(not(debug_assertions))]` in `src-tauri/src/lib.rs`. Registering it in debug builds kills `tauri dev` the instant it starts whenever the installed `/Applications/Atlas.app` is already running — the dev process gets treated as the "second instance," forwards its argv, and exits.
+- **The single-instance plugin is release-only.** Registered behind `#[cfg(not(debug_assertions))]` in `src-tauri/src/lib.rs`. Registering it in debug builds kills `tauri dev` the instant it starts whenever the installed `/Applications/DeskMate.app` is already running — the dev process gets treated as the "second instance," forwards its argv, and exits.

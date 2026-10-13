@@ -23,7 +23,7 @@ fn seti_like_vsix() -> Vec<u8> {
     let package_json = r#"{
       "name": "pretend-seti",
       "displayName": "Pretend Seti",
-      "publisher": "Atlas Tests",
+      "publisher": "DeskMate Tests",
       "license": "MIT",
       "contributes": {
         "iconThemes": [
@@ -94,7 +94,7 @@ fn a_vsix_unpacks_into_a_loadable_theme() {
         theme.summary.name, "Pretend Seti",
         "the contribution's label wins"
     );
-    assert_eq!(theme.summary.author, "Atlas Tests");
+    assert_eq!(theme.summary.author, "DeskMate Tests");
     assert_eq!(theme.summary.license, "MIT");
     assert!(!theme.summary.built_in);
     assert!(theme.summary.hides_explorer_arrows);

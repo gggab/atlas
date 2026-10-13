@@ -67,12 +67,12 @@ export function importProfile(text: string): ImportResult {
   }
   const doc = parsed as Partial<Record<keyof ProfileTransfer, unknown>>;
   if (typeof doc.atlasKeybindings !== "number") {
-    return { ok: false, error: "missing `atlasKeybindings`, so this isn't an Atlas profile" };
+    return { ok: false, error: "missing `atlasKeybindings`, so this isn't an DeskMate profile" };
   }
   if (doc.atlasKeybindings > PROFILE_TRANSFER_VERSION) {
     return {
       ok: false,
-      error: `profile format ${doc.atlasKeybindings} is newer than this Atlas reads (${PROFILE_TRANSFER_VERSION})`,
+      error: `profile format ${doc.atlasKeybindings} is newer than this DeskMate reads (${PROFILE_TRANSFER_VERSION})`,
     };
   }
   const name = typeof doc.name === "string" && doc.name.trim() ? doc.name.trim() : "Imported";
@@ -96,7 +96,7 @@ export function importProfile(text: string): ImportResult {
     }
     const bad = (value as string[]).find((c) => !parseCombo(c));
     if (bad !== undefined) {
-      return { ok: false, error: `\`${actionId}\`: \`${bad}\` isn't a chord Atlas can read` };
+      return { ok: false, error: `\`${actionId}\`: \`${bad}\` isn't a chord DeskMate can read` };
     }
     bindings[actionId] = value as string[];
   }

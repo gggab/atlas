@@ -71,7 +71,7 @@ export async function openFile(path: string, opts?: OpenFileOptions): Promise<st
   return openFileAs(path, await resolveFileKind(path), opts);
 }
 
-/** Open a file in Atlas when it's a kind Atlas can render; otherwise reveal it
+/** Open a file in DeskMate when it's a kind DeskMate can render; otherwise reveal it
  *  in the OS file manager (Finder on macOS). Used by terminal link clicks — the
  *  user wants compatible files in-app and everything else handed to the OS. */
 export async function openFileOrReveal(path: string): Promise<void> {

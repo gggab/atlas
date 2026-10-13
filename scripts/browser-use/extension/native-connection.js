@@ -42,7 +42,7 @@ export class NativeConnection {
     for (let i = 0; i < 100 && !this.connected && this.port; i++)
       await new Promise((resolve) => setTimeout(resolve, 50));
     if (!this.connected)
-      throw new Error(this.error ?? "Open Atlas, then check Settings > Browser control.");
+      throw new Error(this.error ?? "Open DeskMate, then check Settings > Browser control.");
   }
   async connect() {
     if (!this.enabled || this.port) return;
@@ -58,7 +58,7 @@ export class NativeConnection {
         this.error =
           this.error ??
           this.api.runtime.lastError?.message ??
-          "Atlas connection closed. Reopen Atlas to reconnect.";
+          "DeskMate connection closed. Reopen DeskMate to reconnect.";
         this.port = null;
         this.connected = false;
       });

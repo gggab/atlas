@@ -286,7 +286,7 @@ fn a_second_window_reports_stopped_rather_than_silently_not_recording() {
         health
             .issues
             .iter()
-            .any(|i| i.reason.contains("Another Atlas window")),
+            .any(|i| i.reason.contains("Another DeskMate window")),
         "{:?}",
         health.issues
     );
@@ -315,7 +315,7 @@ fn a_project_never_opened_this_process_is_not_another_window() {
         !health
             .issues
             .iter()
-            .any(|i| i.reason.contains("Another Atlas window")),
+            .any(|i| i.reason.contains("Another DeskMate window")),
         "{:?}",
         health.issues
     );

@@ -476,7 +476,7 @@ pub(crate) fn ensure_git_exclude(root: &Path) -> std::io::Result<bool> {
         text.push('\n');
     }
     text.push_str(&format!(
-        "# Atlas per-project data (code index, memory)\n{name}/\n"
+        "# DeskMate per-project data (code index, memory)\n{name}/\n"
     ));
     std::fs::write(&path, text)?;
     Ok(true)

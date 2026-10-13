@@ -90,7 +90,7 @@ export function IconThemesSettings() {
                   </div>
                   <div className="mt-2 flex items-center gap-1 text-3xs uppercase tracking-wide text-muted-foreground">
                     {theme.id === MINIMAL_ICON_THEME_ID ? (
-                      <span>Atlas defaults</span>
+                      <span>DeskMate defaults</span>
                     ) : theme.builtIn ? (
                       <span>Bundled</span>
                     ) : (

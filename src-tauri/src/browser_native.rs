@@ -85,18 +85,19 @@ fn serve(identifier: &str, origin: &str) -> Result<(), String> {
         .map(PathBuf::from)
         .unwrap_or(path);
     let descriptor: Descriptor = serde_json::from_slice(
-        &std::fs::read(path).map_err(|_| "Open Atlas before connecting its browser extension")?,
+        &std::fs::read(path)
+            .map_err(|_| "Open DeskMate before connecting its browser extension")?,
     )
-    .map_err(|_| "Invalid Atlas native connection file")?;
+    .map_err(|_| "Invalid DeskMate native connection file")?;
     if !descriptor.address.ip().is_loopback()
         || !descriptor.address.is_ipv4()
         || descriptor.secret.len() != 64
     {
-        return Err("Invalid local Atlas connection".into());
+        return Err("Invalid local DeskMate connection".into());
     }
     let mut stream =
         TcpStream::connect_timeout(&descriptor.address, std::time::Duration::from_secs(3))
-            .map_err(|_| "Atlas is not running; open Atlas and reconnect")?;
+            .map_err(|_| "DeskMate is not running; open DeskMate and reconnect")?;
     stream
         .set_write_timeout(Some(std::time::Duration::from_secs(5)))
         .map_err(|e| e.to_string())?;
@@ -167,7 +168,7 @@ mod tests {
             let identifier = format!("atlas-origin-test-{}", uuid::Uuid::new_v4());
             assert_eq!(
                 serve(&identifier, &origin).unwrap_err(),
-                "Open Atlas before connecting its browser extension"
+                "Open DeskMate before connecting its browser extension"
             );
         }
     }

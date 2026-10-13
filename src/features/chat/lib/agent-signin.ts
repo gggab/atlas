@@ -195,7 +195,7 @@ export function isAuthError(err: unknown): boolean {
   return AUTH_TOKENS.some((t) => m.includes(t));
 }
 
-/** True when Atlas should offer its sign-in dialog for `agentType`.
+/** True when DeskMate should offer its sign-in dialog for `agentType`.
  *
  *  Deliberately NOT "the catalog has a login command for it". An external
  *  agent's sign-in is only knowable at RUNTIME, from the `authMethods` it

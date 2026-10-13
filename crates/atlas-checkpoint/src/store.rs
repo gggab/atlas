@@ -2194,7 +2194,7 @@ fn ensure_self_ignored(root: &Path) {
     }
     let _ = fs::write(
         &marker,
-        "# Atlas per-project state. Never committed: it holds the local session\n\
+        "# DeskMate per-project state. Never committed: it holds the local session\n\
          # store (plus its SQLite -wal/-shm sidecars) and is machine-specific.\n\
          *\n",
     );

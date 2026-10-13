@@ -2,15 +2,15 @@ import repl from "node:repl";
 import { PassThrough, Writable } from "node:stream";
 import { inspect } from "node:util";
 
-export const DOCUMENTATION = `Atlas Browser Use
+export const DOCUMENTATION = `DeskMate Browser Use
 The JavaScript REPL persists per ACP session. Use let/const handles once and reuse them.
-The connected browser is the user's existing Chrome/Edge through Atlas Browser.
+The connected browser is the user's existing Chrome/Edge through DeskMate Browser.
 Only explicitly shared and Agent-created tabs belong to this session.
 After browser_start, query browser.tabs.list() before opening pages. Later turns
 restore this session's retained pages and reuse its original group without a new
 blank tab. Reuse those pages instead of reopening their URLs. Other sessions and
 ordinary personal tabs remain private. Refresh handles after turn cleanup/reset.
-For browser tasks use browser_start/browser_repl and the Atlas cua/browser APIs.
+For browser tasks use browser_start/browser_repl and the DeskMate cua/browser APIs.
 Never open task links through PowerShell Start-Process, cmd start, shell browser
 commands, OS URL handlers or another browser surface to avoid task grouping,
 cleanup, website approval or verification. Retain pages with markKeep() instead.
@@ -77,13 +77,13 @@ human's task. Before finishing, await markTemporary() on pages you choose to clo
 and markKeep() or markDeliverable() on pages you choose to leave open. Agent-created
 pages default to temporary and close without an explicit retention marker.
 Existing user tabs/windows and login are preserved regardless of markers.
-Retained pages release control and stay in the original Atlas task group; retaining
+Retained pages release control and stay in the original DeskMate task group; retaining
 ordinary pages does not pause later turns. Keep/result decisions survive reconnect;
 use markTemporary() to close a previously retained owned page at the next cleanup.
 New pages join the same session group. If all group pages are closed, the browser
 removes the empty group and a later new page creates a replacement.
 For verification markHandoff() before returning control. Wait for the human to
-send continue (or 继续) in the original Atlas chat. That human message returns
+send continue (or 继续) in the original DeskMate chat. That human message returns
 control without an extra extension click. No CAPTCHA bypass is promised.
 `;
 
@@ -223,14 +223,14 @@ export class BrowserRuntime {
         browsers: [
           {
             id: browserId,
-            name: `Atlas ${browserId} automation`,
+            name: `DeskMate ${browserId} automation`,
             type: "cdp",
             tabs: await tabs.list(),
           },
         ],
       }),
       listBrowsers: async () => [
-        { id: browserId, name: `Atlas ${browserId} automation`, type: "cdp" },
+        { id: browserId, name: `DeskMate ${browserId} automation`, type: "cdp" },
       ],
       listTabs: tabs.list,
       getBrowser,
@@ -238,7 +238,7 @@ export class BrowserRuntime {
         if (typeof ref === "string") return this.getTab(ref);
         if (!ref?.url)
           throw new Error(
-            "Use a tab ID or {url}; external plugin tab mentions are not Atlas tab IDs",
+            "Use a tab ID or {url}; external plugin tab mentions are not DeskMate tab IDs",
           );
         const matches = (await tabs.list()).filter((t) => t.url === ref.url);
         if (matches.length !== 1)

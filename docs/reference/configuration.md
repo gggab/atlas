@@ -1,6 +1,6 @@
-# Atlas configuration (`config.toml`)
+# DeskMate configuration (`config.toml`)
 
-Reference for Atlas's user-facing preferences file. Written for both humans
+Reference for DeskMate's user-facing preferences file. Written for both humans
 hand-editing the file and agents using the `atlas-self-configure` skill
 (`src-tauri/resources/skills/atlas-self-configure/SKILL.md`) — the skill's
 key table is a copy of the one below, and both are compiled into the test
@@ -30,10 +30,10 @@ Deliberately **not** Tauri's `app_config_dir()`, which on macOS is
 and hand-edited, by a person or an agent, and a path they can type is part of
 that; a bundle id buried under `Application Support` is not. Zed makes the same
 call for the same reason (`~/.config/zed/settings.json` on macOS), and it puts
-Atlas's config beside every other tool a developer already keeps in
+DeskMate's config beside every other tool a developer already keeps in
 `~/.config`.
 
-This is a split, not a move. Everything else Atlas persists stays in the
+This is a split, not a move. Everything else DeskMate persists stays in the
 platform data directory, because none of it is a document anyone should be
 editing:
 
@@ -50,13 +50,13 @@ In application code, call `ConfigManager::config_path()` (Rust) or the
 
 TOML, edited through `toml_edit` rather than reserialized wholesale, so a
 patch from the Settings UI or an agent preserves comments, key order, and any
-key Atlas doesn't recognize. Chosen over JSON (no comments) and YAML
+key DeskMate doesn't recognize. Chosen over JSON (no comments) and YAML
 (ambiguous scalar parsing for a file humans and agents both hand-edit).
 
-Atlas writes the file **self-documenting**: a header, then a comment above
+DeskMate writes the file **self-documenting**: a header, then a comment above
 every key giving what it does, its default, and any constraint on its value.
 Those comments come from `SETTINGS_DOCS` in `state/atlas_config.rs` — the same
-table `unknown_keys_in` uses to decide what Atlas recognizes — so they can't
+table `unknown_keys_in` uses to decide what DeskMate recognizes — so they can't
 drift from what validation accepts.
 
 That is deliberate, and it's why the bundled `atlas-self-configure` skill
@@ -71,23 +71,23 @@ A generated file looks like this (abridged — every key gets the same
 treatment):
 
 ```toml
-# Atlas configuration.
+# DeskMate configuration.
 #
-# Every user-facing Atlas preference lives here. Edit this file by hand or use
-# Settings — both write to it, and Atlas picks up external edits live, with no
+# Every user-facing DeskMate preference lives here. Edit this file by hand or use
+# Settings — both write to it, and DeskMate picks up external edits live, with no
 # restart needed for any key below.
 #
-# Your comments, formatting, and any keys Atlas doesn't recognize survive its
-# own writes. An invalid value is rejected whole: Atlas keeps running on the
+# Your comments, formatting, and any keys DeskMate doesn't recognize survive its
+# own writes. An invalid value is rejected whole: DeskMate keeps running on the
 # last settings that loaded cleanly, shows the error in Settings, and leaves
 # this file exactly as you wrote it.
 
-# Format version of this file. Atlas manages it; leave it alone.
+# Format version of this file. DeskMate manages it; leave it alone.
 schemaVersion = 1
 
 [settings]
 
-# Keep Atlas's directory in each opened git project out of version
+# Keep DeskMate's directory in each opened git project out of version
 # control: `.atlas/` goes into the project's .gitignore (created if
 # needed); a dev build's `.atlas-dev/` goes into .git/info/exclude.
 # No-op on non-git projects. (default: true)
@@ -112,7 +112,7 @@ agentSwitchBehavior = "reset"
 # sends either way. (default: true)
 enterToSend = true
 
-# Let agents search this project's code through Atlas: grep for text
+# Let agents search this project's code through DeskMate: grep for text
 # and find files by name, in-process, respecting .gitignore. Secret files
 # are hidden unless explicitly named by path. Off: the code tools are withdrawn
 # and every call is refused; agents use their own shell instead.
@@ -135,7 +135,7 @@ terminalNotifyOnFailure = true
 # OSC 9 / OSC 777 notification from the program. (default: true)
 terminalNotifyOnAttention = true
 
-# Also raise a macOS notification when the Atlas window is not focused.
+# Also raise a macOS notification when the DeskMate window is not focused.
 # (default: true)
 terminalNotifyNative = true
 
@@ -171,7 +171,7 @@ notifyWarningSound = false
 # only opens the session. (default: true)
 notifyPermissionActions = true
 
-# Set once Atlas has folded your earlier terminal and agent notification
+# Set once DeskMate has folded your earlier terminal and agent notification
 # choices into the keys above. Leave it alone. (default: false)
 notificationsMigrated = false
 
@@ -179,7 +179,7 @@ notificationsMigrated = false
 # e.g. ["terminal-done", "git-behind"]. Unknown and retired ids are ignored. (default: [])
 notifyDisabledKinds = []
 
-# Set once Atlas has folded your earlier per-kind notification switches
+# Set once DeskMate has folded your earlier per-kind notification switches
 # into notifyDisabledKinds. Leave it alone. (default: false)
 notifyKindsMigrated = false
 
@@ -197,8 +197,8 @@ Note `updaterIgnoredVersion`: a key that serializes to nothing still gets its
 comment, carried down onto the next key that is present. Otherwise the one key
 whose *absence* carries meaning would be the one key nothing explains.
 
-Comments are only ever written into a file Atlas generates — first migration,
-or "Recreate defaults". Atlas never injects them into a file a user or agent
+Comments are only ever written into a file DeskMate generates — first migration,
+or "Recreate defaults". DeskMate never injects them into a file a user or agent
 wrote; `toml_edit` just preserves whatever comments are already there.
 
 ## Schema
@@ -214,8 +214,8 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `theme` | string | `"atlas"` | known theme id; an unknown id is logged and falls back to `"atlas"` |
 | `themeMode` | `"system"` \| `"dark"` \| `"light"` | `"system"` | exactly one of these values; a missing requested variant falls back to the theme's other variant. Light is persisted but hidden in Settings until light-mode QA completes. |
 | `themeOverrides` | table | absent | optional `base`, `palette`, and `keys` patch applied after the active theme variant |
-| `iconTheme` | string | `"material-icon-theme"` | a plain id (letters, digits, `.`, `-`, `_`) — it names a directory under `~/.config/atlas/icon-themes/`. `"minimal"` keeps Atlas's lucide icons. See `docs/reference/icon-themes.md` |
-| `appIcon` | string | `"dark"` | a plain id (letters, digits, `-`, `_`) from `src-tauri/icons/app-icons/app-icons.json` — today `"dark"` or `"light"`. An id this Atlas does not ship shows the default without rewriting the file. macOS only: `"dark"` is the bundle's own Liquid Glass icon; any other replaces the Dock icon and the bundle's Finder/Launchpad icon, re-applied at every launch |
+| `iconTheme` | string | `"material-icon-theme"` | a plain id (letters, digits, `.`, `-`, `_`) — it names a directory under `~/.config/atlas/icon-themes/`. `"minimal"` keeps DeskMate's lucide icons. See `docs/reference/icon-themes.md` |
+| `appIcon` | string | `"dark"` | a plain id (letters, digits, `-`, `_`) from `src-tauri/icons/app-icons/app-icons.json` — today `"dark"` or `"light"`. An id this DeskMate does not ship shows the default without rewriting the file. macOS only: `"dark"` is the bundle's own Liquid Glass icon; any other replaces the Dock icon and the bundle's Finder/Launchpad icon, re-applied at every launch |
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `agentSwitchBehavior` | `"new-tab"` \| `"handoff"` \| `"reset"` | `"reset"` | exactly one of these three strings. An empty chat always switches in place and a running one always gets a new tab, whatever this says |
 | `gitBlameInline` | boolean | `true` | — |
@@ -262,7 +262,7 @@ theme after this migration.
 
 Some agents read a project's instructions from `CLAUDE.md` and
 `.claude/rules/*.md`; others read only `AGENTS.md`. With `instructionSync` on,
-Atlas keeps one marked block in the active project's `AGENTS.md` holding
+DeskMate keeps one marked block in the active project's `AGENTS.md` holding
 `CLAUDE.md`, `.claude/CLAUDE.md` and each rule file, every one followed by the
 project files it imports, for any agent that reads `AGENTS.md`, and rewrites it
 whenever any of those files change. The sources stay the place to edit
@@ -278,14 +278,14 @@ a rule. The block sits between these two lines, each on a line of its own:
   becomes active. An `AGENTS.md` is created only when there is something to
   mirror.
 - **Switching it off** stops the watching and takes the block back out of
-  every project Atlas wrote it into, open or not, under the same checks as a
-  sync below. Atlas remembers those projects in `instruction-sync.json` in its
-  app config directory. An `AGENTS.md` that Atlas created and that held
+  every project DeskMate wrote it into, open or not, under the same checks as a
+  sync below. DeskMate remembers those projects in `instruction-sync.json` in its
+  app config directory. An `AGENTS.md` that DeskMate created and that held
   nothing but the block is deleted; one you made yourself is kept, even when
   removing the block leaves it empty. A sync never deletes `AGENTS.md`.
 - **Your text is never changed.** Every byte outside the block, line endings
   included, stays as it was. The block takes the line ending of the line just
-  before it. Atlas leaves `AGENTS.md` alone, and logs why, when the markers
+  before it. DeskMate leaves `AGENTS.md` alone, and logs why, when the markers
   are not exactly one START line followed by one END line (an edited,
   indented, duplicated or deleted marker), when `CLAUDE.md` or a rule has a
   marker on a line of its own, when `AGENTS.md` or `CLAUDE.md` is a link or
@@ -307,7 +307,7 @@ a rule. The block sits between these two lines, each on a line of its own:
   `AGENTS.md` is usually committed. An `@AGENTS.md` import line is left out
   of the block, where it would point `AGENTS.md` at itself.
 - Some agents stop reading `AGENTS.md` past a size limit (32 KiB is a common
-  default), and the block sits at the end of the file. Atlas logs a warning
+  default), and the block sits at the end of the file. DeskMate logs a warning
   when a sync leaves `AGENTS.md` larger than that.
 - A rule's `paths:` frontmatter becomes an "applies when working on" line, since
   `AGENTS.md` has no path scoping. Hooks and permission lists
@@ -327,9 +327,9 @@ evolve on separate timelines. Current: `CONFIG_SCHEMA_VERSION = 1`
   what will exercise this path for the first time. Field-level
   `#[serde(default = ...)]` already covers the common case (a new key added
   within v1) without needing a version bump at all.
-- A file with a *higher* version than this Atlas build supports is rejected
+- A file with a *higher* version than this DeskMate build supports is rejected
   outright — last-known-good settings stay active, the file is left alone.
-  (This is what happens when a newer Atlas version's config is opened by an
+  (This is what happens when a newer DeskMate version's config is opened by an
   older build.)
 
 ## Precedence and scope
@@ -349,7 +349,7 @@ location, precedence), not silent inheritance of this mechanism.
 Every read — cold start, a UI patch, an external edit picked up by the
 watcher — validates the **complete candidate** before it replaces anything.
 A malformed or invalid file never partially applies and never gets
-auto-repaired, renamed, or overwritten by Atlas on its own:
+auto-repaired, renamed, or overwritten by DeskMate on its own:
 
 - **Cold start, file missing:** normal (pre-migration, or the user deleted
   it on purpose) — served compiled defaults, `status: "ok"`.
@@ -390,7 +390,7 @@ defaults.
 
 ## Live reload
 
-Atlas watches `config.toml`'s parent directory (not the file itself — an
+DeskMate watches `config.toml`'s parent directory (not the file itself — an
 atomic save replaces the inode) and re-validates on any change. Every
 setting in the schema is hot-reloadable; none requires a restart. A
 successful reload emits `atlas:config-changed` with the new settings and a
@@ -437,7 +437,7 @@ Before issue #64, these settings lived in `state.json`'s `AppState.settings`
 2. If `config.toml` doesn't exist yet and the marker is `false`, the legacy
    `settings` object is extracted field-by-field (a value that doesn't parse
    is skipped, not fatal to the rest) and written as the new `config.toml`.
-3. The marker is then set `true` — this is what stops Atlas from
+3. The marker is then set `true` — this is what stops DeskMate from
    resurrecting stale `state.json` settings if the user later deletes
    `config.toml` on purpose.
 
@@ -471,7 +471,7 @@ schema accepts only `"agent"` or `"off"`.
 
 ## What's explicitly NOT in this file
 
-- **API keys / credentials.** Atlas doesn't store these itself at all — see
+- **API keys / credentials.** DeskMate doesn't store these itself at all — see
   `src-tauri/src/commands/byok.rs`; they live in the user's shell profile.
 - **Session history, transcripts, per-project `.atlas/` state.** File-backed,
   but not a "setting," and out of scope until an explicit ownership design

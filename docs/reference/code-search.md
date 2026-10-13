@@ -8,7 +8,7 @@ read-only tools through the session-authorized `atlas_code` HTTP MCP service:
 ## Availability and scope
 
 The agent must advertise HTTP MCP support. Settings > General > "Let agents
-search code with Atlas" controls both new offers and calls in existing sessions.
+search code with DeskMate" controls both new offers and calls in existing sessions.
 It is independent of shared-memory sharing. The code endpoint shares the memory
 listener and one session token with the other local services; token binding and
 revocation remain owned by the session lifecycle. SSH and Browser Use retain
@@ -22,7 +22,7 @@ files unless explicitly requested by path. Replies have output budgets, paging
 and partial-result indicators. Calls are bounded and cancellation-aware.
 
 Receiving these tools does not guarantee the agent will use them. No code or
-memory context is injected into user prompts, and no native Atlas engine is
+memory context is injected into user prompts, and no native DeskMate engine is
 required. Project search uses the same text-search engine independently of the
 agent setting.
 

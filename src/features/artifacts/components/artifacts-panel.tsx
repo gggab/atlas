@@ -1240,7 +1240,7 @@ function NotEnabled() {
     <div className="flex h-full flex-col items-center justify-center px-8 text-center">
       <h2 className="text-md font-medium text-[var(--foreground)]">Nothing captured yet</h2>
       <p className="mt-1.5 max-w-[420px] text-sm leading-relaxed text-[var(--muted-foreground)]">
-        Turn capture on for a project and Atlas records what you asked, what the agent did, and
+        Turn capture on for a project and DeskMate records what you asked, what the agent did, and
         which commits came out of it — stored on this machine, with secrets scrubbed before anything
         is written.
       </p>

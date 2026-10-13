@@ -331,7 +331,7 @@ function GeneralSettings() {
       {configError && (
         <div className="rounded-md border border-warning/40 bg-warning-muted p-3 space-y-2">
           <p className="text-sm font-medium text-foreground">
-            Atlas is using the last valid settings — config.toml has a problem
+            DeskMate is using the last valid settings — config.toml has a problem
           </p>
           <p className="text-xs text-secondary-foreground font-mono break-all">{configError}</p>
           <div className="flex gap-2">
@@ -422,7 +422,7 @@ function GeneralSettings() {
         description={
           devProfile
             ? `When you open a git-tracked project, ${productName} lists \`${atlasDir}/\` in the repository's local .git/info/exclude, so it stays out of version control without editing the project's .gitignore. ${productName} keeps its caches and state in \`${atlasDir}/\`. No-op on non-git projects.`
-            : `When you open a git-tracked project, Atlas adds \`${atlasDir}/\` to the project's .gitignore (creating one if needed). Atlas keeps its caches and state in \`${atlasDir}/\` — keeping it out of version control is almost always what you want. No-op on non-git projects.`
+            : `When you open a git-tracked project, DeskMate adds \`${atlasDir}/\` to the project's .gitignore (creating one if needed). DeskMate keeps its caches and state in \`${atlasDir}/\` — keeping it out of version control is almost always what you want. No-op on non-git projects.`
         }
       >
         <Toggle
@@ -450,7 +450,7 @@ function GeneralSettings() {
       </SettingRow>
       <SettingRow
         label="Auto-fetch from remote"
-        description="Quietly run `git fetch` for the open project when it opens, when Atlas regains focus, and every few minutes, so the Pull badge shows what the remote has. It only updates remote-tracking branches — it never pulls, merges, or touches your files."
+        description="Quietly run `git fetch` for the open project when it opens, when DeskMate regains focus, and every few minutes, so the Pull badge shows what the remote has. It only updates remote-tracking branches — it never pulls, merges, or touches your files."
       >
         <Toggle
           checked={settings.gitAutoFetch}
@@ -458,8 +458,8 @@ function GeneralSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Enable Atlas Logs"
-        description="Record Atlas-internal events (sign-in, agent start/finish, browser/file open, etc.) into the Logs tab under the `atlas` source. Default ON so when something goes wrong you can open the Logs tab, filter by `atlas`, and share a timeline. Turn off if the noise bothers you."
+        label="Enable DeskMate Logs"
+        description="Record DeskMate-internal events (sign-in, agent start/finish, browser/file open, etc.) into the Logs tab under the `atlas` source. Default ON so when something goes wrong you can open the Logs tab, filter by `atlas`, and share a timeline. Turn off if the noise bothers you."
       >
         <Toggle
           checked={settings.enableAtlasLogs}
@@ -505,7 +505,7 @@ function GeneralSettings() {
       </SettingRow>
       <SettingRow
         label="Mirror CLAUDE.md and .claude/rules into AGENTS.md"
-        description="For agents that read AGENTS.md. When on, Atlas keeps a marked block in the active project's AGENTS.md with CLAUDE.md and every .claude/rules file, rewritten as they change, and creates AGENTS.md if there is none. Your own text outside the block is never changed. Turning it off removes the block. Hooks and permission lists are not instructions and are not copied."
+        description="For agents that read AGENTS.md. When on, DeskMate keeps a marked block in the active project's AGENTS.md with CLAUDE.md and every .claude/rules file, rewritten as they change, and creates AGENTS.md if there is none. Your own text outside the block is never changed. Turning it off removes the block. Hooks and permission lists are not instructions and are not copied."
       >
         <Toggle
           checked={settings.instructionSync}
@@ -514,8 +514,8 @@ function GeneralSettings() {
       </SettingRow>
 
       <SettingRow
-        label="Let agents search code with Atlas"
-        description="Agents get Atlas's code tools for this project: grep and find-files, symbols, callers and callees, and search by meaning. All in-process, respecting .gitignore and never reading secret files such as .env. Off: they search with their own tools instead."
+        label="Let agents search code with DeskMate"
+        description="Agents get DeskMate's code tools for this project: grep and find-files, symbols, callers and callees, and search by meaning. All in-process, respecting .gitignore and never reading secret files such as .env. Off: they search with their own tools instead."
       >
         <Toggle
           checked={settings.agentCodeTools}
@@ -523,7 +523,7 @@ function GeneralSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Atlas CLI"
+        label="DeskMate CLI"
         description={`Adds an \`atlas\` command to your shell — type \`atlas .\` in any terminal to open the current folder as a project. Refreshed automatically on every launch so an older copy never lingers. ${cliInstalledLine}.`}
       >
         <button

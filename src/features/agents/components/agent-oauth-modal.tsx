@@ -83,7 +83,7 @@ type Phase =
    *  not a login Atlas is driving and tailing — so it belongs in the dock
    *  rather than the dialog. See `docked` in the component. */
   | { kind: "running"; label: string; docked: boolean }
-  /** `manualCommand` is the escape hatch when Atlas could not drive the login
+  /** `manualCommand` is the escape hatch when DeskMate could not drive the login
    *  itself: opencode/kilo's TUI login cannot be driven headlessly, and any CLI
    *  can fail for its own reasons. Built from the method's own resolved
    *  command, so it is correct even when the binary lives in Atlas's app-data
@@ -167,7 +167,7 @@ export function methodBlockedReason(method: AuthMethodWire, env: AuthEnvStatus[]
   // `terminal`-kind with nothing runnable is the case R3's enrichment exists to
   // prevent; if it still happens the CLI must be run by hand.
   if (method.kind === "terminal" && !method.terminalCommand) {
-    return "Atlas could not find this agent's CLI to run the login.";
+    return "DeskMate could not find this agent's CLI to run the login.";
   }
   return null;
 }
@@ -245,7 +245,7 @@ function AgentOAuthModal({
     [label, request.agentType],
   );
 
-  /** A method Atlas should run in a terminal rather than headlessly: it has a
+  /** A method DeskMate should run in a terminal rather than headlessly: it has a
    *  command to run, and it is not an `env_var` checklist (which has nothing to
    *  run — the user exports the variables themselves). */
   const runsInTerminal = (m: AuthMethodWire) =>
@@ -384,7 +384,7 @@ function AgentOAuthModal({
     finish(true);
   };
 
-  /** ACP `logout` (A2) — the agent drops its own credentials; Atlas holds none
+  /** ACP `logout` (A2) — the agent drops its own credentials; DeskMate holds none
    *  to clear. Offered only when the agent advertised the capability, so this
    *  never presents an action that would 404 on the wire. */
   const signOut = async () => {
@@ -581,7 +581,7 @@ function AgentOAuthModal({
                   {phase.methods.length === 0 && (
                     <p className="px-2 py-4 text-xs text-secondary-foreground">
                       {label} asked for credentials but did not say what it needs, and offered no
-                      sign-in method Atlas can run. If it reads a provider API key from the
+                      sign-in method DeskMate can run. If it reads a provider API key from the
                       environment, export that variable in your shell profile and {label} will pick
                       it up on its next start.
                     </p>

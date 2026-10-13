@@ -68,7 +68,7 @@ try {
   await cp(path.join(root, "scripts/browser-use/extension"), extension, { recursive: true });
   await writeFile(
     path.join(extension, "config.js"),
-    `export const HOST_NAME = ${JSON.stringify(name)};\nexport const APP_NAME = "Atlas";\n`,
+    `export const HOST_NAME = ${JSON.stringify(name)};\nexport const APP_NAME = "DeskMate";\n`,
   );
   let exists = false;
   try {
@@ -80,7 +80,7 @@ try {
     manifest,
     JSON.stringify({
       name,
-      description: "Atlas native fixture",
+      description: "DeskMate native fixture",
       path: binary,
       type: "stdio",
       allowed_origins: [`chrome-extension://${extensionId}/`],
@@ -111,7 +111,7 @@ try {
   const popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   // Fresh installation connects using its packaged host; no popup action is needed.
-  await popup.getByRole("heading", { name: "Atlas connected" }).waitFor({ timeout: 10_000 });
+  await popup.getByRole("heading", { name: "DeskMate connected" }).waitFor({ timeout: 10_000 });
   const authorized = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }));
   assert.equal(authorized.error ?? undefined, undefined, JSON.stringify(authorized));
   assert.equal(authorized.appConnected, true, JSON.stringify(authorized));
@@ -123,7 +123,7 @@ try {
   await popup
     .locator("body")
     .screenshot({ path: path.join(screenshots, `popup-${browser}-ready.png`) });
-  await popup.getByRole("heading", { name: "Atlas connected" }).waitFor();
+  await popup.getByRole("heading", { name: "DeskMate connected" }).waitFor();
   await popup.emulateMedia({ colorScheme: "light" });
   await popup
     .locator("body")

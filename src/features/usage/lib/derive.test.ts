@@ -83,7 +83,7 @@ function dashboard(over: Partial<UsageDashboard> = {}): UsageDashboard {
     projects: [
       {
         projectPath: "/w/atlas",
-        projectName: "Atlas",
+        projectName: "DeskMate",
         firstActivityMs: null,
         lastActivityMs: null,
         input: 0,
@@ -222,7 +222,7 @@ describe("facetsOf", () => {
       bucket({ projectPath: "/w/unknown-proj", input: 20, output: 0 }),
     ];
     const f = facetsOf(rows, data);
-    expect(f.projects.map((p) => p.label)).toEqual(["BYOK chat", "unknown-proj", "Atlas"]);
+    expect(f.projects.map((p) => p.label)).toEqual(["BYOK chat", "unknown-proj", "DeskMate"]);
     expect(f.projects[0]).toMatchObject({ value: BYOK_PATH, tokens: 500, rows: 1 });
     expect(f.agents.map((a) => a.label)).toEqual(["BYOK", expect.any(String)]);
     expect(f.agents[0].value).toBe(BYOK_AGENT);

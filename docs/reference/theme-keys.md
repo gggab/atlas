@@ -1,9 +1,9 @@
 # Theme keys
 
 Schema-1 themes have required shadcn **base tokens**, optional eight-colour
-**palette** entries, and optional Atlas **theme keys**. A theme key always
+**palette** entries, and optional DeskMate **theme keys**. A theme key always
 resolves in this order: explicit `keys` value, palette source, base-token
-source, then the Atlas default for the active appearance.
+source, then the DeskMate default for the active appearance.
 
 Every key, its description, its sources and its transform are declared once, in
 **`crates/atlas-theme/keys.toml`**. The TS registry the resolver reads, the key
@@ -13,13 +13,13 @@ any of them is stale. Editing a key means editing that file; `resolve-theme.ts`
 is the only place the derivation order itself lives.
 
 **A key exists only where an author needs that surface to differ from the base
-tokens.** Everything else Atlas derives and does not ask about: a status badge's
+tokens.** Everything else DeskMate derives and does not ask about: a status badge's
 tinted fill is its status foreground at 12%, a focused control's border is the
 strong border, booleans are constants. The 2026-09-18 audit cut the set on
 exactly that test — a little over half the keys came off — and what went did not
 disappear, it became a **derived variable** (table at the bottom) or a plain
 base token. Removing a key is a soft break: an unknown key still loads,
-with a warning, so a theme written for a newer Atlas keeps working on an older
+with a warning, so a theme written for a newer DeskMate keeps working on an older
 one and the other way round.
 
 An explicit key is written as a dotted TOML key (or as nested tables). A key
@@ -86,8 +86,8 @@ registry preamble it emits — the transform itself is one line of `color.ts`.
 ## Full key list and derivation sources
 
 All **73** keys, in the order and grouping of `crates/atlas-theme/keys.toml`.
-**Source** is the first thing Atlas tries after an explicit `keys` value:
-`P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the Atlas default for the
+**Source** is the first thing DeskMate tries after an explicit `keys` value:
+`P:x` is `palette.x`, `B:x` is `base.x`, and `D` is the DeskMate default for the
 active appearance, shown here as dark / light. **Transform** is applied to
 whichever of those three supplied the colour, and never to an explicit value.
 
@@ -250,7 +250,7 @@ The agent identity chip.
 
 ## Derived variables
 
-Atlas writes these **6** `--atlas-…` custom properties too, but
+DeskMate writes these **6** `--atlas-…` custom properties too, but
 they are **not** theme keys: each is a pure transform of a key that is, so a
 theme steers it through that key. Writing one in a theme file is an
 unknown-key warning.
@@ -271,7 +271,7 @@ unknown-key warning.
 **These names no longer exist.** They were aliases in `tokens.css` through the
 sweep, which rewrote all 2,594 `var(--alias)` call sites and deleted them — a
 name in the left column will resolve to nothing. The table is kept because a
-theme written against an older Atlas, a stale branch, or a snippet in an issue
+theme written against an older DeskMate, a stale branch, or a snippet in an issue
 will still be full of them, and this is the translation.
 
 The table is exhaustive for the former `tokens.css` colour variables; names

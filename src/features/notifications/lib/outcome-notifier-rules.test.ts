@@ -51,7 +51,7 @@ describe("decideGitOp", () => {
   const ok: GitOpResult = {
     op: "push",
     projectId: "p1",
-    projectName: "Atlas",
+    projectName: "DeskMate",
     projectActive: true,
     durationMs: GIT_SUCCESS_MIN_MS,
     error: null,
@@ -92,14 +92,14 @@ describe("decideGitOp", () => {
 
   it("names the project only when it is not the active one", () => {
     expect(decideGitOp(ok, env(), prefs)!.subtitle).toBeUndefined();
-    expect(decideGitOp({ ...ok, projectActive: false }, env(), prefs)!.subtitle).toBe("Atlas");
+    expect(decideGitOp({ ...ok, projectActive: false }, env(), prefs)!.subtitle).toBe("DeskMate");
   });
 
   it("routes to that project's git panel", () => {
     expect(decideGitOp(ok, env(), prefs)!.target).toEqual({
       type: "git-panel",
       projectId: "p1",
-      projectName: "Atlas",
+      projectName: "DeskMate",
     });
   });
 });

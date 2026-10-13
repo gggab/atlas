@@ -289,7 +289,7 @@ function ConfirmReindex({
             <p className="text-base font-semibold text-foreground">Switch embedding model?</p>
             <p className="text-xs text-secondary-foreground mt-1 leading-relaxed">
               Using <span className="text-foreground">{name}</span> re-embeds your memory in a new
-              vector space. Atlas will wipe this project's memory index and rebuild it in the
+              vector space. DeskMate will wipe this project's memory index and rebuild it in the
               background. Your notes and files are untouched.
             </p>
           </div>
