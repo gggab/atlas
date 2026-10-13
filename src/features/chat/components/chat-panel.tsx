@@ -955,6 +955,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   const prevStatusRef = useRef<string | null>(null);
   const prevAcpRef = useRef<string | undefined>(undefined);
   const prevResumingRef = useRef(false);
+  const prevSteeringRef = useRef(false);
   // A session another process is writing (ADR-0001 amendment, Rule 7) closes
   // the drain gate like a pending resume does; "Send anyway" or the other
   // process going quiet is its falling edge. The composer feeds the live set.
@@ -1039,6 +1040,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     prevResumingRef.current = curResuming;
     const prevHeldElsewhere = prevHeldElsewhereRef.current;
     prevHeldElsewhereRef.current = heldElsewhere;
+    const prevSteering = prevSteeringRef.current;
+    const curSteering = !!session?.steeringPending;
+    prevSteeringRef.current = curSteering;
     // The gate lives in `drain-gate.ts` with its own test: a queue drains
     // only into a BOUND session. The bind-failure branch above parks the held
     // message back in the queue and drops the status to idle, and reading
@@ -1054,6 +1058,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       curResuming,
       prevHeldElsewhere,
       curHeldElsewhere: heldElsewhere,
+      prevSteering,
+      curSteering,
     });
     if (justBound || justResumed) {
       // The first message held while the session was starting goes out
@@ -1089,6 +1095,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     session?.acpSessionId,
     session?.resumePending,
     session?.unrestoredModeId,
+    session?.steeringPending,
     heldElsewhere,
     tabId,
   ]);
@@ -1269,7 +1276,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // Fail closed on a mode a resume could not restore: queue, and the drain
     // effect sends it once the user has picked a mode. The composer already
     // refuses; this catches every other sender (chips, handoffs).
-    if (bound?.unrestoredModeId) {
+    if (bound?.unrestoredModeId || bound?.steeringPending || bound?.steeringNeedsStop) {
       useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
       return;
     }

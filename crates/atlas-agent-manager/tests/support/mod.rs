@@ -24,6 +24,7 @@ use agent_client_protocol::schema::v1 as acp;
 use anyhow::{anyhow, Result};
 use atlas_acp_thread::{
     AcpThread, AcpThreadEvent, AcpThreadHandle, AgentConnection, AgentId, EventStream, LoadError,
+    SteeringOutcome,
 };
 use atlas_agent_manager::{
     Agent, AgentCatalog, AgentConnectedState, AgentConnectionEntry, AgentManager,
@@ -234,6 +235,9 @@ pub struct TestServer {
     /// Prompts that reached the connection, so a test can wait for a turn to be
     /// genuinely in flight before starting the one that supersedes it.
     pub prompts_started: Arc<AtomicUsize>,
+    pub steering: Arc<Mutex<Option<std::result::Result<SteeringOutcome, String>>>>,
+    pub steering_calls: Arc<AtomicUsize>,
+    pub cancellations: Arc<AtomicUsize>,
     /// Prompt answers, in the order the test wants them delivered. An empty
     /// queue means "answer immediately with `EndTurn`".
     prompts: Arc<Mutex<std::collections::VecDeque<oneshot::Receiver<Result<acp::StopReason>>>>>,
@@ -263,6 +267,9 @@ impl TestServer {
             live_connections: Arc::new(AtomicUsize::new(0)),
             sessions_opened: Arc::new(AtomicUsize::new(0)),
             prompts_started: Arc::new(AtomicUsize::new(0)),
+            steering: Arc::new(Mutex::new(None)),
+            steering_calls: Arc::new(AtomicUsize::new(0)),
+            cancellations: Arc::new(AtomicUsize::new(0)),
             prompts: Arc::new(Mutex::new(Default::default())),
             fixed_session_id: None,
             events: Arc::new(Mutex::new(HashMap::new())),
@@ -280,6 +287,9 @@ impl TestServer {
             live_connections: Arc::new(AtomicUsize::new(0)),
             sessions_opened: Arc::new(AtomicUsize::new(0)),
             prompts_started: Arc::new(AtomicUsize::new(0)),
+            steering: Arc::new(Mutex::new(None)),
+            steering_calls: Arc::new(AtomicUsize::new(0)),
+            cancellations: Arc::new(AtomicUsize::new(0)),
             prompts: Arc::new(Mutex::new(Default::default())),
             fixed_session_id: Some(session_id.to_string()),
             events: Arc::new(Mutex::new(HashMap::new())),
@@ -350,6 +360,9 @@ impl AgentServer for TestServer {
         let live = self.live_connections.clone();
         let sessions_opened = self.sessions_opened.clone();
         let prompts_started = self.prompts_started.clone();
+        let steering = self.steering.clone();
+        let steering_calls = self.steering_calls.clone();
+        let cancellations = self.cancellations.clone();
         let prompts = self.prompts.clone();
         let fixed_session_id = self.fixed_session_id.clone();
         let events = self.events.clone();
@@ -377,6 +390,9 @@ impl AgentServer for TestServer {
                 live,
                 sessions_opened,
                 prompts_started,
+                steering,
+                steering_calls,
+                cancellations,
                 prompts,
                 fixed_session_id,
                 events,
@@ -395,6 +411,9 @@ pub struct TestConnection {
     live: Arc<AtomicUsize>,
     sessions_opened: Arc<AtomicUsize>,
     prompts_started: Arc<AtomicUsize>,
+    steering: Arc<Mutex<Option<std::result::Result<SteeringOutcome, String>>>>,
+    steering_calls: Arc<AtomicUsize>,
+    cancellations: Arc<AtomicUsize>,
     prompts: Arc<Mutex<std::collections::VecDeque<oneshot::Receiver<Result<acp::StopReason>>>>>,
     fixed_session_id: Option<String>,
     events: Arc<Mutex<HashMap<acp::SessionId, EventStream<AcpThreadEvent>>>>,
@@ -476,7 +495,24 @@ impl AgentConnection for TestConnection {
         .boxed()
     }
 
-    fn cancel(&self, _session_id: &acp::SessionId) {}
+    fn supports_steering(&self) -> bool {
+        self.steering.lock().unwrap().is_some()
+    }
+
+    fn steer(&self, _params: acp::PromptRequest) -> BoxFuture<'static, Result<SteeringOutcome>> {
+        self.steering_calls.fetch_add(1, Ordering::SeqCst);
+        let result = self.steering.lock().unwrap().clone();
+        async move {
+            result
+                .ok_or_else(|| anyhow!("unsupported"))?
+                .map_err(anyhow::Error::msg)
+        }
+        .boxed()
+    }
+
+    fn cancel(&self, _session_id: &acp::SessionId) {
+        self.cancellations.fetch_add(1, Ordering::SeqCst);
+    }
 
     fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self

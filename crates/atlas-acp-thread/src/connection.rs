@@ -188,6 +188,16 @@ pub fn build_terminal_auth_command(
     }
 }
 
+/// The agent must acknowledge consumption before a queued message is removed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SteeringOutcome {
+    Injected,
+    PromptRequired,
+    /// Legacy adapters may start a detached turn when the active turn ends.
+    StartedNewTurn,
+}
+
 /// A live connection to one agent.
 ///
 /// Deviations from Zed, all mechanical:
@@ -314,6 +324,20 @@ pub trait AgentConnection: Send + Sync {
 
     fn prompt(&self, params: acp::PromptRequest)
         -> BoxFuture<'static, Result<acp::PromptResponse>>;
+
+    /// Negotiated by the live transport, never inferred from the agent's name.
+    fn supports_steering(&self) -> bool {
+        false
+    }
+
+    /// Add input to the active turn without cancelling or starting a prompt.
+    fn steer(&self, _params: acp::PromptRequest) -> BoxFuture<'static, Result<SteeringOutcome>> {
+        Box::pin(async {
+            Err(anyhow::anyhow!(
+                "Steering is not supported by this connection"
+            ))
+        })
+    }
 
     fn retry(&self, _session_id: &acp::SessionId) -> Option<Arc<dyn AgentSessionRetry>> {
         None

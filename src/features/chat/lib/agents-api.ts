@@ -157,6 +157,9 @@ export const agents = {
       resourceLinks: resourceLinks?.length ? resourceLinks : null,
     }),
   cancel: (key: SessionKey) => invoke<void>("agents_cancel", { key }),
+  /** Does not cancel or supersede the active `session/prompt`. */
+  steer: (key: SessionKey, text: string) =>
+    invoke<"injected" | "prompt_required" | "started_new_turn">("agents_steer", { key, text }),
   /** Answer an elicitation the agent raised (P3.3). */
   respondElicitation: (
     agentId: AgentId,

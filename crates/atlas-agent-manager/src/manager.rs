@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1 as acp;
 use anyhow::{anyhow, Result};
-use atlas_acp_thread::{AcpThread, AcpThreadHandle, AgentConnection, AgentId, LoadError};
+use atlas_acp_thread::{
+    AcpThread, AcpThreadHandle, AgentConnection, AgentId, LoadError, SteeringOutcome,
+};
 use atlas_agent_servers::{AgentServer, AgentServerDelegate, ConnectOptions, CustomAgentServer};
 use futures::future::{BoxFuture, Shared};
 use futures::FutureExt;
@@ -1068,10 +1070,51 @@ impl AgentManager {
         }
     }
 
+    /// Deliver input into the existing turn. Failure belongs to this request,
+    /// not to the prompt that is still running.
+    pub async fn steer(
+        &self,
+        session_id: &acp::SessionId,
+        content: Vec<acp::ContentBlock>,
+    ) -> Result<SteeringOutcome> {
+        let handle = self
+            .session(session_id)
+            .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
+        let (connection, entry_count) = {
+            let thread = lock_thread(&handle.thread);
+            let connection = thread.connection().clone();
+            anyhow::ensure!(
+                connection.supports_steering(),
+                "Steering is not supported by this connection"
+            );
+            if !thread.is_generating() {
+                return Ok(SteeringOutcome::PromptRequired);
+            }
+            (connection, thread.entries().len())
+        };
+        let outcome = connection
+            .steer(acp::PromptRequest::new(session_id.clone(), content.clone()))
+            .await?;
+        if outcome != SteeringOutcome::PromptRequired {
+            let mut thread = lock_thread(&handle.thread);
+            thread.record_steering_content(content, entry_count);
+            if outcome == SteeringOutcome::StartedNewTurn {
+                thread.adopt_detached_steering_turn();
+            }
+        }
+        Ok(outcome)
+    }
+
     /// Stop the running turn. Safe to call when nothing is running.
     pub fn cancel(&self, session_id: &acp::SessionId) {
         if let Some(handle) = self.session(session_id) {
-            lock_thread(&handle.thread).cancel();
+            let mut thread = lock_thread(&handle.thread);
+            let detached = thread.has_detached_steering_turn();
+            thread.cancel();
+            if detached {
+                // No session/prompt response will finalize this legacy turn.
+                thread.end_turn(acp::StopReason::Cancelled);
+            }
         }
     }
 

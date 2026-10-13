@@ -20,7 +20,8 @@ use atlas_acp_thread::{
     build_terminal_auth_command, AcpThread, AcpThreadEvent, AcpThreadHandle, AgentConnection,
     AgentId, AgentModelId, AgentModelInfo, AgentModelList, AgentModelSelector,
     AgentSessionConfigOptions, AgentSessionModes, AuthRequired, ElicitationStore,
-    ElicitationStoreEvent, ElicitationStoreHandle, EventSink, LoadError, TerminalAuthCommand,
+    ElicitationStoreEvent, ElicitationStoreHandle, EventSink, LoadError, SteeringOutcome,
+    TerminalAuthCommand,
 };
 use futures::future::BoxFuture;
 use futures::{AsyncBufReadExt, FutureExt, StreamExt};
@@ -134,6 +135,7 @@ pub struct AcpConnection {
     sessions: Arc<SessionRegistry>,
     auth_methods: Vec<acp::AuthMethod>,
     agent_capabilities: acp::AgentCapabilities,
+    steering_supported: bool,
     /// Present only when the agent advertised `sessionCapabilities.list`. Its
     /// absence is what "this agent has no listable history" means, everywhere.
     session_list: Option<Arc<AcpSessionList>>,
@@ -374,6 +376,13 @@ impl AcpConnection {
             }
         });
 
+        let steering_supported = response
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("steering"))
+            .and_then(|steering| steering.get("supported"))
+            .and_then(serde_json::Value::as_bool)
+            == Some(true);
         let agent_info = response.agent_info;
         let telemetry_id: Arc<str> = agent_info
             .as_ref()
@@ -401,6 +410,7 @@ impl AcpConnection {
             auth_methods: response.auth_methods,
             session_list,
             agent_capabilities: response.agent_capabilities,
+            steering_supported,
             command,
             request_elicitations,
             defaults,
@@ -953,6 +963,44 @@ impl Drop for AcpConnection {
 }
 
 impl AgentConnection for AcpConnection {
+    fn supports_steering(&self) -> bool {
+        self.steering_supported
+    }
+
+    fn steer(&self, params: acp::PromptRequest) -> BoxFuture<'static, Result<SteeringOutcome>> {
+        let supported = self.steering_supported;
+        let connection = self.connection.clone();
+        async move {
+            anyhow::ensure!(supported, "Steering is not supported by this connection");
+            // Adapters supporting the idle contract return promptRequired, so
+            // Atlas remains responsible for ordinary turn start/completion.
+            let request = agent_client_protocol::UntypedMessage::new(
+                "_session/steering",
+                serde_json::json!({
+                    "sessionId": params.session_id,
+                    "prompt": params.prompt,
+                    "_meta": { "steering": { "idleBehavior": "promptRequired" } },
+                }),
+            )?;
+            // No timeout retry: a lost acknowledgement may still have consumed
+            // the input. This request runs concurrently with session/prompt.
+            let result = connection.send_request(request).block_task().await?;
+            match result.get("outcome").and_then(serde_json::Value::as_str) {
+                Some("injected") => Ok(SteeringOutcome::Injected),
+                Some("promptRequired") => Ok(SteeringOutcome::PromptRequired),
+                Some("startedNewTurn") => Ok(SteeringOutcome::StartedNewTurn),
+                Some("failed") => Err(anyhow!(
+                    "The agent refused steering: {}",
+                    result.get("reason").unwrap_or(&serde_json::Value::Null)
+                )),
+                _ => Err(anyhow!(
+                    "The agent returned an unrecognized steering acknowledgement"
+                )),
+            }
+        }
+        .boxed()
+    }
+
     fn agent_id(&self) -> AgentId {
         self.id.clone()
     }

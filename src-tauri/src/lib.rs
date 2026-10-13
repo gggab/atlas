@@ -591,6 +591,7 @@ pub fn run() {
             commands::agents::agents_snapshot,
             commands::agents::agents_snapshot_meta,
             commands::agents::agents_send,
+            commands::agents::agents_steer,
             commands::agents::agents_cancel,
             commands::agents::agents_set_mode,
             commands::agents::agents_set_model,

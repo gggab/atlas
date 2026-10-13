@@ -337,6 +337,7 @@ interface ChatActions {
     updateSessionStatus: (sessionId: string, status: AgentStatus) => void;
     /** Mark a session as stop-requested (Stop clicked, terminal not yet in). */
     setStopping: (sessionId: string, on: boolean) => void;
+    setSteeringPending: (sessionId: string, on: boolean) => void;
     /** See `ChatSession.pendingSend`. `undefined` clears it. */
     setPendingSend: (sessionId: string, pending: PendingSend | undefined) => void;
     /** Flag/clear "the backing agent process died" (drives Restart + rebind). */
@@ -1017,6 +1018,11 @@ export const useChatStore = createSelectors(
             const session = s.sessions[sessionId];
             if (session) session.stopping = on || undefined;
           }),
+        setSteeringPending: (sessionId, on) =>
+          set((s) => {
+            const session = s.sessions[sessionId];
+            if (session) session.steeringPending = on || undefined;
+          }),
         // Killing an agent drops its connection, and the exit-watch task that
         // would have produced `agent_disconnected` goes with it. So nothing
         // arrives to end the turn: this records what that delta does, plus the
@@ -1033,6 +1039,7 @@ export const useChatStore = createSelectors(
             if (!session) return;
             session.status = "error";
             session.stopping = undefined;
+            session.steeringNeedsStop = undefined;
             session.retryStatus = undefined;
             session.inflightToolIds = undefined;
             session.disconnected = true;
@@ -1595,6 +1602,10 @@ export const useChatStore = createSelectors(
           set((s) => {
             const session = s.sessions[tabId];
             if (!session) return;
+            if (session.acpAgentId !== agentId || session.acpSessionId !== acpSessionId) {
+              session.steeringPending = undefined;
+              session.steeringNeedsStop = undefined;
+            }
             // A (re)bind points the tab at a DIFFERENT backend session — a
             // freshly spawned SessionActor whose `turn_seq` counter restarts at
             // 1 (turn_seq is not persisted; new / resumed / project-switched
@@ -1684,6 +1695,7 @@ export const useChatStore = createSelectors(
               }
               session.status = "idle";
               session.stopping = undefined;
+              session.steeringNeedsStop = undefined;
               session.retryStatus = undefined;
               session.inflightToolIds = undefined;
               session.acpModesPending = false;
@@ -1711,6 +1723,7 @@ export const useChatStore = createSelectors(
               }
               session.status = "idle";
               session.stopping = undefined;
+              session.steeringNeedsStop = undefined;
               session.retryStatus = undefined;
               session.inflightToolIds = undefined;
               session.acpModesPending = false;
@@ -1917,6 +1930,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       }
       session.status = terminal;
       session.stopping = undefined;
+      session.steeringNeedsStop = undefined;
       session.retryStatus = undefined;
       session.inflightToolIds = undefined;
       // No permission modal survives its turn: the Rust finalize sweep emits
@@ -1997,6 +2011,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       session.retryStatus = undefined;
       session.inflightToolIds = undefined;
       delete s.pendingPermissions[env.session_id];
+      session.steeringNeedsStop = undefined;
       // Per-turn usage footer (native agent): derive this turn's tokens/cost as
       // the delta from the previous turn's cumulative snapshot, and attach it to
       // the trailing assistant message so it renders at the end of the turn.
@@ -2079,6 +2094,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       session.messages.push(makeAssistantTextMessage(`Error: ${env.error}`));
       session.status = "error";
       session.stopping = undefined;
+      session.steeringNeedsStop = undefined;
       session.retryStatus = undefined;
       session.inflightToolIds = undefined;
       // Auth failures route to the agent's sign-in flow (P15) instead of
@@ -2109,6 +2125,7 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
       // fields stay — acpSessionId IS the on-disk id resume needs (P14).
       session.disconnected = true;
       session.stopping = undefined;
+      session.steeringNeedsStop = undefined;
       session.retryStatus = undefined;
       return;
     }

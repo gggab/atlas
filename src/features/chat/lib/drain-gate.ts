@@ -35,6 +35,8 @@ export interface DrainEdgeInput {
   /** Live elsewhere and not overridden: sending would fork the session. */
   prevHeldElsewhere?: boolean;
   curHeldElsewhere?: boolean;
+  prevSteering?: boolean;
+  curSteering?: boolean;
 }
 
 export interface DrainEdge {
@@ -62,6 +64,15 @@ export function drainEdge(input: DrainEdgeInput): DrainEdge {
     justBound,
     justResumed,
     turnFinished,
-    drainQueue: turnFinished || justBound || justResumed,
+    drainQueue:
+      !input.curSteering &&
+      (turnFinished ||
+        justBound ||
+        justResumed ||
+        (!!input.prevSteering &&
+          curStatus === "idle" &&
+          prevAcp === curAcp &&
+          !!curAcp &&
+          !curGated)),
   };
 }

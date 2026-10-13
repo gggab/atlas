@@ -2,6 +2,9 @@
 
 This build hosts installed external ACP CLIs using their vendor login. It has no DeskMate account or official model gateway.
 
+Running tasks can accept [steering](steering.md) from queued message cards only
+when the connected CLI explicitly advertises the ACP steering extension.
+
 ## Dependency boundary
 
 - External CLI: `atlas-agent-store` → `atlas-agent-servers` → `atlas-agent-manager` → `AgentHost` / delta projector. Capability gates control authentication, models and session restoration. Tabs do not own process lifetime, so several sessions can run concurrently.

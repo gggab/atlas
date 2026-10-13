@@ -142,6 +142,8 @@ export interface SessionSnapshot {
    *  true → picked/pasted images become inline base64 attachments; false →
    *  they degrade to path mention chips. */
   prompt_image_supported: boolean;
+  /** This live ACP connection advertised `_meta.steering.supported`. */
+  steering_supported?: boolean;
   plan: PlanEntry[];
   messages: SessionMessage[];
   usage: Usage;

@@ -116,6 +116,7 @@ pub struct SessionSnapshot {
     pub available_commands: Vec<serde_json::Value>,
     pub config_options: Vec<serde_json::Value>,
     pub prompt_image_supported: bool,
+    pub steering_supported: bool,
     pub plan: Vec<PlanEntry>,
     pub messages: Vec<Message>,
     pub usage: Usage,
@@ -1193,6 +1194,7 @@ impl AgentHost {
                 })
                 .unwrap_or_default(),
             prompt_image_supported: thread.prompt_capabilities().image,
+            steering_supported: connection.supports_steering(),
             plan: project::plan_entries(&thread.plan().entries),
             messages: if with_messages {
                 project::snapshot_messages(&thread, current_model.as_deref())
@@ -1268,6 +1270,27 @@ impl AgentHost {
         Ok(())
     }
 
+    /// Steering keeps the current turn sequence and watcher activity intact.
+    pub async fn steer(
+        &self,
+        key: &SessionKey,
+        content: Vec<acp::ContentBlock>,
+    ) -> Result<atlas_acp_thread::SteeringOutcome> {
+        let owner = lock(&self.sessions)
+            .get(&key.session_id)
+            .map(|record| record.agent.clone())
+            .ok_or_else(HostError::unknown_session)?;
+        if self.record_for(key.agent_id)?.agent != owner {
+            return Err(HostError::classified(
+                "Session belongs to another agent connection",
+            ));
+        }
+        self.manager
+            .steer(&acp::SessionId::new(key.session_id.as_str()), content)
+            .await
+            .map_err(HostError::from)
+    }
+
     fn begin_atlas_turn(&self, session_id: &str) {
         let mut activity = lock(&self.activity);
         let entry = activity.entry(session_id.to_owned()).or_default();
@@ -1289,6 +1312,17 @@ impl AgentHost {
     /// turn.
     pub(crate) fn atlas_activity(&self) -> HashMap<String, AtlasActivity> {
         let mut activity = lock(&self.activity).clone();
+        // A legacy adapter's detached steering turn has no prompt future to
+        // count in/out. Its writes are still ours until the user stops it.
+        let ids: Vec<_> = lock(&self.sessions).keys().cloned().collect();
+        for id in ids {
+            if self
+                .thread(&id)
+                .is_ok_and(|thread| lock_thread(&thread).has_detached_steering_turn())
+            {
+                activity.entry(id).or_default().in_flight += 1;
+            }
+        }
         let mut aliases: Vec<(String, String)> = lock(&self.aliases)
             .iter()
             .map(|(alias, p)| (alias.clone(), p.owner.clone()))

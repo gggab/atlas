@@ -1002,6 +1002,7 @@ pub struct AcpThread {
     plan: Plan,
     turn_id: u32,
     running_turn: Option<RunningTurn>,
+    detached_steering_turn: Option<u32>,
     connection: Arc<dyn AgentConnection>,
     token_usage: Option<TokenUsage>,
     cost: Option<SessionCost>,
@@ -1036,6 +1037,7 @@ impl AcpThread {
             plan: Plan::default(),
             turn_id: 0,
             running_turn: None,
+            detached_steering_turn: None,
             connection,
             token_usage: None,
             cost: None,
@@ -1177,6 +1179,12 @@ impl AcpThread {
 
     pub fn is_generating(&self) -> bool {
         self.running_turn.is_some()
+    }
+
+    pub fn has_detached_steering_turn(&self) -> bool {
+        self.running_turn
+            .as_ref()
+            .is_some_and(|turn| Some(turn.id) == self.detached_steering_turn)
     }
 
     fn emit(&self, event: AcpThreadEvent) {
@@ -1327,6 +1335,28 @@ impl AcpThread {
     ) {
         let is_optimistic = client_id.is_some();
         self.push_user_content_block_with_protocol_id(client_id, is_optimistic, None, chunk, false)
+    }
+
+    /// Record accepted steering as its own user row, without opening a turn.
+    /// An agent may already have echoed the input before acknowledging it.
+    pub fn record_steering_content(&mut self, content: Vec<acp::ContentBlock>, since: usize) {
+        if content.is_empty() || self.entries.iter().skip(since).any(|entry| {
+            matches!(entry, AgentThreadEntry::UserMessage(message) if message.chunks == content)
+        }) {
+            return;
+        }
+        let mut blocks = ContentBlock::new(content[0].clone());
+        for chunk in content.iter().skip(1) {
+            blocks.append(chunk.clone());
+        }
+        self.push_entry(AgentThreadEntry::UserMessage(UserMessage {
+            protocol_id: None,
+            client_id: None,
+            is_optimistic: true,
+            content: blocks,
+            chunks: content,
+            indented: false,
+        }));
     }
 
     fn push_user_content_block_from_agent(
@@ -1979,6 +2009,17 @@ impl AcpThread {
         self.running_turn = Some(RunningTurn { id: self.turn_id });
         self.emit(AcpThreadEvent::StatusChanged);
         self.turn_id
+    }
+
+    /// A legacy steering adapter can start a detached turn after the prompt
+    /// completes. Keep it busy and stoppable: ACP supplies no prompt response
+    /// for that turn, so an idle lie would permit overlapping sends.
+    pub fn adopt_detached_steering_turn(&mut self) {
+        self.had_error = false;
+        self.turn_id += 1;
+        self.running_turn = Some(RunningTurn { id: self.turn_id });
+        self.detached_steering_turn = Some(self.turn_id);
+        self.emit(AcpThreadEvent::StatusChanged);
     }
 
     /// Closes the running turn. `stop_reason` is emitted so the UI leaves the

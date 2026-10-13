@@ -599,6 +599,22 @@ impl CaptureState {
         });
     }
 
+    /// Accepted steering is user content in the current turn, not a new
+    /// checkpoint, prompt counter, or HEAD sampling boundary.
+    pub fn note_steering(&self, session_id: &str, text: &str) {
+        let Some(binding) = lock_ok(&self.sessions).get(session_id).cloned() else {
+            return;
+        };
+        self.submit(Job::Turn {
+            binding,
+            native_message_id: format!("steering:{}", uuid::Uuid::new_v4()),
+            role: Role::User,
+            mode: Mode::Text,
+            body: text.to_string(),
+            created_at: chrono::Utc::now(),
+        });
+    }
+
     /// Import on-disk transcripts for a Project.
     ///
     /// The same call serves the one-time backfill (on enable) and the ongoing
@@ -2936,6 +2952,20 @@ mod diff_path_tests {
             raw_output: None,
             content_blocks: Vec::new(),
         }
+    }
+
+    #[test]
+    fn accepted_steering_keeps_the_capture_turn_and_head_anchor() {
+        let root = repo("steering-capture");
+        let state = CaptureState::new();
+        state.note_prompt("s1", root.to_str().unwrap(), "test-cli", None, "original");
+        let turn = lock_ok(&state.sessions).get("s1").unwrap().turn_seq;
+        let head = lock_ok(&state.turn_heads).get("s1").unwrap().clone();
+        state.note_steering("s1", "new guidance");
+        assert_eq!(lock_ok(&state.sessions).get("s1").unwrap().turn_seq, turn);
+        assert_eq!(lock_ok(&state.turn_heads).get("s1").unwrap(), &head);
+        state.note_steering("unknown", "not bound");
+        assert!(!lock_ok(&state.sessions).contains_key("unknown"));
     }
 
     /// A git repository with one commit, so `worktree_changes` has a HEAD to

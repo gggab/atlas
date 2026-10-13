@@ -8,6 +8,12 @@ Use `develop` as the starting and PR target branch for this fork. Inspect the br
 
 Keep external Agent behavior capability-driven through ACP negotiation. Preserve vendor CLI authentication, local configuration, sessions, checkpoints and memory. MCP availability is not proof of retrieval or automatic context injection. Do not hide errors or introduce silent fallbacks.
 
+For [steering](docs/reference/steering.md), verify both the queued-message UI and
+the negotiated transport. Run `cargo test --locked -p atlas-agent-servers --test steering`
+and `cargo test --locked -p atlas-agent-manager --test steering`; the stdio suite
+requires Node.js on PATH or `ATLAS_TEST_NODE`. Mock/browser checks do not establish
+real desktop or vendor-task verification.
+
 ## Setup and commands
 
 Use repository-pinned Bun, Node and Rust versions from `mise.toml`, `package.json` and `rust-toolchain.toml`, plus the Tauri prerequisites listed in the README.

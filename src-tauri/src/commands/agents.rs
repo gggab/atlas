@@ -1393,6 +1393,53 @@ pub async fn agents_send(
     .map_err(|e| e.to_string())
 }
 
+/// Mid-turn input uses the transport's negotiated steering extension. It does
+/// not call send/cancel, start a checkpoint, or fail the running prompt.
+#[tauri::command]
+pub async fn agents_steer(
+    key: SessionKey,
+    text: String,
+    host: State<'_, Arc<AgentHost>>,
+    app: AppHandle,
+) -> Result<atlas_acp_thread::SteeringOutcome, String> {
+    if text.trim().is_empty() {
+        return Err("Steering input cannot be empty".into());
+    }
+    let snapshot = host.snapshot_meta(&key).map_err(|e| e.to_string())?;
+    if !snapshot.steering_supported {
+        return Err("Steering is not supported by this connection".into());
+    }
+    app.state::<Arc<super::browser_use::BrowserUseState>>()
+        .on_user_prompt(&key.session_id, &text)
+        .await?;
+    let outcome = host
+        .steer(&key, prompt::compose(text.clone(), Vec::new()))
+        .await
+        .map_err(|e| e.to_string())?;
+    if outcome == atlas_acp_thread::SteeringOutcome::PromptRequired {
+        return Ok(outcome);
+    }
+    app.state::<super::capture::CaptureState>()
+        .note_steering(&key.session_id, &text);
+    if !snapshot.cwd.is_empty() {
+        app.state::<Arc<super::agent_transcript::TranscriptState>>()
+            .note_prompt(
+                &key.session_id,
+                &snapshot.cwd,
+                &snapshot.plugin_id,
+                &text,
+                chrono::Utc::now().to_rfc3339(),
+            );
+    }
+    if let Some(history) = host.history() {
+        history.note_interaction(
+            &acp::SessionId::new(key.session_id.as_str()),
+            chrono::Utc::now(),
+        );
+    }
+    Ok(outcome)
+}
+
 /// Hard cap on building the briefing's first-look extras (pack + handoff +
 /// summarise) so a slow disk or provider can never stall an agent's briefing.
 const BOOTSTRAP_BUDGET_SECS: u64 = 8;

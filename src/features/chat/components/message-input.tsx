@@ -6,8 +6,6 @@ import { Hint } from "@/ui/tooltip";
 import {
   ArrowUp,
   Square,
-  Pencil,
-  X,
   Check,
   Loader2,
   Database,
@@ -19,6 +17,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { useChatStore } from "../stores/chat-store";
 import { agents } from "../lib/agents-api";
+import { canSteer, steerQueuedMessage } from "../lib/steer-queued-message";
+import { QueuedMessage } from "./queued-message";
 import {
   CLAUDE_PERMISSION_MODE_LABEL,
   CLAUDE_PERMISSION_MODES,
@@ -141,7 +141,6 @@ async function fileToImageAttachment(file: File): Promise<ImageAttachment | null
     dataBase64: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
   });
 }
-
 /** Optimize a large pasted image once; retain the original if decoding fails. */
 async function downscaleAttachment(image: ImageAttachment): Promise<ImageAttachment> {
   if (!exceedsBudget(image.dataBase64.length)) return image;
@@ -1029,6 +1028,15 @@ export function MessageInput({
       : null;
   });
   const [imageSupported, setImageSupported] = useState(false);
+  const [steeringCapability, setSteeringCapability] = useState<{
+    key: string;
+    supported: boolean;
+  } | null>(null);
+  const steeringSession = useChatStore((s) => s.sessions[tabId]);
+  const steeringSupported =
+    steeringCapability?.key === acpBoundKey && !!steeringCapability?.supported;
+  const steerable =
+    canSteer(steeringSession, steeringSupported) && !heldForTerminal && !disabled && !stopping;
   useEffect(() => {
     if (!acpBoundKey) {
       setImageSupported(false);
@@ -1039,10 +1047,16 @@ export function MessageInput({
     agents
       .snapshotMeta({ agent_id, session_id })
       .then((snap) => {
-        if (!cancelled) setImageSupported(!!snap.prompt_image_supported);
+        if (!cancelled) {
+          setImageSupported(!!snap.prompt_image_supported);
+          setSteeringCapability({ key: acpBoundKey, supported: !!snap.steering_supported });
+        }
       })
       .catch(() => {
-        if (!cancelled) setImageSupported(false);
+        if (!cancelled) {
+          setImageSupported(false);
+          setSteeringCapability(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -1629,7 +1643,7 @@ export function MessageInput({
       return;
     }
     const mentions = inputRef.current?.getMentions() ?? [];
-    if (running) {
+    if (running || steeringSession?.steeringPending) {
       // Queued messages don't carry mentions yet — the queue holds raw
       // strings and the agent will see whatever shortform text was in the
       // composer. Mentions are dropped here intentionally; promoting the
@@ -1659,6 +1673,7 @@ export function MessageInput({
     githubSyncing,
     modeUnrestored,
     heldForTerminal,
+    steeringSession?.steeringPending,
   ]);
   submitRef.current = submit;
 
@@ -1685,17 +1700,44 @@ export function MessageInput({
   return (
     <div className="px-4 pb-4 pt-2 bg-transparent">
       <div className="max-w-[720px] mx-auto">
+        {steeringSession?.steeringNeedsStop && (
+          <div
+            role="status"
+            className="mb-2 rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground"
+          >
+            原任务已结束，适配器开启了新一轮。该接口无法通知结束；继续前请点击停止。
+          </div>
+        )}
         {/* Queued messages above the input */}
         {queue.length > 0 && (
           <div className="mb-2 flex flex-col gap-1">
             <div className="text-2xs uppercase tracking-wider text-[var(--muted-foreground)] px-1">
               Queued · {queue.length}
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-col gap-1.5">
               {queue.map((q, i) => (
-                <QueueChip
+                <QueuedMessage
                   key={i}
                   text={q}
+                  pending={!!steeringSession?.steeringPending}
+                  onSteer={
+                    steerable
+                      ? () => {
+                          void steerQueuedMessage(tabId, i)
+                            .then((outcome) => {
+                              if (outcome === "prompt_required")
+                                toast.info("任务已结束，消息将按队列发送。");
+                              if (outcome === "started_new_turn")
+                                toast.warning("适配器开启了新一轮；继续前请点击停止。");
+                            })
+                            .catch((error: unknown) => {
+                              toast.error(
+                                `引导失败，消息仍在队列中：${error instanceof Error ? error.message : String(error)}`,
+                              );
+                            });
+                        }
+                      : undefined
+                  }
                   onEdit={() => {
                     const cur = inputRef.current?.getValue() ?? "";
                     const merged = cur.trim() ? `${cur}\n${q}` : q;
@@ -2017,37 +2059,6 @@ export function MessageInput({
           footerLabel={`${agentMeta(agentType).label} commands`}
         />
       )}
-    </div>
-  );
-}
-
-function QueueChip({
-  text,
-  onEdit,
-  onRemove,
-}: {
-  text: string;
-  onEdit: () => void;
-  onRemove: () => void;
-}) {
-  return (
-    <div className="group flex items-center gap-1 max-w-[260px] h-6 pl-2 pr-1 rounded-full border border-[var(--border)] bg-[var(--card)] text-xs text-[var(--secondary-foreground)]">
-      <button
-        onClick={onEdit}
-        className="flex items-center gap-1 min-w-0 cursor-pointer hover:text-[var(--foreground)]"
-        title="Edit / merge into input"
-      >
-        <Pencil size={9} className="text-[var(--muted-foreground)] shrink-0" />
-        <span className="truncate">{text.replace(/\s+/g, " ")}</span>
-      </button>
-      <Hint label="Remove from queue" side="top">
-        <button
-          onClick={onRemove}
-          className="flex items-center justify-center w-4 h-4 rounded-full hover:bg-[var(--atlas-element-hover)] text-[var(--muted-foreground)] hover:text-[var(--atlas-status-error-foreground)] cursor-pointer shrink-0"
-        >
-          <X size={10} />
-        </button>
-      </Hint>
     </div>
   );
 }

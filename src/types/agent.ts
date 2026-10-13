@@ -173,6 +173,10 @@ export interface ChatSession {
    *  history-loss race). Cleared by every terminal (idle/error/turn_finished/
    *  turn_failed). */
   stopping?: boolean;
+  /** Transient queue gate while a mid-turn steering request is awaiting acknowledgement. */
+  steeringPending?: boolean;
+  /** Legacy adapter started a turn without an ACP completion response. */
+  steeringNeedsStop?: boolean;
   /** The agent process backing this session died (agent_disconnected). The
    *  binding fields are kept for resume — the next send (or the Restart
    *  affordance) respawns the agent and load_session-resumes where the
