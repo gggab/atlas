@@ -6,6 +6,13 @@ an uploaded Actions artifact is not a public GitHub Release.
 
 ## Windows x64
 
+Version 0.4.1 updates history cards and branch recording, the ACP model picker,
+code search and session discovery, browser website authorization, retained-page
+and tab-group reuse across turns, handoff continuation, and transcript scroll
+restoration after window wake. The companion extension remains version 0.4.5.
+Keep the Windows release marked as a preview until clean installation and
+store-installed browser integration have been verified for that MSI.
+
 Run **Build Windows Release** in GitHub Actions, selecting `develop`. The
 workflow installs the repository-pinned Bun, Node and Rust versions, checks
 types, lint and focused release/browser contracts, and builds the production

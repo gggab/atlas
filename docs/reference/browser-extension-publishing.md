@@ -172,7 +172,7 @@ approve the release manually. Edge submission also goes through certification.
 The standalone policy is [PRIVACY.md](../../PRIVACY.md) at the repository root.
 For this public distribution, the dashboard's privacy-policy URL is:
 
-<https://github.com/gggab/atlas/blob/refactor/local-agent-workbench/PRIVACY.md>
+<https://github.com/gggab/atlas/blob/develop/PRIVACY.md>
 
 Keep this branch and file publicly accessible without login, and update the policy
 when data handling changes. If the branch is renamed or deleted, move the policy
