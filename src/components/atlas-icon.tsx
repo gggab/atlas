@@ -1,4 +1,4 @@
-import atlasIconUrl from "@/assets/atlas-icon.svg";
+import atlasIconUrl from "@/assets/deskmate-icon.svg";
 import { cn } from "@/lib/utils";
 import { DEFAULT_APP_PROFILE } from "@/lib/app-profile";
 

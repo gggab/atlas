@@ -49,9 +49,9 @@ if ! rustup target list --installed | grep -qx "${TARGET}"; then
   rustup target add "${TARGET}"
 fi
 
-# The Liquid Glass icon ships precompiled (scripts/app-icons.mjs has why), so
-# the build never needs Xcode — but an edited .icon that was never re-rendered
-# ships the old icon. A dev build only warns; release-macos.sh refuses.
+# SVG sources are rendered to committed ICNS/PNG assets with the pinned Tauri
+# CLI. An edited source without a render ships stale artwork. A dev build
+# warns; release-macos.sh refuses.
 if ! node scripts/app-icons.mjs --check; then
   log "WARNING: app icons are stale — this build ships the last rendered ones"
 fi

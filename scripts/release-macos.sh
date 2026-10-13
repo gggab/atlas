@@ -116,8 +116,8 @@ else
   for t in "${TARGETS[@]}"; do ensure_target "${t}"; done
 fi
 
-# The Liquid Glass icon ships precompiled (scripts/app-icons.mjs has why). A
-# release built from an edited-but-not-re-rendered .icon ships the wrong icon,
+# The SVG icon ships as generated ICNS/PNG assets (scripts/app-icons.mjs). A
+# release built from an edited-but-not-re-rendered SVG ships the wrong icon,
 # so a stale render is fatal here, where the dev build (build-dmg.sh) warns.
 if ! node "$(dirname "$0")/app-icons.mjs" --check; then
   err "App icons are stale. Run \`bun run icons:render\` and commit the result."

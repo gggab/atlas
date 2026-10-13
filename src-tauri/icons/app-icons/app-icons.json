@@ -1,7 +1,7 @@
 {
   "default": "dark",
   "icons": [
-    { "id": "dark", "label": "Dark" },
-    { "id": "light", "label": "Light" }
+    { "id": "dark", "label": "Dark", "source": "src/assets/deskmate-icon.svg" },
+    { "id": "light", "label": "Light", "source": "src/assets/deskmate-icon-light.svg" }
   ]
 }

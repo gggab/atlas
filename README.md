@@ -1,5 +1,7 @@
 # 同桌 DeskMate
 
+<img src="src/assets/deskmate-icon.svg" width="96" height="96" alt="同桌 DeskMate 图标" />
+
 **你的 AI 同桌。**
 
 同桌是一个本地优先的桌面 AI 工作台，把不同厂商的 CLI Agent、项目、会话、文件、终端和 Git 放进同一个窗口，让 AI 助手和你一起工作。

@@ -2,7 +2,7 @@
 //!
 //! The selectable icons are listed in `icons/app-icons/app-icons.json`, and
 //! rendered by `scripts/app-icons.mjs`. The manifest's default is the bundle's
-//! own Liquid Glass icon (a precompiled `Assets.car`). Every other icon ships
+//! own DeskMate ICNS icon. Every other icon ships
 //! as a flat `icons/app-icons/<id>.icns` resource and is applied at runtime in
 //! two places:
 //!
@@ -15,7 +15,7 @@
 //!   so it is re-applied at every launch.
 //!
 //! The default resets both to `nil` rather than loading a copy of the icon,
-//! so the Liquid Glass rendering stays the system's own. An id the manifest
+//! so the default follows the current bundle. An id the manifest
 //! does not know (a newer Atlas wrote it, or an icon was retired) falls back to
 //! the default for this session; `config.toml` keeps what the user chose.
 

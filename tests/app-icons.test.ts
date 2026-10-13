@@ -1,23 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ICONS_DIR, readManifest, staleOutputs } from "../scripts/app-icons.mjs";
 
-/**
- * Guards the selectable macOS app icons (`src-tauri/icons/app-icons/`).
- *
- * The default icon ships as a precompiled `Assets.car` rather than the `.icon`
- * source, because tauri-cli starts actool with stdin closed and the bundle
- * aborts (tauri-apps/tauri#15315; `scripts/app-icons.mjs` has the detail). That
- * trades a build-time failure for a quieter one: edit an Icon Composer source,
- * forget `bun run icons:render`, and every build ships the old icon without a
- * word. Likewise an id in the manifest with no rendered `.icns` shows up in
- * Settings and silently falls back to the default when picked.
- *
- * None of it fails to compile, so it is checked here: the manifest, the
- * sources, the committed renders and the Tauri config all have to agree.
- */
+/** Guards shared SVG sources, native outputs and the cross-platform renderer. */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const manifest = readManifest();
@@ -36,9 +24,14 @@ describe("app icon manifest", () => {
     expect(ids).toContain(manifest.default);
   });
 
-  it("has exactly one Icon Composer source per id", () => {
-    const sources = readdirSync(path.join(ICONS_DIR, "sources")).filter((n) => n !== ".DS_Store");
-    expect(sources.sort()).toEqual(ids.map((id) => `${id}.icon`).sort());
+  it("uses an existing square SVG source for each preserved icon id", () => {
+    expect(ids).toEqual(["dark", "light"]);
+    for (const icon of manifest.icons) {
+      expect(icon.source).toMatch(/^src\/assets\/deskmate-icon(?:-light)?\.svg$/);
+      expect(readFileSync(path.join(REPO_ROOT, icon.source), "utf8")).toContain(
+        'viewBox="0 0 1024 1024"',
+      );
+    }
   });
 
   it("has a rendered .icns for every id but the default, and nothing else", () => {
@@ -50,18 +43,35 @@ describe("app icon manifest", () => {
   it("has renders that match the current sources", () => {
     expect(staleOutputs(manifest)).toEqual([]);
   });
+
+  it("checks committed outputs through the CLI on every platform", () => {
+    const output = execFileSync(
+      process.execPath,
+      [path.join(REPO_ROOT, "scripts/app-icons.mjs"), "--check"],
+      { encoding: "utf8" },
+    );
+    expect(output).toContain("all generated assets are current");
+  });
+
+  it("shares the default source with the browser and landing page", () => {
+    const source = readFileSync(path.join(REPO_ROOT, manifest.icons[0].source));
+    for (const file of ["scripts/browser-use/extension/icons/icon.svg", "landing/icon-sm.svg"])
+      expect(readFileSync(path.join(REPO_ROOT, file))).toEqual(source);
+    const background = readFileSync(path.join(REPO_ROOT, "src-tauri/icons/dmg-background.png"));
+    expect([background.readUInt32BE(16), background.readUInt32BE(20)]).toEqual([512, 352]);
+  });
 });
 
 describe("tauri config", () => {
   const conf = readJson("src-tauri/tauri.conf.json");
   const macos = readJson("src-tauri/tauri.macos.conf.json");
 
-  it("bundles the precompiled Assets.car, never an .icon source", () => {
+  it("bundles the new flat ICNS instead of the old compiled brand", () => {
     const icons: string[] = conf.bundle.icon;
-    expect(icons).toContain("icons/app-icons/Assets.car");
-    expect(existsSync(path.join(REPO_ROOT, "src-tauri", "icons/app-icons/Assets.car"))).toBe(true);
-    // An `.icon` entry makes Tauri run actool at bundle time — the failure
-    // the precompiled car exists to avoid.
+    expect(icons).toContain("icons/Icon.icns");
+    expect(icons).not.toContain("icons/app-icons/Assets.car");
+    expect(existsSync(path.join(REPO_ROOT, "src-tauri", "icons/Icon.icns"))).toBe(true);
+    // Icon Composer sources would restore the removed Xcode-only build path.
     expect(icons.filter((i) => i.endsWith(".icon"))).toEqual([]);
   });
 

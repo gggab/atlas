@@ -27,6 +27,26 @@ the removed Atlas Agent; DeskMate does not provide a replacement native engine.
 Existing component/module names may retain `atlas` as internal implementation
 names, without appearing as the current product brand.
 
+## Icon assets
+
+The DeskMate symbol is two side-by-side conversation windows above a shared
+desk. Mint and blue distinguish the collaborators, and broad shapes remain
+readable at small sizes. The source SVGs are `src/assets/deskmate-icon.svg`
+and `src/assets/deskmate-icon-light.svg`; `dark` / `light` setting IDs stay
+compatible with existing preferences.
+
+Run `bun run icons:render` with the repository-pinned Node and Tauri CLI to
+generate desktop PNG/ICO/ICNS assets, the light macOS variant, browser icons,
+the landing favicon and the DMG background. `bun run icons:check` verifies
+source freshness and shared SVG copies. Refresh the landing share card from
+`scripts/og/og.html` when the logo changes.
+
+The macOS default now uses the flat `Icon.icns`, so changing the brand does
+not require Xcode Icon Composer or retain the old Atlas `Assets.car` at
+runtime. The alternate ICNS is still bundled only on macOS and applied through
+the existing `appIcon` preference. Native Dock/Finder appearance requires a
+macOS installation check.
+
 ## Development checks
 
 Update both `atlas-profile::Profile::product_name()` and the Tauri product/window

@@ -19,7 +19,7 @@
  * Every failure resolves to `undefined` — the banner just shows without an image.
  */
 import { createElement } from "react";
-import atlasIconUrl from "@/assets/atlas-icon.svg";
+import atlasIconUrl from "@/assets/deskmate-icon.svg";
 import { AgentIcons } from "@/components/agent-icons";
 import { agentBrandColor } from "@/features/agents/lib/agent-brand";
 import { agentMeta } from "@/features/agents/lib/agent-meta";

@@ -5,7 +5,7 @@
 
 export interface AppIconManifest {
   default: string;
-  icons: { id: string; label: string }[];
+  icons: { id: string; label: string; source: string }[];
 }
 
 /** Absolute path of `src-tauri/icons/app-icons`. */
