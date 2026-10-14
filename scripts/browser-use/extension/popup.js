@@ -32,9 +32,7 @@ function render(result) {
   document.querySelector("#heading").textContent = pendingRequest
     ? "Website access requested"
     : result.handoff
-      ? result.handoffReady
-        ? "Ready to continue"
-        : "Waiting for you"
+      ? "Control released"
       : result.connected
         ? "Agent is working"
         : result.appConnected
@@ -49,9 +47,7 @@ function render(result) {
     result.error ??
     result.connectionError ??
     (result.handoff
-      ? result.handoffReady
-        ? "Control returned. Your Agent can resume from the original DeskMate chat."
-        : "Complete the waiting step, then send continue in the original DeskMate chat."
+      ? "Your Agent can reconnect to these pages from the original DeskMate session."
       : result.shareNextTab
         ? "This page is shared with the next task."
         : result.connected

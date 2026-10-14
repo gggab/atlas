@@ -109,30 +109,33 @@ test("manifest icons exist at their declared raster sizes and popup has no manua
   assert.equal(/host-name|enableAutomatic|disableAutomatic/.test(popup), false);
 });
 
-test("only the authenticated native port forwards human handoff intent to its session", async () => {
+test("only the current native port starts the original session without chat handoff intent", async () => {
   const sent = [],
-    resumed = [];
+    opened = [];
   const port = { postMessage: (message) => sent.push(message) };
   const controller = {
-    allowResume: async (...args) => {
-      resumed.push(args);
-      return true;
-    },
+    connect: async (...args) => opened.push(args),
   };
-  const native = new NativeConnection({ alarms: { onAlarm: { addListener() {} } } }, controller);
+  const native = new NativeConnection(
+    {
+      alarms: { onAlarm: { addListener() {} } },
+      storage: { session: { set: async () => {} } },
+    },
+    controller,
+  );
   native.port = port;
   native.connected = true;
-  const message = { id: "human", type: "resumeHandoff", sessionId: "owner", resume: true };
+  native.enabled = true;
+  const message = {
+    id: "task",
+    type: "start",
+    endpoint: "private-task-address",
+    title: "Resume task",
+    sessionId: "owner",
+  };
   await native.receive({}, message);
-  assert.equal(resumed.length, 0);
+  assert.equal(opened.length, 0);
   await native.receive(port, message);
-  assert.deepEqual(resumed, [["owner", true]]);
-  assert.deepEqual(sent.at(-1), { id: "human", result: true });
-  await native.receive(port, { ...message, resume: false });
-  assert.deepEqual(resumed.at(-1), ["owner", false]);
-  await native.receive(port, { ...message, resume: "yes" });
-  assert.match(sent.at(-1).error, /Invalid chat continuation/);
-  assert.equal(resumed.length, 2);
-  controller.onHandoff("owner");
-  assert.deepEqual(sent.at(-1), { type: "handoffState", sessionId: "owner" });
+  assert.deepEqual(opened, [["private-task-address", undefined, "Resume task", "owner"]]);
+  assert.deepEqual(sent.at(-1), { id: "task", result: true });
 });

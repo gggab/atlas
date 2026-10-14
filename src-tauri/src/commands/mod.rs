@@ -6,7 +6,6 @@ pub mod app_state;
 pub mod atlas_config;
 pub mod browser;
 pub mod browser_bridge;
-mod browser_handoff;
 pub mod browser_use;
 pub mod byok;
 pub mod canvas;

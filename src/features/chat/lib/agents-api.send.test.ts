@@ -8,22 +8,29 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 beforeEach(() => vi.clearAllMocks());
 
-describe("browser handoff intent on agents_send", () => {
-  it("carries raw human text independently of the Agent wire prompt", async () => {
+describe("agents_send", () => {
+  it("sends the Agent wire prompt without browser handoff authorization", async () => {
     const key = { agent_id: "agent", session_id: "owner" };
     const wire = appendNextStepsDirective("继续");
-    await agents.send(key, wire, undefined, undefined, "继续");
+    await agents.send(key, wire);
     expect(invoke).toHaveBeenCalledWith("agents_send", {
       key,
       text: wire,
-      userText: "继续",
       attachments: null,
       resourceLinks: null,
     });
   });
 
-  it("does not reuse a replayed Agent prompt as fresh human continuation", async () => {
-    await agents.send({ agent_id: "agent", session_id: "owner" }, "继续");
-    expect(invoke).toHaveBeenCalledWith("agents_send", expect.objectContaining({ userText: null }));
+  it("preserves image attachments and resource links", async () => {
+    const key = { agent_id: "agent", session_id: "owner" };
+    const attachments = [{ mimeType: "image/png", dataBase64: "image-data" }];
+    const resourceLinks = [{ uri: "file:///project/readme.md", name: "readme.md" }];
+    await agents.send(key, "Inspect this", attachments, resourceLinks);
+    expect(invoke).toHaveBeenCalledWith("agents_send", {
+      key,
+      text: "Inspect this",
+      attachments,
+      resourceLinks,
+    });
   });
 });

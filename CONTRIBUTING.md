@@ -14,6 +14,15 @@ and `cargo test --locked -p atlas-agent-manager --test steering`; the stdio suit
 requires Node.js on PATH or `ATLAS_TEST_NODE`. Mock/browser checks do not establish
 real desktop or vendor-task verification.
 
+For browser handoff changes, run `bun run browser:test` and the Chrome/Edge
+`browser:native-smoke` fixtures. Verify takeover releases debugging and the
+original session reconnects without chat-phrase authorization, including legacy
+ready=false records. Website denial and global pause must still block access;
+another session must not inherit handoff pages. Fixtures do not establish real
+login/CAPTCHA or vendor-Agent behavior.
+Set `ATLAS_BROWSER_SMOKE_OUTPUT` to a separate directory to preserve existing
+popup captures when running the native fixtures.
+
 ## Setup and commands
 
 Use repository-pinned Bun, Node and Rust versions from `mise.toml`, `package.json` and `rust-toolchain.toml`, plus the Tauri prerequisites listed in the README.

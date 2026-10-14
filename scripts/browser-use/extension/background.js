@@ -42,7 +42,6 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         connected: !!controller.socket,
         tabs: controller.targets.size,
         handoff: !!atlasHandoff?.tabs?.length,
-        handoffReady: !!atlasHandoff?.ready,
         websiteAccess: permissions.status(),
         ...native.status(),
       };

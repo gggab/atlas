@@ -90,8 +90,6 @@ struct Client {
     generation: String,
     sender: mpsc::Sender<Value>,
     version: Option<String>,
-    chat_handoff: bool,
-    handoff_session: Option<String>,
 }
 pub struct BrowserBridge {
     app: AppHandle,
@@ -287,8 +285,6 @@ impl BrowserBridge {
                 generation: generation.clone(),
                 sender,
                 version,
-                chat_handoff: hello["chatHandoff"].as_u64() == Some(1),
-                handoff_session: hello["handoffSessionId"].as_str().map(str::to_owned),
             });
             *self.error.lock() = None;
             Ok(())
@@ -313,13 +309,6 @@ impl BrowserBridge {
                     },
                     message = read_message(&mut reader, &mut bytes) => {
                         let Some(message) = message? else { break; };
-                        if message["type"] == "handoffState" {
-                            if let Some(client) = self.client.lock().as_mut() {
-                                if client.generation == generation && client.chat_handoff {
-                                    client.handoff_session = message["sessionId"].as_str().map(str::to_owned);
-                                }
-                            }
-                        }
                         if let Some(id) = message["id"].as_str() {
                             if let Some(answer) = self.pending.lock().remove(id) { let _ = answer.send(message); }
                         }
@@ -339,53 +328,6 @@ impl BrowserBridge {
             self.changed();
         }
         result
-    }
-    pub async fn update_handoff_from_chat(
-        &self,
-        session_id: &str,
-        resume: bool,
-    ) -> Result<(), String> {
-        let client = self
-            .client
-            .lock()
-            .as_ref()
-            .filter(|c| c.handoff_session.as_deref() == Some(session_id))
-            .map(|c| (c.sender.clone(), c.chat_handoff));
-        let Some((sender, supported)) = client else {
-            return Ok(());
-        };
-        if !supported {
-            return Err(
-                "Update/reload DeskMate Browser to return browser control from chat.".into(),
-            );
-        }
-        if self.paused() && resume {
-            return Ok(());
-        }
-        let id = uuid::Uuid::new_v4().to_string();
-        let (answer, result) = oneshot::channel();
-        self.pending.lock().insert(id.clone(), answer);
-        let outcome = async {
-            sender
-                .send(
-                    json!({"id":id,"type":"resumeHandoff","sessionId":session_id,"resume":resume}),
-                )
-                .await
-                .map_err(|_| "Browser profile disconnected")?;
-            let reply = tokio::time::timeout(std::time::Duration::from_secs(5), result)
-                .await
-                .map_err(|_| {
-                    "Returning browser control timed out. Reload DeskMate Browser and try again."
-                })?
-                .map_err(|_| "Browser profile disconnected")?;
-            if let Some(error) = reply["error"].as_str() {
-                return Err(error.to_owned());
-            }
-            Ok(())
-        }
-        .await;
-        self.pending.lock().remove(&id);
-        outcome
     }
     pub async fn open_task(
         &self,

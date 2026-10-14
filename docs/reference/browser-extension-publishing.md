@@ -43,13 +43,19 @@ popup, before packaging an update.
 Version 0.4.4 corrects the 0.4.3 retention default and grouping: Agent-created
 tabs close unless explicitly retained, and retained tabs stay in their original
 DeskMate group. Verify unmarked/temporary tabs close, keep/result tabs keep the same
-group ID without debugging or handoff state, and genuine handoffs still require
-human continuation.
+group ID without debugging or handoff state. The current handoff behavior is
+described below.
 Version 0.4.5 records retained pages by ACP session, restores their inventory on
 later turns and reuses the original group without a duplicate blank page. Keep
 and result markers persist; new unmarked tabs still close. Other sessions must
 neither discover nor close those pages. Verify identity changes, extension-worker
 recovery, website reauthorization and handoff continuation in the same group.
+Browser handoff no longer requires chat-phrase authorization. The original ACP session
+can reconnect to handoff pages without sending "continue" or clicking a return
+button. Takeover still detaches current control; website authorization, session
+ownership and global pause remain enforced. Test legacy ready=false records,
+manual takeover/reconnect and denial before packaging. Human activity and
+verification completion are not automatically detected.
 Rebuild/restart DeskMate Dev so Agents receive the updated lifecycle instructions,
 then reload its local extension. Existing Agent sessions may need a new session
 to receive refreshed browser tool documentation.
@@ -133,7 +139,8 @@ Suggested description:
 > DeskMate Browser connects your browser to the DeskMate desktop app. Agents open a
 > dedicated DeskMate tab group, work with pages you authorize, and close temporary
 > pages when a task finishes. Share an existing tab, take over for login or
-> verification, and explicitly allow the Agent to continue when ready. Your daily
+> verification. The original Agent session can reconnect; pause browser control in
+> DeskMate Settings if you need to block reconnection while working. Your daily
 > browser owns its login. DeskMate desktop and a configured Agent are required.
 
 In Chrome's [Privacy fields](https://developer.chrome.com/docs/webstore/cws-dashboard-privacy),

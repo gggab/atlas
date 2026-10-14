@@ -105,7 +105,7 @@ test("concurrent tab creation still uses a single session group", async () => {
   await controller.disconnect();
 });
 
-test("handoff continuation restores ordinary retained pages without creating another group", async () => {
+test("handoff reconnect restores retained pages without chat authorization or another group", async () => {
   const { controller, pages } = fixture();
   const first = await connect(controller, "owner");
   let second;
@@ -115,7 +115,6 @@ test("handoff continuation restores ordinary retained pages without creating ano
     await controller.mark(handoff.targetId, "handoff");
     const groupId = pages.get(8).groupId;
     await controller.disconnect();
-    assert.equal(await controller.allowResume("owner"), true);
     second = await connect(controller, "owner");
     assert.deepEqual([...controller.targets.keys()], [9, 8]);
     assert.equal(pages.get(9).groupId, groupId);
@@ -320,7 +319,7 @@ test("startup recovery honors saved keep and close decisions without retaining c
   assert.deepEqual(stored.atlasTask.tabs, []);
 });
 
-test("kept pages and handoffs remain in the original group but only handoffs can resume", async () => {
+test("kept pages and handoffs remain in the original group with separate retention records", async () => {
   const { controller, pages, stored, groups } = fixture();
   const handoff = await controller.createTab("about:blank");
   await controller.mark(handoff.targetId, "handoff");
@@ -350,46 +349,47 @@ test("a retained handoff cannot be automatically inherited by another Agent sess
   );
 });
 
-test("an Agent cannot automatically retake control while the user is completing verification", async () => {
-  const { controller, stored } = fixture();
-  stored.atlasHandoff = { sessionId: "owner", tabs: [{ tabId: 7, targetId: "t7", owned: true }] };
-  await assert.rejects(
-    controller.connect(
-      "ws://127.0.0.1:1234/extension/" + "a".repeat(64),
-      undefined,
-      "Task",
-      "owner",
-    ),
-    /Waiting for user/,
-  );
-  assert.equal(await controller.allowResume("other"), false);
-  assert.equal(stored.atlasHandoff.ready, undefined);
-  assert.equal(await controller.allowResume("owner"), true);
-  assert.equal(stored.atlasHandoff.ready, true);
-  assert.equal(await controller.allowResume("owner", false), true);
-  assert.equal(
-    stored.atlasHandoff.ready,
-    false,
-    "Later questions or pause instructions revoke unused continuation",
-  );
+test("manual takeover releases control and the owner can reconnect even with legacy ready=false", async () => {
+  const { controller, stored, pages, groups } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    const groupId = pages.get(8).groupId;
+    await controller.disconnect({ takeover: true, tabId: 8 });
+    assert.equal(controller.socket, null);
+    assert.equal(controller.targets.size, 0);
+    assert.ok(pages.has(8));
+    assert.match(groups.get(groupId).title, /Waiting/);
+    stored.atlasHandoff.ready = false;
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [8]);
+    assert.equal(pages.get(8).groupId, groupId);
+    assert.equal(pages.size, 2, "Reconnect must reuse the handoff page");
+    assert.equal(stored.atlasHandoff, null);
+    assert.equal(controller.records.get(8).disposition, "temporary");
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
 });
 
-test("a chat continuation waits for takeover cleanup and cannot authorize a later handoff", async () => {
-  const { controller, stored } = fixture();
-  let finish;
-  controller.disconnecting = new Promise((r) => {
-    finish = r;
-  });
-  const intent = controller.allowResume("owner");
-  stored.atlasHandoff = { sessionId: "owner", tabs: [{ tabId: 7, targetId: "t7" }], ready: false };
-  finish();
-  assert.equal(await intent, true);
-  assert.equal(stored.atlasHandoff.ready, true);
-  controller.disconnecting = null;
-  stored.atlasHandoff = null;
-  assert.equal(await controller.allowResume("owner"), false);
-  stored.atlasHandoff = { sessionId: "owner", tabs: [{ tabId: 7, targetId: "t7" }], ready: false };
-  assert.equal(stored.atlasHandoff.ready, false);
+test("handoff reconnect still checks website authorization and releases debugging on denial", async () => {
+  const { controller, pages } = fixture();
+  const first = await connect(controller, "owner");
+  try {
+    pages.get(8).url = "https://example.com/verification";
+    await controller.disconnect({ takeover: true, tabId: 8 });
+    controller.permissions.authorize = async () => {
+      throw new Error("Access is not allowed");
+    };
+    await assert.rejects(connect(controller, "owner"), /Access is not allowed/);
+    assert.equal(controller.targets.size, 0);
+    assert.equal(controller.socket, null);
+  } finally {
+    await controller.disconnect();
+    await first.close();
+  }
 });
 
 test("startup recovery never closes recorded tab IDs without the same debugger target", async () => {
@@ -400,7 +400,7 @@ test("startup recovery never closes recorded tab IDs without the same debugger t
   assert.ok(pages.has(7));
 });
 
-test("handoff preserves and resumes user-owned page identity without granting deletion ownership", async () => {
+test("handoff release preserves user-owned page identity without granting deletion ownership", async () => {
   const { controller, stored, pages, removed } = fixture();
   await controller.attach(7, controller.generation);
   await controller.mark("t7", "handoff");
@@ -409,6 +409,26 @@ test("handoff preserves and resumes user-owned page identity without granting de
   await controller.discardHandoff();
   assert.deepEqual(removed, []);
   assert.ok(pages.has(7));
+});
+
+test("the owner reconnects to a manually shared handoff without taking deletion ownership", async () => {
+  const { controller, pages, removed } = fixture();
+  const first = await connect(controller, "owner");
+  let second;
+  try {
+    await controller.attach(7, controller.generation);
+    await controller.disconnect({ takeover: true, tabId: 7 });
+    second = await connect(controller, "owner");
+    assert.deepEqual([...controller.targets.keys()], [7]);
+    assert.notEqual(controller.records.get(7).owned, true);
+    await controller.disconnect();
+    assert.ok(pages.has(7));
+    assert.equal(removed.includes(7), false);
+  } finally {
+    await controller.disconnect();
+    await second?.close();
+    await first.close();
+  }
 });
 
 test("cleanup removes an empty task group and reports a failed owned-tab close", async () => {

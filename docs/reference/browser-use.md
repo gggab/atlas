@@ -191,29 +191,28 @@ release debugging control and clear the REPL. Agent-created pages close by defau
 explicitly kept, deliverable and handoff pages remain in their original task group.
 Existing user pages/windows stay open regardless of markers.
 Taking over retains task pages, labels their group as waiting, and releases
-debugging. After verification, send **继续** or **continue** in the original
-DeskMate chat. That human message returns control without an extension button;
-ordinary browser actions require no handoff click. The Agent then resumes the
-retained pages with a fresh browser_start; target IDs
+debugging. The original ACP session can reconnect with a fresh
+browser_start without a required chat phrase or return-control button. Target IDs
 are revalidated before resuming. Resumed pages return to temporary task state;
 Agents must mark them again to retain them after the resumed task finishes.
 User browser login/downloads stay managed by that browser.
 
-This flow follows the public ChatGPT pattern of continuous browser work, reusable
-login sessions and handoff only when human intervention is necessary. ChatGPT's
-[cloud browser sign-in flow](https://learn.chatgpt.com/docs/browser#sign-in-on-the-web-page)
-uses an explicit return action after manual web-page sign-in. DeskMate adapts that
-return action to a human chat message, without an additional extension click.
-Recognized examples include `继续`, `继续任务`, `登录好了，继续`, `continue`,
-`resume` and `I'm done`. Questions, negations, quoted page content and other
-messages keep a waiting handoff paused. A continuation applies only to the current
-handoff of the original session; it never preauthorizes a future handoff.
-The chat sends the human's original text separately from the Agent prompt.
-Hidden next-step instructions and expanded mention content do not affect
-continuation recognition. Retrying a recorded turn does not grant fresh
-permission to resume a waiting browser task; send a new continuation instead.
-Both the updated desktop native host and extension 0.4.1 are required; reload the
-local extension after updating. Website permissions and global pause still apply.
+Takeover ends current control; it does not lock out subsequent calls by the
+original Agent session. The extension does not detect human mouse/keyboard
+activity or whether verification is complete. The Agent must wait for the human
+when it hands off verification, but the extension does not enforce that wait.
+If the Agent is still running or retrying, it can reconnect while the human is
+working. If its turn has ended, removing this gate does not start a new turn;
+send a follow-up in the original chat when ready, with no required wording.
+
+To prevent reconnection, turn off **Allow browser control** in **Settings >
+Browser control**, or choose **Pause all browser automation** in the chat's
+browser menu. Global pause stops control, blocks later calls and persists across
+app restarts until explicitly enabled. Website authorization and original-session
+ownership still apply, including when restoring legacy handoffs with ready=false.
+This is separate from ChatGPT Work's documented cloud-browser sign-in return
+action; it makes no claim about ChatGPT's local extension takeover implementation.
+Rebuild/restart the desktop app and reload the local extension after updating.
 
 The connection address contains a random per-worker secret, separate from the
 MCP bearer token. Native Messaging passes it privately, omitted from Agent snapshots,
@@ -302,7 +301,9 @@ For session reuse changes, test consecutive native starts with the same session
 ID: retain multiple pages, finish the turn, list them on the next start without
 a duplicate blank tab, and add a page to the exact original group ID. Verify
 keep/result markers survive, new unmarked pages close, shared/personal pages
-survive, other sessions remain isolated, and handoff resumes in that same group.
+survive, other sessions remain isolated, and handoff resumes in that same group
+without a chat authorization message. Check manual takeover and legacy ready=false
+records, and verify website denial and global pause still block browser operations.
 Run real Chrome and Edge extension/native fixtures. Reload the updated extension
 and rebuild/restart DeskMate Dev for the new worker and instructions. These fixtures
 do not prove a paid CLI Agent's compliance or real shopping-site behavior.

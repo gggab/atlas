@@ -82,9 +82,11 @@ ordinary pages does not pause later turns. Keep/result decisions survive reconne
 use markTemporary() to close a previously retained owned page at the next cleanup.
 New pages join the same session group. If all group pages are closed, the browser
 removes the empty group and a later new page creates a replacement.
-For verification markHandoff() before returning control. Wait for the human to
-send continue (or 继续) in the original DeskMate chat. That human message returns
-control without an extra extension click. No CAPTCHA bypass is promised.
+For verification markHandoff() before returning control and wait for the human.
+The original ACP session can reconnect with browser_start without a specific chat
+phrase or extension confirmation. Reconnection still checks website authorization
+and global pause. Takeover releases current control but does not block later
+reconnection or detect whether the human has finished. No CAPTCHA bypass is promised.
 `;
 
 const stringify = (value) =>

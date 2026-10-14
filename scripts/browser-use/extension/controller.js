@@ -295,10 +295,8 @@ export class ExtensionController {
           tabs: handoff,
           groupId: this.groupId,
           sessionId: this.sessionId,
-          ready: false,
         },
       });
-      this.onHandoff?.(handoff.length ? this.sessionId : null);
     }
     let groupId = this.groupId;
     if (groupId !== undefined) {
@@ -345,10 +343,6 @@ export class ExtensionController {
     if (atlasHandoff?.tabs?.length && atlasHandoff.sessionId !== sessionId)
       throw new Error(
         "Another session is waiting for handoff. Resume that session or release its waiting pages in DeskMate Browser first.",
-      );
-    if (atlasHandoff?.tabs?.length && !atlasHandoff.ready)
-      throw new Error(
-        "Waiting for user takeover. After verification, send continue in the original DeskMate chat.",
       );
     const session = this.sessions.get(sessionId);
     const candidates = [
@@ -415,7 +409,6 @@ export class ExtensionController {
       for (const targetInfo of others) this.send({ type: "attached", targetInfo });
       if (atlasHandoff?.tabs?.length) {
         await this.api.storage.session.set({ atlasHandoff: null });
-        this.onHandoff?.(null);
       }
       const owned = [...this.records.values()].filter((record) => record.owned);
       if (owned.length) {
@@ -533,15 +526,6 @@ export class ExtensionController {
         });
     }
     await this.api.storage.session.set({ atlasHandoff: null });
-    this.onHandoff?.(null);
-  }
-  async allowResume(sessionId, ready = true) {
-    if (this.disconnecting) await this.disconnecting;
-    if (this.socket) return false;
-    const { atlasHandoff } = await this.api.storage.session.get("atlasHandoff");
-    if (!atlasHandoff?.tabs?.length || atlasHandoff.sessionId !== sessionId) return false;
-    await this.api.storage.session.set({ atlasHandoff: { ...atlasHandoff, ready } });
-    return true;
   }
   async disconnect({ takeover = false, tabId, replyId } = {}) {
     if (this.disconnecting) return this.disconnecting;

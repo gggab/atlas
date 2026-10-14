@@ -29,7 +29,6 @@ let sequence = 0,
   context,
   host,
   runtime;
-let handoffSession;
 const server = createServer((socket) => {
   sockets.add(socket);
   socket.on("close", () => sockets.delete(socket));
@@ -41,12 +40,10 @@ const server = createServer((socket) => {
       assert.equal(message.secret, secret);
       assert.match(message.clientId, /^[a-f0-9-]{36}$/);
       assert.equal(message.version, extensionManifest.version);
-      assert.equal(message.chatHandoff, 1);
       admitted = true;
       peer = socket;
       socket.write('{"type":"bridgeReady"}\n');
-    } else if (message.type === "handoffState") handoffSession = message.sessionId;
-    else if (message.id) pending.get(message.id)?.(message);
+    } else if (message.id) pending.get(message.id)?.(message);
   });
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -118,7 +115,8 @@ try {
   assert.equal(authorized.websiteAccess.allowAll, false);
   assert.equal(authorized.websiteAccess.pending.length, 0);
   assert.equal(await popup.getByRole("button", { name: "Agree to page data sharing" }).count(), 0);
-  const screenshots = path.join(root, "artifacts/browser-extension");
+  const screenshots =
+    process.env.ATLAS_BROWSER_SMOKE_OUTPUT ?? path.join(root, "artifacts/browser-extension");
   await mkdir(screenshots, { recursive: true });
   await popup
     .locator("body")
@@ -135,7 +133,7 @@ try {
   await popup.emulateMedia({ colorScheme: "light" });
   const baseline = context.pages().length;
   const baselinePages = new Set(context.pages());
-  async function start(title, expectedError) {
+  async function start(title, expectedError, sessionId = "fixture-session") {
     host = new ExtensionHost({ check: async () => {} });
     await host.start();
     const id = String(++sequence);
@@ -146,7 +144,7 @@ try {
         type: "start",
         endpoint: host.relay.endpoint,
         title,
-        sessionId: "fixture-session",
+        sessionId,
       }) + "\n",
     );
     const timer = setTimeout(() => pending.get(id)?.({ error: "Native fixture timeout" }), 20_000);
@@ -230,31 +228,13 @@ try {
   assert.equal(context.pages().length, baseline + 1);
   assert.match((await popup.evaluate(() => chrome.tabGroups.query({})))[0].title, /Waiting/);
   const handoffGroup = (await popup.evaluate(() => chrome.tabGroups.query({})))[0].id;
-  await popup.getByRole("heading", { name: "Waiting for you" }).waitFor();
+  await popup.getByRole("heading", { name: "Control released" }).waitFor();
   await popup
     .locator("body")
     .screenshot({ path: path.join(screenshots, `popup-${browser}-handoff.png`) });
   assert.equal(await popup.getByRole("button", { name: "Allow Agent to continue" }).count(), 0);
-  await start("Retry before human continuation", /Waiting for user takeover/);
-  assert.equal(handoffSession, "fixture-session");
-  async function continueFromChat(sessionId) {
-    const id = String(++sequence);
-    const result = new Promise((resolve) => pending.set(id, resolve));
-    peer.write(JSON.stringify({ id, type: "resumeHandoff", sessionId, resume: true }) + "\n");
-    const timer = setTimeout(
-      () => pending.get(id)?.({ error: "Continuation fixture timeout" }),
-      5000,
-    );
-    try {
-      return await result;
-    } finally {
-      clearTimeout(timer);
-      pending.delete(id);
-    }
-  }
-  assert.equal((await continueFromChat("other-session")).result, false);
-  assert.equal((await continueFromChat("fixture-session")).result, true);
-  await start("Resume task");
+  await start("Another session cannot inherit handoff", /Another session/, "other-session");
+  await start("Resume task without chat authorization");
   assert.equal((await popup.evaluate(() => chrome.tabGroups.query({})))[0].id, handoffGroup);
   assert.equal(
     context.pages().length,
@@ -267,10 +247,29 @@ try {
   assert.equal(context.pages().length, baseline);
   assert.equal(personal.isClosed(), false);
   assert.equal((await popup.evaluate(() => chrome.tabGroups.query({}))).length, 0);
+  await start("Manual takeover task");
+  await popup.getByRole("button", { name: "Take over this page" }).click();
+  await popup.getByRole("heading", { name: "Control released" }).waitFor();
+  await host.close();
+  await runtime.close();
+  runtime = null;
+  assert.equal(context.pages().length, baseline + 1);
+  assert.deepEqual(
+    await popup.evaluate(() => chrome.storage.session.get("atlasTabs").then((s) => s.atlasTabs)),
+    [],
+    "Manual takeover must release debugging before reconnect",
+  );
+  await start("Reconnect after manual takeover without chat authorization");
+  assert.equal(context.pages().length, baseline + 1);
+  await host.cleanup();
+  await runtime.close();
+  runtime = null;
+  assert.equal(context.pages().length, baseline);
+  assert.equal(personal.isClosed(), false);
   await start("Website access reset task");
   await popup.locator("#website-settings > summary").click();
   await popup.getByRole("button", { name: "Reset website access and stop control" }).click();
-  await popup.getByRole("heading", { name: "Waiting for you" }).waitFor();
+  await popup.getByRole("heading", { name: "Control released" }).waitFor();
   await host.close();
   await runtime.close();
   runtime = null;
