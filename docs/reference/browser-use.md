@@ -29,7 +29,7 @@ Old global consent never becomes allow-all. Closing a prompt or letting it time
 out cancels access without approving it. Retry only after the user reviews access.
 
 Authorization precedes attaching shared pages, exposing existing frame trees,
-creating HTTP(S) task tabs, navigating, and continuing document requests (including
+creating HTTP(S) or file task tabs, navigating, and continuing document requests (including
 redirects and cross-site frames). The extension owns Document Fetch interception;
 Agents cannot disable it. A declined document stops control and preserves the
 necessary page. Resource/API content used by an authorized page can also be part
@@ -110,7 +110,7 @@ browser confirmation. Store publication is a separate release step.
 
 DeskMate Browser is a Manifest V3 extension for installed Chrome/Edge (125+).
 It opens task tabs in the authorized browser profile, or connects an explicitly
-shared HTTP(S) tab. DeskMate never launches an independent automation profile or reads/copies daily profiles,
+shared HTTP(S) or local file tab. DeskMate never launches an independent automation profile or reads/copies daily profiles,
 cookies or login files. Existing DeskMate automation profiles remain untouched.
 This preserves the selected page's existing login environment; it does not promise
 to avoid website verification. Complete CAPTCHA/login manually after disconnecting.
@@ -229,6 +229,27 @@ private worker pipes. Deferred actions cannot inherit a later tool call's grant.
 
 ## Tools and API
 
+### Local files
+
+DeskMate Browser declares `file:///*` so Chrome/Edge exposes **Allow access to
+file URLs** in the extension details. The human must enable that browser-owned
+switch before opening, navigating, or sharing a local file page, or using a
+website's existing file chooser to upload an absolute file path. The extension
+adds no upload button or upload page. Disabled access returns instructions to
+open Extensions > DeskMate Browser > Details and enable the switch.
+
+Local-file authorization is separate from hostname decisions: website allow-all
+does not grant it, and enabled file access does not grant website access. File
+pages still require session ownership, and each page action/navigation/upload
+checks current access. Turning the switch off blocks later file operations.
+Global pause remains enforced. Only use files authorized by the user's task;
+the browser switch is a profile-wide capability, not a per-file sandbox.
+
+Reload the prepared extension after updating DeskMate to see the browser setting.
+Rebuild/restart the app so its bundled runtime and Agent instructions also update.
+
+### API reference
+
 | Tool | Behavior |
 | --- | --- |
 | `browser_status` | Calling session state/instructions, no launch |
@@ -289,7 +310,7 @@ agent's MCP connection status/error; a tool search cannot repair a rejected list
 
 After operating-guidance changes, run `bun run browser:test`: its runtime check
 executes the link-navigation example from the MCP instructions against absolute,
-protocol-relative, relative, missing and non-HTTP(S) links, including long query
+protocol-relative, relative, file, missing and unsupported-scheme links, including long query
 tails. Run `bun run browser:extension-smoke chrome` for the real extension's
 grouped navigation through a full redirect URL and verify the requested content
 after navigation. These checks test API/example behavior, not model compliance

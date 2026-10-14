@@ -1,6 +1,6 @@
 # DeskMate Browser Privacy Policy
 
-Effective date: October 12, 2026
+Effective date: October 14, 2026
 
 This policy covers the DeskMate Browser extension and its browser-control connection
 to the local DeskMate desktop app maintained in [gggab/atlas](https://github.com/gggab/atlas).
@@ -19,6 +19,14 @@ and asks you to allow it once for this task, remember that site, allow all sites
 or decline and block the site. Each subdomain asks separately; blocked sites
 override allow-all. Browser installation permissions and metadata connection do
 not grant this website access. Old global page-data agreements do not enable it.
+
+Local file pages and file uploads require you to enable the browser's **Allow
+access to file URLs** setting for DeskMate Browser. This is separate from website
+approval; allowing all websites does not enable file access. Authorized local
+page content may be processed like website content. Files selected for an
+authorized upload are sent to the destination website through its existing file
+chooser. The extension adds no upload UI. Disable the browser setting to block
+subsequent local-file operations; it is not a per-file authorization boundary.
 
 To provide these features, the extension processes:
 

@@ -82,6 +82,7 @@ test("the documented link workflow preserves full addresses and resolves relativ
     ["http://shop.example/detail" + query, "http://shop.example/detail" + query],
     ["//ads.example/redirect" + query, "http://ads.example/redirect" + query],
     ["../detail" + query, "http://localhost/detail" + query],
+    ["file:///C:/fixture/page.html", "file:///C:/fixture/page.html"],
     [null, /no href/i],
     ["javascript:alert(1)", /HTTP\(S\)/i],
   ]) {
@@ -115,6 +116,24 @@ test("an existing locator checks current authorization before input", async () =
     assert.equal(result.isError, true);
     assert.match(result.content.at(-1).text, /paused/);
     assert.deepEqual(calls, []);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("file URL navigation preserves the address and still checks live authorization", async () => {
+  const { runtime, navigations, pause } = fixture();
+  try {
+    await runtime.execute("let tab = await browser.tabs.selected();");
+    const url = "file:///C:/fixture/My%20page.html?view=1#section";
+    const result = await runtime.execute(`await tab.goto(${JSON.stringify(url)});`);
+    assert.equal(result.isError, false, JSON.stringify(result.content));
+    assert.deepEqual(navigations, [url]);
+    pause();
+    const denied = await runtime.execute(`await tab.goto(${JSON.stringify(url)});`);
+    assert.equal(denied.isError, true);
+    assert.match(denied.content.at(-1).text, /paused/);
+    assert.deepEqual(navigations, [url]);
   } finally {
     await runtime.close();
   }

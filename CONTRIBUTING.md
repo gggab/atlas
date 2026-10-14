@@ -14,6 +14,13 @@ and `cargo test --locked -p atlas-agent-manager --test steering`; the stdio suit
 requires Node.js on PATH or `ATLAS_TEST_NODE`. Mock/browser checks do not establish
 real desktop or vendor-task verification.
 
+For local-file browser changes, run `bun run browser:test` and the Chrome/Edge
+`browser:extension-smoke` fixtures. In their isolated profiles, verify the native
+file-access switch appears, disabled access blocks local navigation and uploads,
+enabled access supports local pages and a website file chooser, and revocation
+blocks subsequent operations. Keep website approval, pause and tab ownership
+checks. Never change a developer's daily browser file-access setting in tests.
+
 For browser handoff changes, run `bun run browser:test` and the Chrome/Edge
 `browser:native-smoke` fixtures. Verify takeover releases debugging and the
 original session reconnects without chat-phrase authorization, including legacy

@@ -6,7 +6,7 @@
   "description": "Let your AI agents work in dedicated task tabs in your everyday browser. Share a page, take over, and continue when ready.",
   "minimum_chrome_version": "125",
   "permissions": ["debugger", "tabs", "tabGroups", "storage", "nativeMessaging", "alarms"],
-  "host_permissions": ["http://127.0.0.1/*"],
+  "host_permissions": ["http://127.0.0.1/*", "file:///*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "icons": {
     "16": "icons/icon-16.png",

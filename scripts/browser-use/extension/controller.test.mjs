@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ExtensionController, validateEndpoint } from "./controller.js";
 import { ExtensionRelay, ws } from "../extension-relay.mjs";
+import { SitePermissions } from "./site-permissions.js";
 
 test("extension accepts only DeskMate local secret addresses", () => {
   const valid = "ws://127.0.0.1:1234/extension/" + "a".repeat(64);
@@ -223,4 +224,112 @@ test("document interception holds redirects until approval and never forwards th
     /not allowed/,
   );
   assert.deepEqual(calls, ["Fetch.continueRequest", "Fetch.failRequest"]);
+});
+
+test("file sharing, navigation and uploads check the browser switch before CDP execution", async () => {
+  let allowed = false;
+  let url = "file:///C:/fixture/page.html";
+  const commands = [],
+    messages = [];
+  const api = {
+    extension: { isAllowedFileSchemeAccess: async () => allowed },
+    windows: { onRemoved: { addListener() {} } },
+    debugger: {
+      onEvent: { addListener() {} },
+      onDetach: { addListener() {} },
+      attach: async () => commands.push("attach"),
+      sendCommand: async (_, method) => {
+        commands.push(method);
+        if (method === "Page.getFrameTree") return { frameTree: { frame: { url } } };
+        if (method === "Target.getTargetInfo") return { targetInfo: { targetId: "t7", url } };
+        return {};
+      },
+    },
+    tabs: { get: async () => ({ url }) },
+    storage: { session: { set: async () => {} } },
+  };
+  const permissions = new SitePermissions(api);
+  permissions.begin();
+  permissions.policy.allowAll = true;
+  const controller = new ExtensionController(api, ws, permissions);
+  controller.send = (message) => messages.push(message);
+  await assert.rejects(controller.attach(7, 0), /Allow access to file URLs/);
+  await assert.rejects(controller.createTab(url), /Allow access to file URLs/);
+  assert.deepEqual(commands, []);
+  allowed = true;
+  await controller.attach(7, 0);
+  url = "https://example.com";
+  const navigate = {
+    id: 1,
+    method: "cdp",
+    params: {
+      targetId: "t7",
+      method: "Page.navigate",
+      params: { url: "file:///C:/fixture/other.html" },
+    },
+  };
+  const upload = {
+    id: 2,
+    method: "cdp",
+    params: {
+      targetId: "t7",
+      method: "DOM.setFileInputFiles",
+      params: { files: ["C:/fixture/upload.txt"] },
+    },
+  };
+  allowed = false;
+  for (const request of [navigate, upload]) {
+    commands.length = 0;
+    await controller.handle(request);
+    assert.match(messages.at(-1).error, /Allow access to file URLs/);
+    assert.equal(commands.includes(request.params.method), false);
+  }
+  allowed = true;
+  for (const request of [navigate, upload]) {
+    await controller.handle(request);
+    assert.equal(messages.at(-1).error, undefined);
+    assert.equal(commands.at(-1), request.params.method);
+  }
+  allowed = false;
+  commands.length = 0;
+  await controller.handle(upload);
+  assert.match(messages.at(-1).error, /Allow access to file URLs/);
+  assert.equal(commands.includes("DOM.setFileInputFiles"), false);
+  permissions.end();
+});
+
+test("page lifecycle events cannot overtake a pending file navigation authorization", async () => {
+  let receive, grant;
+  const messages = [];
+  const controller = new ExtensionController(
+    {
+      debugger: {
+        onEvent: {
+          addListener: (handler) => {
+            receive = handler;
+          },
+        },
+        onDetach: { addListener() {} },
+      },
+    },
+    ws,
+    {
+      authorize: () =>
+        new Promise((resolve) => {
+          grant = resolve;
+        }),
+    },
+  );
+  controller.targets.set(7, { targetId: "t7" });
+  controller.send = (message) => messages.push(message);
+  receive({ tabId: 7 }, "Page.frameNavigated", { frame: { url: "file:///fixture.html" } });
+  receive({ tabId: 7 }, "Page.lifecycleEvent", { name: "DOMContentLoaded" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(messages, []);
+  grant();
+  await Promise.all(controller.checks);
+  assert.deepEqual(
+    messages.map((message) => message.method),
+    ["Page.frameNavigated", "Page.lifecycleEvent"],
+  );
 });

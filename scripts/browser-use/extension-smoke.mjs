@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { ExtensionHost } from "./extension-host.mjs";
 import { BrowserRuntime } from "./runtime.mjs";
 import { ExtensionWorkerFixture } from "./extension-worker-fixture.mjs";
@@ -19,6 +19,7 @@ await writeFile(
   `export const HOST_NAME = "com.atlas.browser.fixture.unregistered";\nexport const APP_NAME = "DeskMate";\n`,
 );
 let blockedRequests = 0;
+let uploaded;
 const linkQuery = "?tracking=" + "x".repeat(200) + "&priceTId=tail-value&spm=a%2Bb";
 const instructions = await readFile(
   new URL("../../src-tauri/resources/browser-use-instructions.md", import.meta.url),
@@ -29,6 +30,22 @@ const linkWorkflow = [...instructions.matchAll(/```js\r?\n([\s\S]*?)```/g)]
   .find((code) => code.includes('getAttribute("href")'));
 assert.ok(linkWorkflow);
 const fixture = createServer((req, res) => {
+  if (req.url === "/upload" && req.method === "POST") {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      uploaded = Buffer.concat(chunks).toString();
+      res.end("uploaded");
+    });
+    return;
+  }
+  if (req.url === "/files") {
+    res.setHeader("Content-Type", "text/html");
+    res.end(
+      "<title>Upload fixture</title><input type=\"file\" aria-label=\"Upload\" onchange=\"this.files[0].text().then(body => fetch('/upload', {method:'POST', body})).then(() => document.querySelector('output').textContent='uploaded')\"><output></output>",
+    );
+    return;
+  }
   if (req.url === "/links") {
     res.setHeader("Content-Type", "text/html");
     const href = `http://127.0.0.1:${fixture.address().port}/ad${linkQuery}`;
@@ -91,7 +108,7 @@ try {
   await shared.goto(url);
   const unrelated = await context.newPage();
   await unrelated.goto(url + "/private");
-  const popup = await context.newPage();
+  let popup = await context.newPage();
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
   let allowed = true;
   host = new ExtensionHost({
@@ -361,6 +378,138 @@ try {
   assert.equal(shared.isClosed(), false);
   console.log(
     "[extension:smoke] PASS: real extension, existing-tab isolation, facade and preservation",
+  );
+  await runtime.close();
+  await host.close();
+
+  console.log("[extension:smoke] Native file-access switch, local pages and website upload");
+  const settings = await context.newPage();
+  await settings.goto(`${chromeTest ? "chrome" : "edge"}://extensions/?id=${extensionId}`);
+  // Chrome permits debugger-installed unpacked extensions to reload only in Developer mode.
+  if (chromeTest) {
+    const developerMode = settings.locator("#devMode");
+    if (!(await developerMode.evaluate((toggle) => toggle.checked))) await developerMode.click();
+  }
+  const fileSwitch = chromeTest
+    ? settings.locator("#allow-on-file-urls cr-toggle")
+    : settings.getByText(/^(Allow access to file URLs|允许访问文件 URL)$/);
+  await fileSwitch.waitFor();
+  async function setFileAccess(enabled) {
+    const current = chromeTest
+      ? await fileSwitch.evaluate((toggle) => toggle.checked)
+      : await settings.evaluate(
+          async (id) => (await chrome.developerPrivate.getExtensionInfo(id)).fileAccess.isActive,
+          extensionId,
+        );
+    if (current !== enabled) {
+      const restarted = context.waitForEvent("serviceworker", {
+        predicate: (worker) => new URL(worker.url()).host === extensionId,
+        timeout: 15_000,
+      });
+      if (chromeTest) await fileSwitch.click();
+      // Edge's Fluent control is encapsulated; change the same native setting in this fixture profile.
+      else
+        await settings.evaluate(
+          ({ id, enabled }) =>
+            chrome.developerPrivate.updateExtensionConfiguration({
+              extensionId: id,
+              fileAccess: enabled,
+            }),
+          { id: extensionId, enabled },
+        );
+      await restarted;
+      await fileSwitch.waitFor();
+    }
+    // Changing the browser switch reloads the extension and closes its old UI.
+    if (!popup.isClosed()) await popup.close();
+    popup = await context.newPage();
+    await popup.goto(`chrome-extension://${extensionId}/popup.html`);
+    await popup.waitForFunction(
+      (enabled) => chrome.extension.isAllowedFileSchemeAccess().then((value) => value === enabled),
+      enabled,
+    );
+  }
+  const localFile = path.join(directory, "Local page.html");
+  const uploadFile = path.join(directory, "upload.txt");
+  await writeFile(localFile, "<title>Local file fixture</title><p>Local page verified</p>");
+  await writeFile(uploadFile, "file upload verified");
+  const localUrl = pathToFileURL(localFile).href;
+  const localPage = await context.newPage();
+  await localPage.goto(localUrl);
+  async function connectFileTask(pageUrl) {
+    host = new ExtensionHost({
+      check: async () => {
+        if (!allowed) throw new Error("Browser paused");
+      },
+      artifactsDir: path.join(directory, "artifacts"),
+    });
+    await host.start();
+    const status = await popup.evaluate(() => chrome.runtime.sendMessage({ action: "status" }));
+    const connecting = popup.evaluate(
+      async ({ endpoint, pageUrl }) => {
+        const selected = (await chrome.tabs.query({})).find((tab) => tab.url === pageUrl);
+        return chrome.runtime.sendMessage({ action: "connect", endpoint, tabId: selected.id });
+      },
+      { endpoint: host.relay.endpoint, pageUrl },
+    );
+    if (pageUrl.startsWith(url) && status.websiteAccess.sites["127.0.0.1"] !== "allow") {
+      await approve("127.0.0.1", "allow_site");
+    }
+    const reply = await connecting;
+    assert.equal(reply.error, undefined);
+    await host.connect();
+    runtime = new BrowserRuntime({
+      browserId: "extension",
+      backend: (m, a) => host.call(m, a),
+      resolvePage: (id) => host.resolvePage(id),
+    });
+    await run("let tab = await browser.tabs.selected();");
+  }
+  await setFileAccess(false);
+  const shareDenied = await popup.evaluate(async (localUrl) => {
+    const selected = (await chrome.tabs.query({})).find((tab) => tab.url === localUrl);
+    return chrome.runtime.sendMessage({ action: "shareNextTab", tabId: selected.id });
+  }, localUrl);
+  assert.match(shareDenied.error, /Allow access to file URLs/);
+  await shared.goto(url + "/files");
+  await connectFileTask(url + "/files");
+  const denied = await runtime.execute(`await tab.goto(${JSON.stringify(localUrl)});`);
+  assert.equal(denied.isError, true);
+  assert.match(denied.content.at(-1).text, /Allow access to file URLs/);
+  assert.equal(shared.url(), url + "/files");
+  const uploadCode = `let chooser = tab.playwright.waitForEvent("filechooser"); await tab.playwright.getByLabel("Upload").click(); await (await chooser).setFiles(${JSON.stringify(uploadFile)});`;
+  const uploadDenied = await runtime.execute(uploadCode);
+  assert.equal(uploadDenied.isError, true);
+  assert.match(uploadDenied.content.at(-1).text, /Allow access to file URLs/);
+  assert.equal(uploaded, undefined);
+  await runtime.close();
+  await host.close();
+  await setFileAccess(true);
+  await connectFileTask(localUrl);
+  assert.ok(
+    (await run("nodeRepl.write(await tab.playwright.domSnapshot());")).content[0].text.includes(
+      "Local page verified",
+    ),
+  );
+  await run(
+    `let createdFile = await cua.createBrowserTab("extension", ${JSON.stringify(localUrl)}, {visible:true});`,
+  );
+  await run(`await tab.goto(${JSON.stringify(url + "/files")});`);
+  await run(uploadCode);
+  await localPage.locator("output").filter({ hasText: "uploaded" }).waitFor();
+  assert.equal(uploaded, "file upload verified");
+  allowed = false;
+  assert.equal((await runtime.execute("await tab.reload();")).isError, true);
+  allowed = true;
+  await setFileAccess(false);
+  await runtime.close();
+  await host.close();
+  await connectFileTask(url + "/files");
+  const revoked = await runtime.execute(uploadCode);
+  assert.equal(revoked.isError, true);
+  assert.match(revoked.content.at(-1).text, /Allow access to file URLs/);
+  console.log(
+    "[extension:smoke] PASS: file switch, disabled/enabled/revoked access, file pages, upload and pause",
   );
 } finally {
   await workerFixture?.close();

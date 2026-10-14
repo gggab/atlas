@@ -59,6 +59,8 @@ bun run dev:app
 
 首次访问网站需要授权；你可以暂停控制或接管页面。每个会话会复用自己的标签组和保留页面，结束时默认关闭新建的任务页面，保留明确标记的交付或交接页面，以及原有日常标签页和登录状态。
 
+Local file pages and website file uploads require **Allow access to file URLs** in the browser's extension details. This browser setting is separate from website approval; the extension adds no upload button.
+
 扩展有独立版本和商店审核流程。仓库中的扩展名称已改为 DeskMate Browser，商店展示名称以已审核版本为准；现有 Chrome／Edge 扩展 ID 保持兼容。桌面应用发布不代表扩展已经发布。
 
 ## 本地数据与记忆

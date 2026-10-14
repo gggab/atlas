@@ -97,7 +97,9 @@ export class NativeConnection {
   }
   async share(tabId) {
     const tab = await this.api.tabs.get(tabId);
-    if (!/^https?:\/\//.test(tab.url ?? "")) throw new Error("Choose an HTTP(S) web page first");
+    if (!/^(https?|file):\/\//.test(tab.url ?? ""))
+      throw new Error("Choose an HTTP(S) web page or local file page first");
+    if (tab.url.startsWith("file:")) await this.controller.permissions.authorizeFiles();
     if (this.controller.socket)
       throw new Error("Take over the active task before sharing another tab");
     this.shareNextTab = tabId;

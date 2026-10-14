@@ -6,6 +6,7 @@ function fixture(local = {}) {
   let removed;
   const windows = [];
   const api = {
+    extension: { isAllowedFileSchemeAccess: async () => false },
     storage: { local: { get: async () => local, set: async (v) => Object.assign(local, v) } },
     runtime: { getURL: (p) => `chrome-extension://fixture/${p}` },
     windows: {
@@ -44,6 +45,34 @@ test("fresh and legacy consent installations ask per hostname before access", as
   const rejected = assert.rejects(again, /cancelled/i);
   p.end();
   await rejected;
+});
+
+test("local files use the browser switch independently of website allow-all", async () => {
+  const { permissions: p, windows } = fixture();
+  p.begin();
+  p.policy.allowAll = true;
+  await assert.rejects(p.authorize("file:///C:/fixture/page.html"), /Allow access to file URLs/);
+  await assert.rejects(p.authorizeFiles(), /Allow access to file URLs/);
+  p.api.extension.isAllowedFileSchemeAccess = async () => true;
+  await p.authorize("file:///C:/fixture/page.html");
+  await p.authorizeFiles();
+  assert.equal(windows.length, 0);
+  assert.deepEqual(p.status().sites, {});
+  p.api.extension.isAllowedFileSchemeAccess = async () => false;
+  await assert.rejects(p.authorize("file:///C:/fixture/page.html"), /Allow access to file URLs/);
+  for (const url of ["chrome://settings", "javascript:alert(1)", "data:text/html,fixture"])
+    await assert.rejects(p.authorize(url), /Only HTTP\(S\)/);
+  p.end();
+});
+
+test("ending a task while checking file access cannot authorize a stale operation", async () => {
+  const { permissions: p } = fixture();
+  p.api.extension.isAllowedFileSchemeAccess = async () => {
+    p.end();
+    return true;
+  };
+  p.begin();
+  await assert.rejects(p.authorize("file:///C:/fixture/page.html"), /cancelled/);
 });
 
 test("site decisions survive restart, subdomains ask separately, and deny overrides allow-all", async () => {

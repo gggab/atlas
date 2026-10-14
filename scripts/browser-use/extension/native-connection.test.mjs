@@ -3,6 +3,25 @@ import { test } from "node:test";
 import { NativeConnection } from "./native-connection.js";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { SitePermissions } from "./site-permissions.js";
+
+test("sharing a local file page requires the browser's file access grant", async () => {
+  let allowed = false;
+  const stored = {};
+  const api = {
+    extension: { isAllowedFileSchemeAccess: async () => allowed },
+    windows: { onRemoved: { addListener() {} } },
+    alarms: { onAlarm: { addListener() {} } },
+    tabs: { get: async () => ({ url: "file:///C:/fixture/page.html" }) },
+    storage: { session: { set: async (value) => Object.assign(stored, value) } },
+  };
+  const connection = new NativeConnection(api, { permissions: new SitePermissions(api) });
+  await assert.rejects(connection.share(7), /Allow access to file URLs/);
+  assert.deepEqual(stored, {});
+  allowed = true;
+  await connection.share(7);
+  assert.equal(stored.shareNextTab, 7);
+});
 
 test("the unpacked extension identity matches the native host allowlist", async () => {
   const manifest = JSON.parse(await readFile(new URL("./manifest.json", import.meta.url), "utf8"));

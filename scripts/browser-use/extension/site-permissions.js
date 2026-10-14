@@ -25,9 +25,15 @@ export class SitePermissions {
   host(value) {
     const url = new URL(value);
     if (url.href === "about:blank" || url.href === "about:srcdoc") return null;
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
-      throw new Error("Only HTTP(S) websites can be authorized");
-    return url.hostname;
+    if (!["http:", "https:", "file:"].includes(url.protocol) || url.username || url.password)
+      throw new Error("Only HTTP(S) websites or file URLs can be authorized");
+    return url.protocol === "file:" ? null : url.hostname;
+  }
+  async authorizeFiles() {
+    if (!(await this.api.extension.isAllowedFileSchemeAccess()))
+      throw new Error(
+        'File access is disabled. Open the browser Extensions page, select DeskMate Browser > Details, and turn on "Allow access to file URLs", then retry.',
+      );
   }
   begin() {
     this.end();
@@ -58,6 +64,12 @@ export class SitePermissions {
       throw new Error("Website access is being updated. Try again when it finishes.");
     if (this.policyError) throw new Error(this.policyError);
     const host = this.host(value);
+    if (new URL(value).protocol === "file:") {
+      const epoch = this.epoch;
+      await this.authorizeFiles();
+      if (!this.active || epoch !== this.epoch)
+        throw new Error("Website authorization was cancelled");
+    }
     if (!host) return;
     if (this.policy.sites[host] === "block") throw new Error(`Access to ${host} is not allowed`);
     if (this.once.has(host) || this.policy.sites[host] === "allow" || this.policy.allowAll) return;

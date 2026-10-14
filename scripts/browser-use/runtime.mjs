@@ -23,7 +23,10 @@ to the user when the task does not authorize them. Do not expose cookies/tokens.
 Preserve complete observed hrefs and their query/fragment in variables. Shorten
 only display labels, never navigation data. Use locator.getAttribute("href")
 and new URL(rawHref, await tab.url()).href for absolute, protocol-relative and
-relative links; never blindly prepend "https:". Accept only HTTP(S) destinations.
+relative links; never blindly prepend "https:". Accept HTTP(S) or file destinations.
+File pages and uploads require the human to enable "Allow access to file URLs" in
+the browser's DeskMate Browser extension details. Never change that setting through
+tools or bypass it with another browser/file operation. Use only task-authorized files.
 Navigate and inspect one page at a time, never batch openings with Promise.all.
 Inspect the final URL, page identity and requested content before moving on.
 Report absent content explicitly; do not infer why it is missing without evidence.
@@ -119,8 +122,8 @@ function normalKey(key) {
 }
 function validUrl(value) {
   const url = new URL(value);
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
-    throw new Error("Only HTTP(S) URLs without embedded credentials are allowed");
+  if (!["http:", "https:", "file:"].includes(url.protocol) || url.username || url.password)
+    throw new Error("Only HTTP(S) or file URLs without embedded credentials are allowed");
   return url.href;
 }
 

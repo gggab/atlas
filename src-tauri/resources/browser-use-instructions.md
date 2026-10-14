@@ -28,6 +28,15 @@ Redirects and frames can ask separately. Wait for the human; never approve throu
 tools, bypass a declined site, or repeatedly retry a timed-out prompt. Website
 permissions can be reviewed/reset in the extension.
 
+Local file pages (file:// URLs) and uploads through a website's existing file
+chooser require the human to enable **Allow access to file URLs** in the browser's
+DeskMate Browser extension details. Use only files authorized by the user's task.
+File access is separate from website approval and is checked again for each
+operation; website allow-all does not enable it. If access is disabled, explain
+the setting and wait. Never toggle it through tools or bypass it with shell/file
+operations. Global pause and session ownership still apply. No upload UI is added
+to the extension; use the website's own file chooser with absolute file paths.
+
 browser_repl executes persistent JavaScript per ACP session. Reuse existing tabs:
 
 ```js
@@ -63,7 +72,7 @@ let link = tab.playwright.getByRole("link", { name: "Observed product name", exa
 let rawHref = await link.getAttribute("href");
 if (!rawHref) throw new Error("The observed link has no href");
 let target = new URL(rawHref, await tab.url());
-if (!["http:", "https:"].includes(target.protocol)) throw new Error("Expected an HTTP(S) link");
+if (!["http:", "https:", "file:"].includes(target.protocol)) throw new Error("Expected an HTTP(S) or file link");
 await tab.goto(target.href);
 nodeRepl.write(await tab.url());
 nodeRepl.write(await tab.playwright.domSnapshot());

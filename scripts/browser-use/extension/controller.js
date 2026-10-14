@@ -31,7 +31,19 @@ export class ExtensionController {
       const target = this.targets.get(source.tabId);
       if (!target) return;
       const generation = this.generation;
-      const check = this.event(source, method, params, target, generation);
+      // Async permission checks must not let lifecycle events overtake navigation.
+      // Fetch interception stays immediate so a declined request fails before detach.
+      const check = [
+        "Page.lifecycleEvent",
+        "Page.domContentEventFired",
+        "Page.loadEventFired",
+        "Page.frameStoppedLoading",
+      ].includes(method)
+        ? Promise.all(this.checks).then(() => {
+            if (generation === this.generation)
+              return this.event(source, method, params, target, generation);
+          })
+        : this.event(source, method, params, target, generation);
       this.checks.add(check);
       void check
         .catch((error) => {
@@ -192,8 +204,8 @@ export class ExtensionController {
     const tab = await this.api.tabs.get(tabId);
     // Chrome may expose only pendingUrl immediately after an owned tab is created.
     const url = tab.url || (allowBlank ? tab.pendingUrl : "");
-    if (!/^https?:\/\//.test(url ?? "") && !(allowBlank && url === "about:blank"))
-      throw new Error("Select an HTTP(S) web page before sharing it.");
+    if (!/^(https?|file):\/\//.test(url ?? "") && !(allowBlank && url === "about:blank"))
+      throw new Error("Select an HTTP(S) web page or local file page before sharing it.");
     await this.authorize(url, generation);
     if (generation !== this.generation) throw new Error("Connection was cancelled");
     await this.api.debugger.attach({ tabId }, "1.3");
@@ -224,12 +236,12 @@ export class ExtensionController {
       if (generation !== this.generation) throw new Error("Connection was cancelled");
       const url = new URL(value);
       if (
-        !["http:", "https:", "about:"].includes(url.protocol) ||
+        !["http:", "https:", "file:", "about:"].includes(url.protocol) ||
         (url.protocol === "about:" && url.href !== "about:blank") ||
         url.username ||
         url.password
       )
-        throw new Error("Only HTTP(S) or blank tabs may be created");
+        throw new Error("Only HTTP(S), file URLs or blank tabs may be created");
       await this.authorize(url.href, generation);
       const tab = await this.api.tabs.create({
         url: url.href,
@@ -476,6 +488,7 @@ export class ExtensionController {
         };
         await this.inspect(source, generation);
         if (params.method === "Page.navigate") await this.authorize(params.params.url, generation);
+        if (params.method === "DOM.setFileInputFiles") await this.permissions.authorizeFiles();
         if (generation !== this.generation || !this.targets.has(entry[0]))
           throw new Error("Connection was cancelled");
         if (params.method === "Target.setAutoAttach") {

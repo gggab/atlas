@@ -68,6 +68,14 @@ actual distributed behavior.
 
 ## Integrate store identity before submission
 
+The extension also declares `file:///*` for user-enabled local file pages and
+website file uploads. Verify that the browser's **Allow access to file URLs**
+switch is visible; disabled access must fail before sharing, navigation, or
+upload, and enabling it must allow those operations. Revoke the setting during
+control and verify subsequent file operations fail. This browser-owned grant is
+independent of website allow-all; no extra upload UI is included. Keep privacy
+and store permission disclosures aligned with this capability.
+
 For a new publisher, upload a Chrome draft first and obtain its **Item ID and public key** from the
 Package tab. Replace the development manifest key with the assigned public key
 and verify the unpacked ID matches the draft Item ID. The manifest `key` does
@@ -155,6 +163,7 @@ declare the single purpose, actual data handling and each permission:
 | `storage` | Keep a local browser-profile UUID and session ownership/handoff records for scoped cleanup/resume. |
 | `alarms` | Retry the local app connection after browser/app restart. |
 | `http://127.0.0.1/*` | Connect to an authenticated task relay on loopback. No arbitrary remote control server is accepted. |
+| `file:///*` | Access task-authorized local file pages and upload files through website file choosers, only when the human enables the browser's file-access switch. |
 
 All extension code is packaged locally. Page content and JavaScript evaluated
 in an authorized task are separate from extension executable code; explain the
