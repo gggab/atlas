@@ -11,7 +11,9 @@ dist/
 # Staging dir for scripts/build-frontend.mjs (content-aware sync into dist/).
 dist-next/
 src-tauri/resources/browser-use/
-artifacts/browser-extension/
+# Local packaging, branding previews and browser test captures.
+/artifacts/
+/output/
 target/
 
 # IDE
