@@ -129,6 +129,7 @@ enum Job {
     Prompt {
         binding: SessionBinding,
         prompt: String,
+        task_run_id: Option<String>,
     },
     Turn {
         binding: SessionBinding,
@@ -539,6 +540,30 @@ impl CaptureState {
         model: Option<&str>,
         prompt: &str,
     ) {
+        self.note_prompt_with_origin(session_id, cwd, plugin_id, model, prompt, None);
+    }
+
+    pub fn note_scheduled_prompt(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        prompt: &str,
+        run: &str,
+    ) {
+        self.note_prompt_with_origin(session_id, cwd, plugin_id, model, prompt, Some(run.into()));
+    }
+
+    fn note_prompt_with_origin(
+        &self,
+        session_id: &str,
+        cwd: &str,
+        plugin_id: &str,
+        model: Option<&str>,
+        prompt: &str,
+        task_run_id: Option<String>,
+    ) {
         if cwd.is_empty() {
             // No project directory means nowhere to put `.atlas/`. Capture is a
             // no-op rather than an error — the agent turn is unaffected.
@@ -596,6 +621,7 @@ impl CaptureState {
         self.submit(Job::Prompt {
             binding,
             prompt: prompt.to_string(),
+            task_run_id,
         });
     }
 
@@ -2260,14 +2286,19 @@ fn process_job(job: Job, session_ids: &mut HashMap<String, String>, stores: &Sto
     let outcome = match job {
         // Already handled above; none of these needs a Session.
         Job::WalkCommits { .. } | Job::EndSession { .. } => Ok(()),
-        Job::Prompt { prompt, .. } => capture
-            .record_prompt(
+        Job::Prompt {
+            prompt,
+            task_run_id,
+            ..
+        } => capture
+            .record_prompt_with_origin(
                 &key,
                 &prompt,
                 binding.turn_seq,
                 binding.agent.as_deref(),
                 binding.model.as_deref(),
                 Some(&binding.cwd),
+                task_run_id.as_deref(),
             )
             .and_then(|id| {
                 // The branch is a separate call — see `Capture::note_branch`.

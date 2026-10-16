@@ -87,6 +87,8 @@ export interface AppSettings {
    *  secret files unless explicitly named by path (ADR-0015). Off: new sessions are not offered the
    *  tools and every call in a running one is refused. Default ON. */
   agentCodeTools: boolean;
+  /** Explicit opt-in for Agent-created durable tasks. */
+  agentTaskTools: boolean;
   /** "Command finished" — a successful command longer than
    *  `terminalNotifyMinDurationMs` raises a notification. (Once the terminal
    *  master switch; `notificationsEnabled` is the master now, and this is the
@@ -157,6 +159,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   instructionSync: false,
   enterToSend: true,
   agentCodeTools: true,
+  agentTaskTools: false,
   terminalNotifications: true,
   terminalNotifyMinDurationMs: 10_000,
   terminalNotifyOnFailure: true,

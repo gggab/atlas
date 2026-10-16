@@ -53,6 +53,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub struct PreparedTurn {
+    pub key: SessionKey,
+    pub turn_seq: u64,
+    _permit: super::turn_admission::TurnPermit,
+}
+
 // ── The IPC wire shapes ─────────────────────────────────────────────────────
 //
 // These moved out of `atlas-agents` with the port. Field names and serde
@@ -335,6 +341,11 @@ pub struct AgentHost {
     /// several names for one thing.
     by_plugin: Mutex<HashMap<String, AgentId>>,
     sessions: Mutex<HashMap<String, SessionRecord>>,
+    admissions: Arc<super::turn_admission::TurnAdmissions>,
+    turn_origins: Mutex<HashMap<String, String>>,
+    scheduled_activity: Mutex<Option<Arc<dyn Fn(&str, DateTime<Utc>) -> bool + Send + Sync>>>,
+    task_lifecycle_gate: Mutex<()>,
+    restore_locks: Mutex<HashMap<ThreadId, Arc<tokio::sync::Mutex<()>>>>,
     /// Registry agents found on the user's `PATH`, from the last probe.
     ///
     /// Cached because the catalog is a sync, instant read and a probe walks
@@ -487,6 +498,11 @@ impl AgentHost {
             agents: Mutex::new(HashMap::new()),
             by_plugin: Mutex::new(HashMap::new()),
             sessions: Mutex::new(HashMap::new()),
+            admissions: Arc::default(),
+            turn_origins: Mutex::default(),
+            scheduled_activity: Mutex::default(),
+            task_lifecycle_gate: Mutex::new(()),
+            restore_locks: Mutex::default(),
             detected: Mutex::new(Vec::new()),
             history,
             activity: Mutex::new(HashMap::new()),
@@ -1217,16 +1233,93 @@ impl AgentHost {
     /// minutes. The turn is driven on its own task, and its failure is
     /// announced on the wire rather than returned here — by then the caller is
     /// long gone.
+    #[cfg(test)]
     pub fn send(self: &Arc<Self>, key: &SessionKey, content: Vec<acp::ContentBlock>) -> Result<()> {
-        let session_id = acp::SessionId::new(key.session_id.as_str());
-        let (turn_seq, cwd) = {
+        let prepared = self.prepare_turn(key, None)?;
+        self.start_prepared(prepared, content);
+        Ok(())
+    }
+
+    pub fn task_run_origin(&self, session: &str) -> Option<String> {
+        lock(&self.turn_origins).get(session).cloned()
+    }
+
+    pub fn set_scheduled_activity_explainer(
+        &self,
+        explain: Arc<dyn Fn(&str, DateTime<Utc>) -> bool + Send + Sync>,
+    ) {
+        *lock(&self.scheduled_activity) = Some(explain);
+    }
+    pub fn explains_scheduled_activity(&self, session: &str, at: DateTime<Utc>) -> bool {
+        if self.task_run_origin(session).is_some()
+            && lock(&self.activity)
+                .get(session)
+                .is_some_and(|activity| activity.in_flight > 0)
+        {
+            return true;
+        }
+        lock(&self.scheduled_activity)
+            .as_ref()
+            .is_some_and(|explain| explain(session, at))
+    }
+
+    pub fn prepare_turn(&self, key: &SessionKey, run: Option<String>) -> Result<PreparedTurn> {
+        let _lifecycle = lock(&self.task_lifecycle_gate);
+        if run.is_some()
+            && !self.history().is_some_and(|h| {
+                h.store().threads().iter().any(|t| {
+                    t.session_id
+                        .as_ref()
+                        .is_some_and(|s| s.to_string() == key.session_id)
+                })
+            })
+        {
+            return Err(HostError::classified("Execution conversation was deleted"));
+        }
+        let permit = self
+            .admissions
+            .reserve(&key.session_id, run.clone())
+            .map_err(HostError::classified)?;
+        let snapshot = self.snapshot_meta(key)?;
+        if matches!(
+            snapshot.status,
+            SessionStatus::Running | SessionStatus::Waiting
+        ) {
+            return Err(HostError::classified("Session is busy"));
+        }
+        let turn_seq = {
             let mut sessions = lock(&self.sessions);
             let record = sessions
                 .get_mut(&key.session_id)
                 .ok_or_else(HostError::unknown_session)?;
             record.turn_seq = record.turn_seq.wrapping_add(1);
-            (record.turn_seq, record.cwd.clone())
+            record.turn_seq
         };
+        let mut origins = lock(&self.turn_origins);
+        if let Some(run) = run {
+            origins.insert(key.session_id.clone(), run);
+        } else {
+            origins.remove(&key.session_id);
+        }
+        Ok(PreparedTurn {
+            key: key.clone(),
+            turn_seq,
+            _permit: permit,
+        })
+    }
+
+    pub fn start_prepared(
+        self: &Arc<Self>,
+        prepared: PreparedTurn,
+        content: Vec<acp::ContentBlock>,
+    ) -> tokio::sync::oneshot::Receiver<std::result::Result<acp::StopReason, String>> {
+        let key = &prepared.key;
+        let session_id = acp::SessionId::new(key.session_id.as_str());
+        let turn_seq = prepared.turn_seq;
+        let cwd = lock(&self.sessions)
+            .get(&key.session_id)
+            .map(|r| r.cwd.clone())
+            .unwrap_or_default();
         self.refresh_branch(&session_id, &cwd);
         // Before the turn opens, so the `status: running` that `begin_turn`
         // emits already carries this turn's identity.
@@ -1237,11 +1330,18 @@ impl AgentHost {
 
         let this = self.clone();
         let session_key = key.session_id.clone();
+        let (done, result) = tokio::sync::oneshot::channel();
         tauri::async_runtime::spawn(async move {
-            let sent = this.manager.send(&session_id, content).await;
+            let _permit = prepared;
+            let sent = this.manager.send_if_idle(&session_id, content).await;
             // Every way out of the turn ends it, a superseded one included:
             // each send counted itself in, so each counts itself out.
             this.end_atlas_turn(&session_key);
+            let _ = done.send(
+                sent.as_ref()
+                    .map(|reason| *reason)
+                    .map_err(|e| format!("{e:#}")),
+            );
             if let Err(e) = sent {
                 // A send that was superseded reports back late, and its failure
                 // belongs to a turn that is already over. Announcing it anyway
@@ -1267,7 +1367,7 @@ impl AgentHost {
                 );
             }
         });
-        Ok(())
+        result
     }
 
     /// Steering keeps the current turn sequence and watcher activity intact.
@@ -1276,6 +1376,11 @@ impl AgentHost {
         key: &SessionKey,
         content: Vec<acp::ContentBlock>,
     ) -> Result<atlas_acp_thread::SteeringOutcome> {
+        if self.admissions.scheduled(&key.session_id) {
+            return Err(HostError::classified(
+                "A scheduled task owns this turn; stop it explicitly before taking over",
+            ));
+        }
         let owner = lock(&self.sessions)
             .get(&key.session_id)
             .map(|record| record.agent.clone())
@@ -1786,6 +1891,23 @@ impl AgentHost {
     /// (`conversation_view.rs:1150-1157`) reached through the message
     /// classification Atlas already has, rather than a typed downcast.
     pub async fn resume_thread(&self, thread_id: ThreadId) -> Result<ResumedThread> {
+        self.resume_thread_with_visibility(thread_id, true).await
+    }
+
+    pub async fn resume_thread_background(&self, thread_id: ThreadId) -> Result<ResumedThread> {
+        self.resume_thread_with_visibility(thread_id, false).await
+    }
+
+    async fn resume_thread_with_visibility(
+        &self,
+        thread_id: ThreadId,
+        unarchive: bool,
+    ) -> Result<ResumedThread> {
+        let restore = lock(&self.restore_locks)
+            .entry(thread_id)
+            .or_default()
+            .clone();
+        let _restore = restore.lock().await;
         let history = self.history_or_err()?;
         let thread = history
             .store()
@@ -1796,7 +1918,9 @@ impl AgentHost {
         // reopening would be a second session for one conversation.
         if let Some(session_id) = thread.session_id.clone() {
             if lock(&self.sessions).contains_key(session_id.0.as_ref()) {
-                history.store().unarchive(thread_id);
+                if unarchive {
+                    history.store().unarchive(thread_id);
+                }
                 return Ok(ResumedThread {
                     key: SessionKey {
                         agent_id: self.handle_for(&self.agent_for(thread.agent_id.as_str())?),
@@ -1852,11 +1976,21 @@ impl AgentHost {
             }
         };
 
-        let init = self.bind(agent.agent_id, &record, cwd, opened);
+        let init = {
+            let _lifecycle = lock(&self.task_lifecycle_gate);
+            if !unarchive && history.store().thread(thread_id).is_none() {
+                return Err(HostError::classified(
+                    "Execution conversation was deleted during restoration",
+                ));
+            }
+            self.bind(agent.agent_id, &record, cwd, opened)
+        };
         // After the session is open, and after `bind` — the live feed preserves
         // whatever `archived` it finds, so unarchiving first would be undone by
         // the row it writes (`agent_panel.rs:4382-4386` unarchives on open).
-        history.store().unarchive(thread_id);
+        if unarchive {
+            history.store().unarchive(thread_id);
+        }
         Ok(ResumedThread {
             key: init.key,
             resumed_without_history,
@@ -1893,24 +2027,36 @@ impl AgentHost {
         thread_id: ThreadId,
         modified: &HashMap<String, DateTime<Utc>>,
     ) -> Result<()> {
+        let restore = lock(&self.restore_locks)
+            .entry(thread_id)
+            .or_default()
+            .clone();
+        let _restore = restore.lock().await;
         let history = self.history_or_err()?;
-        let Some(thread) = history.store().thread(thread_id) else {
-            return Ok(());
-        };
-        if let Some(session_id) = thread.session_id.as_ref() {
-            let id = session_id.0.as_ref();
-            if live_elsewhere(
-                modified.get(id).copied(),
-                self.atlas_activity().get(id),
-                Utc::now(),
-            ) {
-                return Err(HostError::new(
-                    "This session is still active in another process; close it there first.",
-                    ErrorClass::Fatal,
-                ));
+        let thread = {
+            let _lifecycle = lock(&self.task_lifecycle_gate);
+            let Some(thread) = history.store().thread(thread_id) else {
+                return Ok(());
+            };
+            if let Some(session_id) = thread.session_id.as_ref() {
+                let id = session_id.0.as_ref();
+                if self.admissions.scheduled(id) {
+                    return Err(HostError::classified("A scheduled turn is using this conversation; explicitly stop it before deleting"));
+                }
+                if live_elsewhere(
+                    modified.get(id).copied(),
+                    self.atlas_activity().get(id),
+                    Utc::now(),
+                ) {
+                    return Err(HostError::new(
+                        "This session is still active in another process; close it there first.",
+                        ErrorClass::Fatal,
+                    ));
+                }
             }
-        }
-        history.store().delete(thread_id);
+            history.store().delete(thread_id);
+            thread
+        };
 
         let Some(session_id) = thread.session_id else {
             return Ok(());
@@ -2310,6 +2456,9 @@ impl AgentHost {
                 .iter()
                 .filter(|s| known.contains(&s.session_id))
                 .filter_map(|s| Some((s.session_id.clone(), s.updated_at?)))
+                .filter(|(session, at)| {
+                    !self.explains_scheduled_activity(&session.to_string(), *at)
+                })
                 .collect();
             history.store().touch_sessions(&activity, Some(cutoff));
             let rows =
@@ -3803,6 +3952,57 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn scheduled_restore_keeps_archived_conversation_out_of_the_sidebar() {
+        let (host, _dir) = fresh_host_with_external(Arc::new(RebindingAgent {
+            fresh_id: "scheduled-restored",
+        }))
+        .await;
+        let history = host.history().unwrap();
+        let thread = ThreadMetadata {
+            archived: true,
+            session_id: Some(acp::SessionId::new("old-scheduled")),
+            ..ThreadMetadata::new(
+                ThreadId::new(),
+                TEST_AGENT_ID.into(),
+                PathList::new(&[PathBuf::from("/tmp/atlas")]),
+            )
+        };
+        let id = thread.thread_id;
+        history.store().save_all(vec![thread]);
+        let restored = host.resume_thread_background(id).await.unwrap();
+        assert_eq!(restored.key.session_id, "scheduled-restored");
+        assert!(history.store().thread(id).unwrap().archived);
+        host.resume_thread(id).await.unwrap();
+        assert!(!history.store().thread(id).unwrap().archived);
+    }
+
+    #[tokio::test]
+    async fn scheduled_reservation_blocks_human_send_before_async_dispatch() {
+        let (host, _dir) = fresh_host_with_external(LiveAgent::new("scheduled-admission")).await;
+        let agent = host.spawn(TEST_AGENT_ID).await.unwrap();
+        let session = host
+            .new_session(agent.agent_id, PathBuf::from("/tmp/atlas"), Vec::new())
+            .await
+            .unwrap();
+        host.history().unwrap().record_connected(
+            &atlas_acp_thread::AgentId::new(TEST_AGENT_ID),
+            &acp::SessionId::new(session.key.session_id.as_str()),
+            ThreadSnapshot {
+                is_draft: false,
+                title: None,
+                work_dirs: vec![PathBuf::from("/tmp/atlas")],
+            },
+        );
+        let scheduled = host
+            .prepare_turn(&session.key, Some("run-1".into()))
+            .unwrap();
+        assert!(host.prepare_turn(&session.key, None).is_err());
+        assert!(host.snapshot(&session.key).unwrap().messages.is_empty());
+        drop(scheduled);
+        assert!(host.prepare_turn(&session.key, None).is_ok());
     }
 
     /// A history row is the user's record. An agent that cannot be reached,

@@ -13,7 +13,7 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 - **Session** — the agent-side conversation, identified by an ACP session id. A thread references at most one session.
 - **Thread-metadata store** — the app-level SQLite store that is the *only* source for the session sidebar and history. Holds metadata only (ids, agent, titles, timestamps, worktree paths, archived flag) — never transcript content. See ADR-0001.
 - **Recorded branch** — the last Git branch observed for a thread's own working directory at bind or turn start. Older/imported rows remain unknown; the current project checkout is never used to guess past branches. Catalog compatibility and backups are described in `docs/reference/history-migrations.md`.
-- **Archive** — a first-class thread state: out of the active sidebar, kept in history. Opening an archived thread unarchives it, and so does new activity on its session inside the 7-day window. Manually imported and backfilled threads land archived.
+- **Archive** — a first-class thread state: out of the active sidebar, kept in history. Opening an archived thread unarchives it; qualifying observed external activity inside the 7-day window can also do so. Scheduled background activity preserves archive state. Registered tasks keep their independent lifecycle. Manually imported and backfilled threads land archived.
 - **Live thread feed** — the path that keeps a thread's store row current from the running conversation's own events (`ThreadRecorder`). The only writer besides import and project sync. Distinct from the *capture recorder* (`atlas-checkpoint`), which records the transcript and the usage.
 - **Import** — the user-initiated (manual) pull of an agent's sessions into the store via ACP `session/list`; metadata only; capability-gated; deduped by session id. Imported rows land archived.
 - **Project sync / discovery** — the ongoing, automatic counterpart of import, scoped to the open project: `session/list` from the agents DeskMate already has history with, plus an on-disk provider (a watcher on Claude's transcript directory) that learns a session exists and when it was last active. Metadata only — it never reads message content; replay and resume still go through the agent. Rows active in the last 7 days land unarchived; a deleted session is never brought back. Attribution is by the agent's own `session/list`, never by agent id. See ADR-0001, *Discovery*.
@@ -29,6 +29,16 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
   - the Memory panel's **Codex thread list**, which still queries `~/.codex/state_*.sqlite`. This one is a genuine exception rather than a category difference — it is a session list, read from another program's database, rendered as UI. It survived the history port because it belongs to the Memory panel rather than to the ACP stack. Flagged, not endorsed.
 
 ## Adjacent subsystems
+
+- **Scheduled task** — a durable reminder or bounded Agent check, independent of
+  conversation visibility. Source references trace the request; an execution
+  binding selects the authorized conversation/Agent/cwd. Archive does not pause
+  it. Explicit task controls and completion conditions own its lifetime.
+- **Scheduled run** — one claimed execution, keyed by a durable run ID; distinct
+  from its task, ACP session and notification. Success requires a matching
+  successful terminal result and a valid structured report for Agent checks.
+- **Notification outbox** — Rust-owned delivery intent committed with task
+  progress. OS acceptance, reading and business completion remain separate.
 
 - **Project** — a local folder opened in DeskMate and shown in the sidebar. The unit almost everything else is scoped to: the editor state, the file index, the git watcher, the knowledge base, the capture store. *Avoid: workspace.* The stored names still say `workspace` — `state.json`'s `workspaces` / `activeWorkspaceId`, the `workspace_id` columns in `sessions.db`, the `workspaceId` argument of the fileindex / recent-files / git-watch / mention commands and the events that carry it, the `"workspace"` mention tag, and the `workspace.*` keybinding action ids. Those are **storage keys**, not the concept: renaming one is a data migration that breaks existing installs, not a rename. Every such site carries a comment saying so.
 - **Historical native session** — an old record carrying the `atlas-agent` storage key. Its transcript and checkpoints remain readable; its removed engine cannot be resumed.

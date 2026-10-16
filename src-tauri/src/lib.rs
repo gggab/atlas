@@ -6,6 +6,7 @@ mod logging;
 #[cfg(target_os = "macos")]
 mod menu;
 mod notifier;
+mod scheduler;
 mod state;
 mod window_background;
 
@@ -252,6 +253,11 @@ pub fn run() {
                 });
             }
 
+            if let Err(error) = scheduler::Scheduler::install(app.handle()) {
+                let message = format!("Task scheduler unavailable: {error}");
+                tracing::error!("{message}");
+                app.manage(scheduler::SchedulerUnavailable(message));
+            }
             commands::agents::install_manager(app.handle());
             // Silent background refresh of model pricing from models.dev — first
             // launch populates the cache; later launches update only on change.
@@ -276,6 +282,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 commands::memory_indexer::MemoryIndexer::run(indexer_app, registry, job_rx).await;
             });
+            scheduler::Scheduler::start(app.handle());
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -326,6 +333,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::tasks::tasks_snapshot,
+            commands::tasks::tasks_upsert,
+            commands::tasks::tasks_control,
+            commands::tasks::tasks_runs,
+            commands::tasks::tasks_mark_read,
             commands::ssh::ssh_snapshot,
             commands::ssh::ssh_clear_history,
             commands::ssh::ssh_save,
@@ -695,6 +707,9 @@ pub fn run() {
         .run(|app_handle, event| {
             match event {
                 tauri::RunEvent::ExitRequested { .. } => {
+                    if let Some(scheduler) = app_handle.try_state::<Arc<scheduler::Scheduler>>() {
+                        scheduler.stop();
+                    }
                     if let Some(browser) =
                         app_handle.try_state::<Arc<commands::browser_use::BrowserUseState>>()
                     {

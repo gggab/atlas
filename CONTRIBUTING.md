@@ -70,3 +70,10 @@ Do not commit, push, publish or deploy unless explicitly requested. Stage only t
 Report bugs in [this fork's issue tracker](https://github.com/gggab/atlas/issues), including the version, OS, selected Agent and reproduction steps when available. For security reports, see [SECURITY.md](.github/SECURITY.md). Upstream issues and community channels are for upstream contributions.
 
 Keep React features under `src/features/<feature>/`, shared widgets under `src/components/`, primitives under `src/ui/`, and native commands in `src-tauri/src/commands/`. Follow the existing Zustand, IPC and style conventions in the architecture documentation. Never commit credentials or tokens. Use English for code comments, development documentation and Git messages; the main README is Chinese.
+## Scheduler changes
+
+For task changes, cover real SQLite restart/recovery, revision fences, admitted
+human/background competition, archive-preserving restore and notification routing.
+Follow the [scheduler verification guide](docs/reference/task-scheduler.md#development-verification).
+Browser mocks do not establish vendor-authenticated ACP or native notification
+delivery.

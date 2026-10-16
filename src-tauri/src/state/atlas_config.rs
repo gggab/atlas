@@ -359,6 +359,9 @@ pub struct AppSettings {
     /// refused. Default ON.
     #[serde(default = "default_true")]
     pub agent_code_tools: bool,
+    /// Explicit opt-in for durable tasks created through session-bound MCP.
+    #[serde(default)]
+    pub agent_task_tools: bool,
     /// "Command finished": a successful command longer than
     /// `terminal_notify_min_duration_ms` notifies. (Once the terminal master
     /// switch; `notifications_enabled` is the master now.)
@@ -478,6 +481,7 @@ impl Default for AppSettings {
             instruction_sync: false,
             enter_to_send: true,
             agent_code_tools: true,
+            agent_task_tools: false,
             terminal_notifications: true,
             terminal_notify_min_duration_ms: default_terminal_notify_min_duration_ms(),
             terminal_notify_on_failure: true,
@@ -656,6 +660,11 @@ const SETTINGS_DOCS: &[(&str, &str)] = &[
          # are hidden unless explicitly named by path. Off: the code tools are withdrawn\n\
          # and every call is refused; agents use their own shell instead.\n\
          # (default: true)",
+    ),
+    (
+        "agentTaskTools",
+        "# Allow session-bound Agents to register and execute durable tasks.\n\
+         # Explicit opt-in; fixed reminders do not require this. (default: false)",
     ),
     (
         "terminalNotifications",
@@ -1024,6 +1033,7 @@ pub struct SettingsPatch {
     pub instruction_sync: Option<bool>,
     pub enter_to_send: Option<bool>,
     pub agent_code_tools: Option<bool>,
+    pub agent_task_tools: Option<bool>,
     pub terminal_notifications: Option<bool>,
     pub terminal_notify_min_duration_ms: Option<u32>,
     pub terminal_notify_on_failure: Option<bool>,
@@ -1106,6 +1116,9 @@ impl SettingsPatch {
         }
         if let Some(v) = self.agent_code_tools {
             settings.agent_code_tools = v;
+        }
+        if let Some(v) = self.agent_task_tools {
+            settings.agent_task_tools = v;
         }
         if let Some(v) = self.terminal_notifications {
             settings.terminal_notifications = v;
@@ -1207,6 +1220,7 @@ impl SettingsPatch {
         set_bool!(remember_before_switch, "rememberBeforeSwitch");
         set_bool!(enter_to_send, "enterToSend");
         set_bool!(agent_code_tools, "agentCodeTools");
+        set_bool!(agent_task_tools, "agentTaskTools");
         set_bool!(terminal_notifications, "terminalNotifications");
         set_bool!(terminal_notify_on_failure, "terminalNotifyOnFailure");
         set_bool!(terminal_notify_on_attention, "terminalNotifyOnAttention");
@@ -2657,6 +2671,7 @@ someFutureKey = \"left alone\"
             instruction_sync: Some(!defaults.instruction_sync),
             enter_to_send: Some(!defaults.enter_to_send),
             agent_code_tools: Some(!defaults.agent_code_tools),
+            agent_task_tools: Some(!defaults.agent_task_tools),
             terminal_notifications: Some(!defaults.terminal_notifications),
             terminal_notify_min_duration_ms: Some(defaults.terminal_notify_min_duration_ms + 1),
             terminal_notify_on_failure: Some(!defaults.terminal_notify_on_failure),

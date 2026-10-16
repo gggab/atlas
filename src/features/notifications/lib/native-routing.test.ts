@@ -32,6 +32,7 @@ describe("banner payload round trip", () => {
       { type: "settings", section: "models" },
       { type: "settings", section: "agents" },
       { type: "config-file" },
+      { type: "task", taskId: "durable-task-id" },
       { type: "git-panel", projectId: "p1", projectName: "DeskMate" },
     ] satisfies NotificationTarget[]) {
       expect(targetForResponse(click(encodeBannerPayload(target)))).toEqual(target);
@@ -48,6 +49,7 @@ describe("targetForResponse", () => {
 
   it("ignores missing, malformed and foreign payloads", () => {
     expect(targetForResponse(click(null))).toBeNull();
+    expect(targetForResponse(click('{"v":1,"target":{"type":"task"}}'))).toBeNull();
     expect(targetForResponse(click("{not json"))).toBeNull();
     expect(targetForResponse(click('"str"'))).toBeNull();
     expect(targetForResponse(click('{"target":{"type":"session"}}'))).toBeNull();

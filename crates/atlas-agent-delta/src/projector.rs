@@ -614,6 +614,7 @@ impl SessionProjection {
         deltas
             .into_iter()
             .map(|delta| SessionDeltaEnvelope {
+                task_run_id: None,
                 agent_id: self.agent_id,
                 session_id: self.session_id.to_string(),
                 delta,

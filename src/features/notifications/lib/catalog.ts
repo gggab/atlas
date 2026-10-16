@@ -56,6 +56,7 @@ export const isNotificationSettingsSection = (s: unknown): s is NotificationSett
 
 /** What a local notification is about and where "Open" jumps. */
 export type NotificationTarget =
+  | { type: "task"; taskId: string }
   | {
       type: "terminal";
       tabId: string;
@@ -96,6 +97,8 @@ const ATTENTION_TOAST_MS = 15_000;
 /** The OS-banner group a target's notifications collapse into. */
 export const targetGroupKey = (t: NotificationTarget): string => {
   switch (t.type) {
+    case "task":
+      return `task:${t.taskId}`;
     case "terminal":
       return `terminal:${t.terminalId}`;
     case "session":
@@ -122,6 +125,26 @@ export const notificationTag = (kind: NotificationKind, dedupeKey: string) =>
   `${kind}:${dedupeKey}`;
 
 export const NOTIFICATION_CATALOG = {
+  "task-reminder": {
+    label: "Scheduled task reminders",
+    tier: "outcome",
+    source: "app",
+    channels: ALL_CHANNELS,
+    whenLooking: "record",
+    sound: { native: "Ping" },
+    toast: { variant: "default", durationMs: DONE_TOAST_MS },
+    groupKey: targetGroupKey,
+  },
+  "task-attention": {
+    label: "Scheduled task needs attention",
+    tier: "needs-you",
+    source: "app",
+    channels: ALL_CHANNELS,
+    whenLooking: "record",
+    sound: { native: "Ping" },
+    toast: { variant: "error", durationMs: ATTENTION_TOAST_MS },
+    groupKey: targetGroupKey,
+  },
   "terminal-attention": {
     label: "Terminal needs input",
     tier: "needs-you",

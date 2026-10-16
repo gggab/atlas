@@ -50,6 +50,18 @@ src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (inv
 
 ## Frontend (`src/`)
 
+### Durable task scheduler
+
+`src-tauri/src/scheduler/` owns profile-local `scheduler.sqlite` (tasks, runs and
+notification outbox), deadline wakeups, recovery and Rust native delivery.
+`commands/tasks.rs` provides IPC; `commands/task_server.rs` serves independently
+enabled, session-bound MCP tools on `/tasks`. `commands/turn_admission.rs` and
+the manager's `send_if_idle` serialize human/background turns without cancellation.
+`src/features/tasks/` mirrors this state in a titlebar task center available
+without an open project. Archive affects visibility only. See
+[task scheduling](docs/reference/task-scheduler.md) and
+[ADR-0017](docs/adr/0017-durable-task-scheduling.md).
+
 Organized by **feature**, not file type:
 
 ```

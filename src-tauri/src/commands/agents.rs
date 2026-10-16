@@ -71,6 +71,7 @@ use uuid::Uuid;
 /// before reaching this sink, so a cloud streamer can tap the same stream
 /// without touching any of this.
 pub struct TauriDeltaSink {
+    app: AppHandle,
     pipeline: OutboundPipeline<SessionDeltaEnvelope>,
     browser: Arc<super::browser_use::BrowserUseState>,
 }
@@ -97,13 +98,21 @@ impl TauriDeltaSink {
             // the live session goes away. Always on and agent-agnostic,
             // unlike `capture` (opt-in, git-backed).
             .with(Arc::new(TranscriptMiddleware { app: app.clone() }))
-            .with(Arc::new(MemoryIngestMiddleware { app }));
-        Self { pipeline, browser }
+            .with(Arc::new(MemoryIngestMiddleware { app: app.clone() }));
+        Self {
+            pipeline,
+            browser,
+            app,
+        }
     }
 }
 
 impl DeltaSink for TauriDeltaSink {
-    fn emit(&self, envelope: SessionDeltaEnvelope) {
+    fn emit(&self, mut envelope: SessionDeltaEnvelope) {
+        envelope.task_run_id = self
+            .app
+            .try_state::<Arc<AgentHost>>()
+            .and_then(|host| host.task_run_origin(&envelope.session_id));
         if let SessionDelta::TurnFinished { turn_seq, .. }
         | SessionDelta::TurnFailed { turn_seq, .. } = &envelope.delta
         {
@@ -249,6 +258,9 @@ struct MemoryIngestMiddleware {
 
 impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
     fn on_event(&self, envelope: &SessionDeltaEnvelope) {
+        if envelope.task_run_id.is_some() {
+            return;
+        }
         // Resolve this session's project cwd once via the in-memory session map
         // (cheap; no disk I/O). A delta before the session's first `agents_send`
         // has no meta yet → every memory action below is a silent no-op.
@@ -346,6 +358,7 @@ struct RequestElicitation {
 /// block. One ordered queue, not a task per write, because an end overtaking
 /// its start would be dropped. The quit path's grace covers the last writes.
 struct SharingGatedLifecycle {
+    scheduler: Option<std::sync::Weak<crate::scheduler::Scheduler>>,
     writes: std::sync::mpsc::Sender<LifecycleWrite>,
     /// The memory tool server: its tokens are minted and revoked right here,
     /// in memory, so a session's token exists as soon as its start is
@@ -371,6 +384,9 @@ enum LifecycleWrite {
 
 impl SharingGatedLifecycle {
     fn new(app: AppHandle, server: Arc<super::memory_server::MemoryServerHost>) -> Self {
+        let scheduler = app
+            .try_state::<Arc<crate::scheduler::Scheduler>>()
+            .map(|s| Arc::downgrade(s.inner()));
         let ssh = app.state::<Arc<super::ssh::SshState>>().inner().clone();
         let browser = app
             .state::<Arc<super::browser_use::BrowserUseState>>()
@@ -406,6 +422,7 @@ impl SharingGatedLifecycle {
             .expect("the session lifecycle thread starts");
         Self {
             writes: tx,
+            scheduler,
             server,
             keep_awake,
             ssh,
@@ -435,6 +452,9 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
     }
 
     fn session_ended(&self, session_id: &str) {
+        if let Some(scheduler) = self.scheduler.as_ref().and_then(std::sync::Weak::upgrade) {
+            scheduler.forget_offer(session_id);
+        }
         self.browser.stop(session_id);
         tauri::async_runtime::spawn(self.ssh.runtime.revoke(session_id, None, true));
         super::agent_host::SessionLifecycle::session_ended(&**self.server.tokens(), session_id);
@@ -549,12 +569,25 @@ pub fn install_manager(app: &AppHandle) {
             code_server_tools = code_server_tools.with_index(registry.inner().clone());
         }
         let code_router = super::code_server::router(code_server_tools);
-        host.set_session_mcp(Arc::new(
+        let mut offers =
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
                 .with_ssh(ssh)
                 .with_browser(browser)
-                .with_code(super::code_server::CodeOffer::new(code_tools)),
-        ));
+                .with_code(super::code_server::CodeOffer::new(code_tools));
+        if let Ok(scheduler) = crate::scheduler::Scheduler::get(app) {
+            let weak_scheduler = Arc::downgrade(&scheduler);
+            host.set_scheduled_activity_explainer(Arc::new(move |session, at| {
+                weak_scheduler
+                    .upgrade()
+                    .is_some_and(|s| s.explains_activity(session, at))
+            }));
+            let task_app = app.clone();
+            offers = offers.with_tasks(
+                scheduler,
+                Arc::new(move || crate::scheduler::agent_tools_enabled(&task_app)),
+            );
+        }
+        host.set_session_mcp(Arc::new(offers));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
         let index: super::memory_server::IndexSearch = Arc::new(move |cwd, query, limit| {
@@ -599,7 +632,7 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
-            vec![code_router],
+            vec![code_router, super::task_server::router(app.clone())],
         );
     }
 
@@ -1051,10 +1084,11 @@ fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<M
         .into_iter()
         .enumerate()
         .map(|(i, m)| Message {
-            id: format!("{}-{i}", t.id),
-            role: match m.role.as_str() {
-                "user" => MessageRole::User,
-                "assistant" => MessageRole::Assistant,
+            id: m.id.unwrap_or_else(|| format!("{}-{i}", t.id)),
+            role: match (m.task_run_id.is_some(), m.role.as_str()) {
+                (true, "user") => MessageRole::System,
+                (_, "user") => MessageRole::User,
+                (_, "assistant") => MessageRole::Assistant,
                 _ => MessageRole::System,
             },
             mode: MessageMode::Text,
@@ -1321,6 +1355,8 @@ pub async fn agents_send(
     let plugin_id = snapshot.plugin_id.clone();
     let cwd = snapshot.cwd;
 
+    let prepared = host.prepare_turn(&key, None).map_err(|e| e.to_string())?;
+
     // Session capture: record the prompt and bind the session.
     //
     // This has to happen here rather than in the delta middleware, because the
@@ -1377,15 +1413,38 @@ pub async fn agents_send(
         app.state::<SharedMemoryStore>()
             .register_session(&key.session_id, &cwd, &plugin_id);
     }
-    host.send(
-        &key,
+    host.start_prepared(
+        prepared,
         prompt::with_resource_links(prompt::compose(text, images), links),
-    )
-    .map_err(|e| e.to_string())
+    );
+    Ok(())
 }
 
-/// Mid-turn input uses the transport's negotiated steering extension. It does
-/// not call send/cancel, start a checkpoint, or fail the running prompt.
+/// Record admitted background input with durable provenance, without recording
+/// human interaction or authorizing a human Browser Use continuation.
+pub fn record_scheduled_prompt(
+    app: &AppHandle,
+    key: &SessionKey,
+    text: &str,
+    run: &str,
+) -> Result<(), String> {
+    let host = app.state::<Arc<AgentHost>>();
+    let meta = host.snapshot_meta(key).map_err(|e| e.to_string())?;
+    app.state::<super::capture::CaptureState>()
+        .note_scheduled_prompt(
+            &key.session_id,
+            &meta.cwd,
+            &meta.plugin_id,
+            meta.current_model.as_deref(),
+            text,
+            run,
+        );
+    app.state::<Arc<super::agent_transcript::TranscriptState>>()
+        .note_scheduled_prompt(&key.session_id, &meta.cwd, &meta.plugin_id, text, run);
+    Ok(())
+}
+
+/// Mid-turn input uses the negotiated steering extension, without a new send.
 #[tauri::command]
 pub async fn agents_steer(
     key: SessionKey,

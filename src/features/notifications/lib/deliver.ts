@@ -47,6 +47,11 @@ const ANNOUNCED_CAP = 500;
 /** Bring a notification's target into view, across projects. */
 export function openNotificationTarget(t: NotificationTarget): void {
   switch (t.type) {
+    case "task":
+      void import("@/features/tasks/stores/task-center-store").then(({ useTaskCenter }) =>
+        useTaskCenter.getState().show(t.taskId),
+      );
+      return;
     case "terminal":
       void jumpToTerminal({ tabId: t.tabId, terminalId: t.terminalId, projectId: t.projectId });
       return;

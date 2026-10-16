@@ -39,6 +39,7 @@ function isTarget(t: unknown): t is NotificationTarget {
   if (typeof t !== "object" || t === null) return false;
   const r = t as Record<string, unknown>;
   // App-level targets own no tab.
+  if (r.type === "task") return typeof r.taskId === "string" && !!r.taskId;
   if (r.type === "agent-sign-in") return typeof r.agentType === "string" && !!r.agentType;
   if (r.type === "settings") return isNotificationSettingsSection(r.section);
   if (r.type === "config-file") return true;

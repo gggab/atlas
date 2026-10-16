@@ -1017,6 +1017,24 @@ impl AgentManager {
         session_id: &acp::SessionId,
         content: Vec<acp::ContentBlock>,
     ) -> Result<acp::StopReason> {
+        self.send_inner(session_id, content, false).await
+    }
+
+    /// Host-admitted sends must never supersede a detached or running turn.
+    pub async fn send_if_idle(
+        &self,
+        session_id: &acp::SessionId,
+        content: Vec<acp::ContentBlock>,
+    ) -> Result<acp::StopReason> {
+        self.send_inner(session_id, content, true).await
+    }
+
+    async fn send_inner(
+        &self,
+        session_id: &acp::SessionId,
+        content: Vec<acp::ContentBlock>,
+        require_idle: bool,
+    ) -> Result<acp::StopReason> {
         let handle = self
             .session(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
@@ -1033,6 +1051,7 @@ impl AgentManager {
         // meant the *cancelled* turn closed the *live* one (ATL-229).
         let turn = {
             let mut thread = lock_thread(&handle.thread);
+            anyhow::ensure!(!require_idle || !thread.is_generating(), "Session is busy");
             for block in &content {
                 thread.push_user_content_block(client_id.clone(), block.clone());
             }

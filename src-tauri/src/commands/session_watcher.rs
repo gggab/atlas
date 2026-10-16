@@ -413,7 +413,11 @@ impl SessionWatcher {
                 continue;
             }
             // Atlas's own turn wrote this; the live feed has the row.
-            if explained_by_atlas(session.modified, activity.get(&session.session_id)) {
+            if self
+                .host
+                .explains_scheduled_activity(&session.session_id, session.modified)
+                || explained_by_atlas(session.modified, activity.get(&session.session_id))
+            {
                 continue;
             }
             let id = acp::SessionId::new(session.session_id);

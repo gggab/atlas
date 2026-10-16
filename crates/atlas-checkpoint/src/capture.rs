@@ -128,6 +128,21 @@ impl<'a> Capture<'a> {
         model: Option<&str>,
         cwd: Option<&str>,
     ) -> Result<String> {
+        self.record_prompt_with_origin(key, prompt, turn_seq, agent, model, cwd, None)
+    }
+
+    /// Scheduled prompts are system-authored and carry a durable run identity.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_prompt_with_origin(
+        &mut self,
+        key: &SessionKey,
+        prompt: &str,
+        turn_seq: i64,
+        agent: Option<&str>,
+        model: Option<&str>,
+        cwd: Option<&str>,
+        task_run_id: Option<&str>,
+    ) -> Result<String> {
         let session_id = self.store.upsert_session(
             &key.workspace_id,
             key.source,
@@ -151,13 +166,19 @@ impl<'a> Capture<'a> {
         // synthesised deterministically from the turn and the content. Without
         // it a re-submitted send — a frontend retry, a re-processed delta —
         // would insert the same user message twice.
-        let native_message_id = format!("prompt-{turn_seq}-{}", blobs::key_for(prompt.as_bytes()));
+        let native_message_id = task_run_id
+            .map(|run| format!("scheduled:{run}"))
+            .unwrap_or_else(|| format!("prompt-{turn_seq}-{}", blobs::key_for(prompt.as_bytes())));
         self.record_content(
             &session_id,
             TurnContent {
                 turn_seq,
                 native_message_id: Some(native_message_id),
-                role: Role::User,
+                role: if task_run_id.is_some() {
+                    Role::System
+                } else {
+                    Role::User
+                },
                 mode: Mode::Text,
                 body: prompt.to_string(),
                 created_at: None,

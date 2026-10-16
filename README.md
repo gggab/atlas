@@ -65,11 +65,17 @@ Local file pages and website file uploads require **Allow access to file URLs** 
 
 ## 本地数据与记忆
 
+Durable reminders and bounded Agent checks are available from the titlebar task
+center. Tasks keep their own lifecycle when conversations are archived. The app
+must stay running; Agent task tools require explicit opt-in. See the
+[task scheduler reference](docs/reference/task-scheduler.md).
+
 | 数据 | 存储方式 |
 |---|---|
 | 会话目录与元数据 | 应用数据目录中的 `threads.db` |
 | 项目会话记录与检查点 | 项目中的 `.atlas/sessions.db` 及相关内容文件 |
 | 项目共享记忆 | `.atlas/memory/memory.sqlite` |
+| Durable tasks, runs and notification outbox | `<app-config-dir>/scheduler.sqlite` |
 
 同一仓库的多个 worktree 共享主项目的记忆范围。Agent 通过带有会话授权的本地 HTTP MCP 服务访问记忆，需要声明支持 HTTP MCP，并启用记忆共享。
 

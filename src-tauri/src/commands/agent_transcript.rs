@@ -33,6 +33,10 @@ use serde::{Deserialize, Serialize};
 /// that replay actually paints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredMessage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_run_id: Option<String>,
     /// "user" | "assistant" | "system".
     pub role: String,
     pub content: String,
@@ -149,6 +153,8 @@ impl TranscriptState {
         entry.messages.push(StoredMessage {
             role: "user".into(),
             content: text.to_string(),
+            id: Some(uuid::Uuid::new_v4().to_string()),
+            task_run_id: None,
             timestamp: now,
             model: None,
             live_id: None,
@@ -180,7 +186,15 @@ impl TranscriptState {
             return;
         };
         entry.updated_at = now.clone();
+        let task_run_id = entry
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .and_then(|m| m.task_run_id.clone());
         entry.messages.push(StoredMessage {
+            id: Some(uuid::Uuid::new_v4().to_string()),
+            task_run_id,
             role: role.to_string(),
             content: content.to_string(),
             timestamp: now,
@@ -217,6 +231,13 @@ impl TranscriptState {
         {
             Some(message) => message.content.push_str(delta),
             None => entry.messages.push(StoredMessage {
+                id: Some(uuid::Uuid::new_v4().to_string()),
+                task_run_id: entry
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "user")
+                    .and_then(|m| m.task_run_id.clone()),
                 role: "assistant".into(),
                 content: delta.to_string(),
                 timestamp: now,
@@ -252,6 +273,8 @@ impl TranscriptState {
         entry.messages.push(StoredMessage {
             role: "user".into(),
             content: content.to_string(),
+            id: Some(uuid::Uuid::new_v4().to_string()),
+            task_run_id: None,
             timestamp: now,
             model: None,
             live_id: None,
@@ -262,6 +285,26 @@ impl TranscriptState {
     /// appends rather than starting a new file.
     pub fn snapshot(&self, session_id: &str) -> Option<StoredTranscript> {
         self.open.lock().get(session_id).cloned()
+    }
+
+    pub fn note_scheduled_prompt(
+        &self,
+        session: &str,
+        cwd: &str,
+        agent: &str,
+        text: &str,
+        run: &str,
+    ) {
+        self.note_prompt(session, cwd, agent, text, chrono::Utc::now().to_rfc3339());
+        if let Some(message) = self
+            .open
+            .lock()
+            .get_mut(session)
+            .and_then(|t| t.messages.last_mut())
+        {
+            message.id = Some(format!("scheduled:{run}"));
+            message.task_run_id = Some(run.into());
+        }
     }
 }
 
@@ -756,5 +799,51 @@ mod tests {
         save(&dir, &t).unwrap();
         std::fs::write(dir_for(&dir, "/w").join("garbage.json"), b"{not json").unwrap();
         assert_eq!(list(&dir, "/w").len(), 1);
+    }
+}
+#[cfg(test)]
+mod scheduled_transcript_tests {
+    use super::*;
+    #[test]
+    fn scheduled_origin_and_message_identity_survive_disk_replay() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = TranscriptState::new(dir.path().to_path_buf());
+        state.note_scheduled_prompt("session", "/project", "test-agent", "Check status", "run-1");
+        state.note_message(
+            "session",
+            "assistant",
+            "No change",
+            None,
+            Some("live-1"),
+            "2026-10-15T12:00:00Z".into(),
+        );
+        save(dir.path(), &state.snapshot("session").unwrap()).unwrap();
+        let replay = read(dir.path(), "/project", "session").unwrap();
+        assert_eq!(replay.messages[0].id.as_deref(), Some("scheduled:run-1"));
+        assert_eq!(replay.messages[1].task_run_id.as_deref(), Some("run-1"));
+        assert!(replay.messages[1].live_id.is_none());
+        state.note_prompt(
+            "session",
+            "/project",
+            "test-agent",
+            "Human follow-up",
+            "2026-10-15T12:01:00Z".into(),
+        );
+        state.note_message(
+            "session",
+            "assistant",
+            "Human answer",
+            None,
+            None,
+            "2026-10-15T12:01:01Z".into(),
+        );
+        assert!(state
+            .snapshot("session")
+            .unwrap()
+            .messages
+            .last()
+            .unwrap()
+            .task_run_id
+            .is_none());
     }
 }

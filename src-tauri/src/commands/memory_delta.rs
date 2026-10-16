@@ -262,6 +262,7 @@ mod tests {
 
         ingest(
             &SessionDeltaEnvelope {
+                task_run_id: None,
                 agent_id: atlas_agent_wire::AgentId::new(),
                 session_id: "s1".into(),
                 delta: plan_delta(),

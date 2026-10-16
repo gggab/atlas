@@ -539,6 +539,8 @@ mod tests {
                 messages: messages
                     .iter()
                     .map(|(role, content)| StoredMessage {
+                        id: None,
+                        task_run_id: None,
                         role: (*role).into(),
                         content: (*content).into(),
                         timestamp: at.clone(),

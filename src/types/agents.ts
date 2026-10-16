@@ -189,7 +189,7 @@ export type AgentStreamEvent = AgentDelta | LoadingStatusEvent | AgentUpdateEven
  * Single multiplexed delta stream emitted on the `atlas:agents` window event.
  * `kind` discriminates; `agent_id` + `session_id` route to the right tab.
  */
-export type AgentDelta =
+export type AgentDelta = { task_run_id?: string } & (
   | {
       kind: "status";
       agent_id: AgentId;
@@ -375,4 +375,5 @@ export type AgentDelta =
       agent_id: AgentId;
       session_id: AcpSessionId;
       reason: string;
-    };
+    }
+);

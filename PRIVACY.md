@@ -150,3 +150,17 @@ For privacy questions or requests, contact
 Updates will be published in this file with a revised effective date. The
 published policy and store disclosures should match the distributed extension
 and DeskMate build.
+## Local scheduled tasks
+
+When you create a reminder or authorize Agent task tools, DeskMate stores task
+content, source references, execution bindings, run reports and notification
+delivery records in the current profile's local `scheduler.sqlite`. Dev and
+Release profiles are separate. Archiving a conversation leaves registered tasks
+running. Deleting only a source conversation does not erase independent task
+records; manage those tasks in the task center.
+
+Agent checks send their registered task input to the selected external CLI and
+its model service under that vendor's existing authentication and permissions.
+Fixed reminders do not invoke a model. OS desktop notifications may display the
+registered title and content. This feature adds no DeskMate cloud account,
+telemetry service, new communication-source access or mobile delivery channel.

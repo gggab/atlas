@@ -622,6 +622,7 @@ fn a_variant_with_no_fields_still_serializes_as_an_object() {
 #[test]
 fn the_envelope_flattens_the_delta_beside_its_routing_keys() {
     let value = serde_json::to_value(SessionDeltaEnvelope {
+        task_run_id: None,
         agent_id: AgentId(Uuid::nil()),
         session_id: "sess-1".into(),
         delta: SessionDelta::Compaction { active: false },

@@ -30,6 +30,7 @@ import type { Binding, CaptureHealth } from "@/features/capture/types";
 import { activeProjectId } from "@/features/projects/lib/active-project";
 import { useLocalProjects } from "@/features/projects/lib/project-scope";
 import { useFullscreen } from "@/hooks/use-fullscreen";
+import { TaskCenter } from "@/features/tasks/components/task-center";
 import { isDev } from "@/lib/env";
 import { isLinux, isMac, isWindows } from "@/lib/platform";
 
@@ -154,6 +155,7 @@ export function Titlebar() {
       {/* One dock, account included. Without a project there are no app-level
           actions to gather, so the account stands alone as it always has —
           signing in has to be reachable from an empty window. */}
+      <TaskCenter />
       {currentProject ? <ActionDock /> : <div className="flex items-center"></div>}
 
       {(isWindows || isLinux) && <WindowControls />}

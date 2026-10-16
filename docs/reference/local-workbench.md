@@ -16,6 +16,11 @@ when the connected CLI explicitly advertises the ACP steering extension.
 
 ## Other features: recommendations, not removals
 
+The [task scheduler](task-scheduler.md) adds profile-local durable reminders and
+bounded checks using installed ACP CLIs. Agent task tools are separately opt-in;
+shared-memory availability does not authorize tasks. Conversation archive does not
+pause tasks. No daemon, model gateway or mobile notification service is added.
+
 | Feature | Potential later pruning | Impact |
 |---|---|---|
 | Research / papers | Search providers, imports, optional BYOK synthesis | Removes research search, PDF / mention / note integrations; retain local PDFs separately if approved. |

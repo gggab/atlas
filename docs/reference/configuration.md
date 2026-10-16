@@ -119,6 +119,10 @@ enterToSend = true
 # (default: true)
 agentCodeTools = true
 
+# Let session-bound Agents register and execute durable tasks. Explicit opt-in;
+# fixed reminders created in the task center do not require this setting.
+agentTaskTools = false
+
 # Notify when a command succeeds after running longer than
 # terminalNotifyMinDurationMs. (The master switch for all notifications
 # is notificationsEnabled.) (default: true)
@@ -225,6 +229,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `rememberBeforeSwitch` | boolean | `false` | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |
 | `enterToSend` | boolean | `true` | — |
 | `agentCodeTools` | boolean | `true` | — |
+| `agentTaskTools` | boolean | `false` | Explicit opt-in; task scope, binding and execution budgets still apply |
 | `terminalNotifications` | boolean | `true` | — |
 | `terminalNotifyMinDurationMs` | integer | `10000` | 0 ≤ n ≤ 3600000 |
 | `terminalNotifyOnFailure` | boolean | `true` | — |

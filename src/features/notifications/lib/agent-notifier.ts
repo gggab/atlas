@@ -264,6 +264,7 @@ function buildCtx(tabId: string, session: ChatSession, sessionId: string) {
  *  notify; never throws. */
 export function notifyAgentEvent(env: AgentDelta): void {
   try {
+    if (env.task_run_id && (env.kind === "turn_finished" || env.kind === "turn_failed")) return;
     if (
       env.kind !== "permission_request" &&
       env.kind !== "elicitation_requested" &&

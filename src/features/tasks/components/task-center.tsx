@@ -1,0 +1,479 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { CalendarClock } from "lucide-react";
+import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/ui/dialog";
+import { useSettingsStore } from "@/features/settings/stores/settings-store";
+import { useNotificationsStore } from "@/features/notifications/stores/notifications-store";
+import { useTaskCenter } from "../stores/task-center-store";
+import {
+  controlTask,
+  executionThreads,
+  localInputTime,
+  markTaskNotificationRead,
+  saveTask,
+  taskRuns,
+  tasksSnapshot,
+  type ScheduledTask,
+  type TaskAction,
+  type TaskInput,
+  type TaskRun,
+  type TaskSnapshot,
+  type TaskThread,
+} from "../lib/tasks-api";
+
+const STATE_LABEL: Record<ScheduledTask["state"], string> = {
+  active: "运行中",
+  waiting_input: "等待处理",
+  paused: "已暂停",
+  blocked: "执行受阻",
+  completed: "已完成",
+  cancelled: "已取消",
+};
+
+const RUN_LABEL: Record<string, string> = {
+  claimed: "等待执行",
+  dispatching: "执行中",
+  succeeded: "执行成功",
+  failed: "执行失败",
+  cancelled: "已取消",
+  unknown: "结果待核对",
+  needs_attention: "需要处理",
+};
+const DELIVERY_LABEL: Record<string, string> = {
+  pending: "待发送",
+  submitting: "正在提交",
+  accepted: "已提交给系统",
+  failed: "发送失败，等待重试",
+  unknown: "投递结果待核对",
+  suppressed: "已停止发送",
+  muted: "已按通知设置静音",
+  exhausted: "重试失败，请检查通知权限",
+};
+
+export function TaskCenter() {
+  const { open, selectedId, show, close } = useTaskCenter();
+  const settings = useSettingsStore.use.settings();
+  const [snapshot, setSnapshot] = useState<TaskSnapshot>({ tasks: [], notifications: [] });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [threads, setThreads] = useState<TaskThread[]>([]);
+  const [runs, setRuns] = useState<TaskRun[]>([]);
+  const [editing, setEditing] = useState<ScheduledTask | null>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const receiptKey = useRef(crypto.randomUUID());
+  const selected = snapshot.tasks.find((t) => t.id === selectedId);
+
+  const prepareNativePermission = useCallback(async () => {
+    if (settings.notificationsEnabled) {
+      const { primeNativeNotificationPermission } = await import("@/lib/native-notify");
+      await primeNativeNotificationPermission();
+    }
+  }, [settings.notificationsEnabled]);
+
+  useEffect(() => {
+    if (open && settings.agentTaskTools && isTauri()) {
+      void prepareNativePermission().catch((e) => setError(String(e)));
+    }
+  }, [open, settings.agentTaskTools, prepareNativePermission]);
+
+  const refresh = useCallback(async () => {
+    try {
+      setSnapshot(await tasksSnapshot());
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void listen("atlas:tasks-changed", () => {
+      if (!disposed) void refresh();
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+        if (!disposed) void refresh();
+      })
+      .catch((e) => setError(String(e)));
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!settings.notificationsEnabled) return;
+    const items = snapshot.notifications.filter(
+      (n) =>
+        !settings.notifyDisabledKinds.includes(n.attention ? "task-attention" : "task-reminder"),
+    );
+    useNotificationsStore.getState().actions.syncTasks(
+      items.map((n) => ({
+        id: n.id,
+        kind: n.attention ? "task-attention" : "task-reminder",
+        title: n.title,
+        body: n.body,
+        timestamp: new Date(n.createdAt).toISOString(),
+        source: "app",
+        target: { type: "task", taskId: n.taskId },
+        read: n.read,
+      })),
+    );
+  }, [snapshot.notifications, settings.notificationsEnabled, settings.notifyDisabledKinds]);
+
+  useEffect(
+    () =>
+      useNotificationsStore.subscribe((current, previous) => {
+        for (const n of current.items) {
+          if (n.target?.type === "task" && n.read && !previous.items.some((p) => p.id === n.id)) {
+            void markTaskNotificationRead(n.id).catch((e) => setError(String(e)));
+          }
+        }
+        for (const n of previous.items) {
+          if (n.target?.type !== "task") continue;
+          const next = current.items.find((i) => i.id === n.id);
+          if (!next || (!n.read && next.read))
+            void markTaskNotificationRead(n.id, !next).catch((e) => setError(String(e)));
+        }
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isTauri()) {
+      setError("任务调度需要桌面应用运行。浏览器预览不执行真实任务。");
+      return;
+    }
+    void refresh();
+    void executionThreads()
+      .then(setThreads)
+      .catch((e) => setError(String(e)));
+  }, [open, refresh]);
+
+  useEffect(() => {
+    let disposed = false;
+    setRuns([]);
+    if (open && selectedId)
+      void taskRuns(selectedId)
+        .then((value) => {
+          if (!disposed) setRuns(value);
+        })
+        .catch((e) => {
+          if (!disposed) setError(String(e));
+        });
+    return () => {
+      disposed = true;
+    };
+  }, [open, selectedId, snapshot.tasks]);
+
+  const change = async (task: ScheduledTask, action: TaskAction) => {
+    setBusy(true);
+    try {
+      await controlTask(task, action, action === "snooze" ? Date.now() + 60 * 60_000 : undefined);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const kind = data.get("kind") === "agent_check" ? "agent_check" : "reminder";
+    const input: TaskInput = {
+      id: editing?.id,
+      expectedRevision: editing?.revision,
+      idempotencyKey: editing?.input.idempotencyKey ?? receiptKey.current,
+      title: String(data.get("title")),
+      prompt: String(data.get("prompt")),
+      kind,
+      dueAt: new Date(String(data.get("due"))).getTime(),
+      sourceThreadId: editing?.input.sourceThreadId,
+      executionThreadId: kind === "agent_check" ? String(data.get("thread")) : null,
+      maxRuns: Number(data.get("maxRuns")),
+      timeoutSeconds: Number(data.get("timeoutSeconds")),
+      quietHours: data.get("quiet") ? { startMinute: 22 * 60, endMinute: 8 * 60 } : null,
+    };
+    setBusy(true);
+    try {
+      await prepareNativePermission();
+      const task = await saveTask(input);
+      receiptKey.current = crypto.randomUUID();
+      setEditing(null);
+      form.current?.reset();
+      show(task.id);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const edit = (task: ScheduledTask) => {
+    setEditing(task);
+    receiptKey.current = crypto.randomUUID();
+  };
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label="任务中心"
+        title="任务中心"
+        onClick={() => show()}
+      >
+        <CalendarClock size={16} />
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(value) => {
+          if (!value) close();
+        }}
+      >
+        <DialogContent
+          className="max-w-[min(60rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto"
+          onMouseDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <DialogTitle>任务中心</DialogTitle>
+          <DialogDescription>
+            任务独立于会话归档。应用运行且电脑唤醒时执行，提醒不会自动完成事项。
+          </DialogDescription>
+          <p className="text-xs text-muted-foreground">
+            当前支持单次提醒和下一次检查，暂不支持按月、按年或农历重复。
+          </p>
+          {error && (
+            <p role="alert" className="break-words text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={settings.agentTaskTools}
+              onChange={(e) =>
+                useSettingsStore
+                  .getState()
+                  .actions.updateSettings({ agentTaskTools: e.target.checked })
+              }
+            />
+            允许 Agent 通过任务工具登记计划和后台检查
+          </label>
+          <p className="text-xs text-muted-foreground">
+            开启后新建或重新打开执行会话，使 Agent 获得任务工具。固定提醒无需开启。后台操作沿用该
+            CLI 的权限配置。
+          </p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <section aria-label="任务列表" className="min-w-0 space-y-2">
+              {snapshot.tasks.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  暂无任务，可手动创建，或在启用工具后向 Agent 提出提醒请求。
+                </p>
+              )}
+              {snapshot.tasks.map((task) => (
+                <article key={task.id} className="rounded-md border border-border p-3 space-y-2">
+                  <button
+                    className="w-full text-left text-sm font-medium"
+                    onClick={() => show(task.id)}
+                  >
+                    {task.input.title}
+                  </button>
+                  <p className="text-xs text-muted-foreground">
+                    {STATE_LABEL[task.state]} ·{" "}
+                    {task.nextCheckAt
+                      ? new Date(task.nextCheckAt).toLocaleString()
+                      : "未安排下一次检查"}
+                  </p>
+                  {task.reason && <p className="break-words text-xs">{task.reason}</p>}
+                  <div className="flex flex-wrap gap-1">
+                    {task.state === "active" && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void change(task, "pause")}
+                      >
+                        暂停
+                      </Button>
+                    )}
+                    {task.state === "paused" && (
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => void change(task, "resume")}
+                      >
+                        恢复
+                      </Button>
+                    )}
+                    {task.state !== "completed" && task.state !== "cancelled" && (
+                      <>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void change(task, "snooze")}
+                        >
+                          一小时后
+                        </Button>
+                        <Button variant="outline" disabled={busy} onClick={() => edit(task)}>
+                          修改
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void change(task, "complete")}
+                        >
+                          标记完成
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => void change(task, "cancel")}
+                        >
+                          取消任务
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                  {selectedId === task.id && (
+                    <div className="space-y-2 border-t border-border pt-2">
+                      <p className="whitespace-pre-wrap text-xs">{task.input.prompt}</p>
+                      {snapshot.notifications
+                        .filter((n) => n.taskId === task.id)
+                        .map((n) => (
+                          <div key={n.id} className="text-xs">
+                            <p className="whitespace-pre-wrap">{n.body}</p>
+                            <p className="text-muted-foreground">
+                              桌面通知：{DELIVERY_LABEL[n.nativeState] ?? n.nativeState}
+                              {n.nativeError ? ` · ${n.nativeError}` : ""}
+                            </p>
+                          </div>
+                        ))}
+                      {runs.map((r) => (
+                        <p key={r.id} className="break-words text-xs text-muted-foreground">
+                          {new Date(r.startedAt).toLocaleString()} · {RUN_LABEL[r.state] ?? r.state}
+                          {r.reason ? ` · ${r.reason}` : ""}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              ))}
+              {selectedId && !selected && <p className="text-sm">未找到此任务，请刷新后重试。</p>}
+            </section>
+            <form
+              ref={form}
+              key={editing?.id ?? "new"}
+              onSubmit={(e) => void submit(e)}
+              className="space-y-3"
+            >
+              <h3 className="text-sm font-medium">{editing ? "修改任务" : "创建任务"}</h3>
+              <label className="block text-xs">
+                标题
+                <Input name="title" required maxLength={256} defaultValue={editing?.input.title} />
+              </label>
+              <label className="block text-xs">
+                提醒内容或检查目标
+                <textarea
+                  name="prompt"
+                  required
+                  maxLength={16000}
+                  rows={4}
+                  defaultValue={editing?.input.prompt}
+                  className="mt-1 w-full rounded-md border border-border bg-background p-2 text-sm"
+                />
+              </label>
+              <label className="block text-xs">
+                类型
+                <select
+                  name="kind"
+                  defaultValue={editing?.input.kind ?? "reminder"}
+                  className="mt-1 block w-full rounded border border-border bg-background p-1"
+                >
+                  <option value="reminder">固定提醒（直接通知）</option>
+                  <option value="agent_check" disabled={!settings.agentTaskTools}>
+                    Agent 检查（需要判断）
+                  </option>
+                </select>
+              </label>
+              <label className="block text-xs">
+                首次执行时间（本机时区）
+                <Input
+                  name="due"
+                  type="datetime-local"
+                  required
+                  defaultValue={localInputTime(editing?.nextCheckAt ?? Date.now() + 60 * 60_000)}
+                />
+              </label>
+              <label className="block text-xs">
+                执行会话（仅 Agent 检查需要）
+                <select
+                  name="thread"
+                  defaultValue={editing?.input.executionThreadId ?? ""}
+                  className="mt-1 block w-full rounded border border-border bg-background p-1"
+                >
+                  <option value="">请选择</option>
+                  {threads
+                    .filter((t) => t.sessionId)
+                    .map((t) => (
+                      <option key={t.threadId} value={t.threadId}>
+                        {t.title}
+                        {t.archived ? "（已归档，仍可执行）" : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <div className="flex gap-2">
+                <label className="min-w-0 text-xs">
+                  Agent 执行次数上限
+                  <Input
+                    name="maxRuns"
+                    type="number"
+                    min={1}
+                    max={100}
+                    required
+                    defaultValue={editing?.input.maxRuns ?? 20}
+                  />
+                </label>
+                <label className="min-w-0 text-xs">
+                  单次超时（秒）
+                  <Input
+                    name="timeoutSeconds"
+                    type="number"
+                    min={30}
+                    max={3600}
+                    required
+                    defaultValue={editing?.input.timeoutSeconds ?? 300}
+                  />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-xs">
+                <input name="quiet" type="checkbox" defaultChecked={!!editing?.input.quietHours} />
+                22:00–08:00 延后桌面通知（本机时区）
+              </label>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={busy || !isTauri()}>
+                  {busy ? "正在保存…" : editing ? "保存修改" : "登记任务"}
+                </Button>
+                {editing && (
+                  <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                    放弃修改
+                  </Button>
+                )}
+              </div>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

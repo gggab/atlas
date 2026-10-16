@@ -61,6 +61,10 @@ pub struct MemorySessionOffers {
     ssh: Option<Arc<crate::commands::ssh::SshState>>,
     browser: Option<Arc<crate::commands::browser_use::BrowserUseState>>,
     code: Option<CodeOffer>,
+    tasks: Option<(
+        Arc<crate::scheduler::Scheduler>,
+        Arc<dyn Fn() -> bool + Send + Sync>,
+    )>,
 }
 
 impl MemorySessionOffers {
@@ -71,6 +75,7 @@ impl MemorySessionOffers {
             ssh: None,
             browser: None,
             code: None,
+            tasks: None,
         }
     }
 
@@ -91,6 +96,15 @@ impl MemorySessionOffers {
     /// (ADR-0015). Its own setting decides, never the sharing gate.
     pub fn with_code(mut self, code: CodeOffer) -> Self {
         self.code = Some(code);
+        self
+    }
+
+    pub fn with_tasks(
+        mut self,
+        scheduler: Arc<crate::scheduler::Scheduler>,
+        gate: Arc<dyn Fn() -> bool + Send + Sync>,
+    ) -> Self {
+        self.tasks = Some((scheduler, gate));
         self
     }
 }
@@ -137,6 +151,15 @@ impl SessionMcpServers for MemorySessionOffers {
         if let (Some(CodeOfferDecision::Included), Some(url)) = (code, code_url) {
             entries.push((CODE_SERVER_NAME, url));
         }
+        let task_url = self.host.url_at(crate::commands::task_server::PATH);
+        let tasks_included = request.http_mcp
+            && task_url.is_some()
+            && self.tasks.as_ref().is_some_and(|(_, gate)| gate());
+        if tasks_included {
+            if let Some(url) = task_url {
+                entries.push((crate::commands::task_server::NAME, url));
+            }
+        }
         if entries.is_empty() {
             return SessionMcpOffer::none();
         }
@@ -151,8 +174,18 @@ impl SessionMcpServers for MemorySessionOffers {
                 ]))
             })
             .collect();
+        let scheduler = self.tasks.as_ref().map(|(scheduler, _)| scheduler.clone());
         SessionMcpOffer::new(servers, move |session| match session {
-            Some(id) => tokens.bind(&token, &id.to_string()),
+            Some(id) => {
+                tokens.bind(&token, &id.to_string());
+                if let Some(scheduler) = &scheduler {
+                    if tasks_included {
+                        scheduler.note_offer(&id.to_string());
+                    } else {
+                        scheduler.forget_offer(&id.to_string());
+                    }
+                }
+            }
             None => tokens.revoke_token(&token),
         })
     }

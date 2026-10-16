@@ -21,6 +21,28 @@ const add = (
   });
 
 describe("local notifications", () => {
+  it("reconciles durable task notifications by ID without duplicate unread items", () => {
+    add(undefined);
+    const n = {
+      id: "run:r",
+      kind: "task-reminder" as const,
+      source: "app" as const,
+      title: "Bill",
+      body: "Due",
+      timestamp: new Date().toISOString(),
+      target: { type: "task" as const, taskId: "task" },
+      read: false,
+    };
+    const actions = useNotificationsStore.getState().actions;
+    actions.syncTasks([n]);
+    actions.markAllRead();
+    actions.syncTasks([n]);
+    const items = useNotificationsStore.getState().items;
+    expect(items).toHaveLength(2);
+    expect(items.find((i) => i.id === n.id)?.read).toBe(true);
+    actions.syncTasks([]);
+    expect(useNotificationsStore.getState().items).toHaveLength(1);
+  });
   it("keeps legacy organization tags visible as local history", () => {
     add("org-a");
     add("org-b");

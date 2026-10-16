@@ -104,6 +104,7 @@ export function computeAway(windowFocused: boolean, sinceInputMs: number): boole
 }
 
 const TARGET_LABEL: Record<NotificationTarget["type"], string> = {
+  task: "Task",
   terminal: "Terminal",
   session: "Agent",
 

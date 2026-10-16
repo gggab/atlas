@@ -188,6 +188,8 @@ pub enum SessionDelta {
 pub struct SessionDeltaEnvelope {
     pub agent_id: AgentId,
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_run_id: Option<String>,
     #[serde(flatten)]
     pub delta: SessionDelta,
 }

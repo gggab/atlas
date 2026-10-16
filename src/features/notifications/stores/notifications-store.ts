@@ -73,6 +73,7 @@ interface NotificationsState {
   panelOpen: boolean;
   actions: {
     add: (n: NewNotification) => void;
+    syncTasks: (items: AppNotification[]) => void;
     dismiss: (id: string) => void;
     clearAll: () => void;
     markAllRead: () => void;
@@ -122,6 +123,7 @@ function isAppTarget(t: unknown): t is NonNullable<AppNotification["target"]> {
     (r.type === "agent-sign-in" && typeof r.agentType === "string" && !!r.agentType) ||
     (r.type === "settings" && isNotificationSettingsSection(r.section)) ||
     r.type === "config-file" ||
+    (r.type === "task" && typeof r.taskId === "string" && !!r.taskId) ||
     (r.type === "git-panel" && typeof r.projectId === "string" && !!r.projectId)
   );
 }
@@ -133,6 +135,19 @@ export const useNotificationsStore = createSelectors(
         items: [],
         panelOpen: false,
         actions: {
+          syncTasks: (items) =>
+            set((s) => {
+              const existing = new Map(s.items.map((i) => [i.id, i]));
+              const merged = items.map((i) => ({
+                ...i,
+                read: i.read || existing.get(i.id)?.read || s.panelOpen,
+              }));
+              return {
+                items: [...merged, ...s.items.filter((i) => i.target?.type !== "task")]
+                  .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                  .slice(0, MAX_ITEMS),
+              };
+            }),
           add: (n) =>
             set((s) => ({
               items: [
