@@ -32,6 +32,62 @@ pub fn descriptor_path(identifier: &str) -> Result<PathBuf, String> {
         .join(identifier)
         .join("browser-native-connection.json"))
 }
+
+#[cfg(all(windows, debug_assertions))]
+pub fn prepare_dev_host(source: &Path, directory: &Path) -> Result<PathBuf, String> {
+    use sha2::{Digest, Sha256};
+    let mut file = std::fs::File::open(source).map_err(|e| e.to_string())?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    let host = directory.join(format!("atlas-browser-host-{:x}.exe", digest.finalize()));
+    std::fs::create_dir_all(directory).map_err(|e| e.to_string())?;
+    if !host.exists() {
+        let temporary = directory.join(format!("{}.tmp", uuid::Uuid::new_v4()));
+        let result =
+            std::fs::copy(source, &temporary).and_then(|_| std::fs::rename(&temporary, &host));
+        if let Err(error) = result {
+            if let Err(cleanup) = std::fs::remove_file(&temporary) {
+                if cleanup.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("Could not remove incomplete browser host: {cleanup}");
+                }
+            }
+            return Err(format!(
+                "Could not prepare development browser host: {error}"
+            ));
+        }
+    }
+    // Chrome keeps its host mapped; never register Cargo's replaceable executable.
+    for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        let Some(hash) = name
+            .strip_prefix("atlas-browser-host-")
+            .and_then(|s| s.strip_suffix(".exe"))
+        else {
+            continue;
+        };
+        if path != host && hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            if let Err(error) = std::fs::remove_file(&path) {
+                // An older host may still be connected; retry cleanup on the next launch.
+                tracing::warn!(
+                    "Could not remove previous development browser host {}: {error}",
+                    path.display()
+                );
+            }
+        }
+    }
+    Ok(host)
+}
 pub fn write_private(path: &Path, value: &Value) -> Result<(), String> {
     std::fs::create_dir_all(path.parent().ok_or("Missing parent directory")?)
         .map_err(|e| e.to_string())?;
@@ -154,6 +210,35 @@ pub fn run_if_requested(identifier: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(all(windows, debug_assertions))]
+    #[test]
+    fn dev_host_does_not_lock_the_build_output_and_replaces_old_versions() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("atlas.exe");
+        let cache = root.path().join("hosts");
+        std::fs::write(&source, b"first build").unwrap();
+        let first = prepare_dev_host(&source, &cache).unwrap();
+        assert_ne!(first, source);
+        assert_eq!(std::fs::read(&first).unwrap(), b"first build");
+        assert_eq!(prepare_dev_host(&source, &cache).unwrap(), first);
+        let locked = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(&first)
+            .unwrap();
+        std::fs::remove_file(&source).unwrap();
+        std::fs::write(&source, b"next build").unwrap();
+        std::fs::write(cache.join("unrelated.exe"), b"keep").unwrap();
+        let second = prepare_dev_host(&source, &cache).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(std::fs::read(&second).unwrap(), b"next build");
+        assert!(first.exists());
+        drop(locked);
+        assert_eq!(prepare_dev_host(&source, &cache).unwrap(), second);
+        assert!(!first.exists());
+        assert!(cache.join("unrelated.exe").exists());
+    }
     #[test]
     fn native_host_accepts_both_assigned_store_origins() {
         let origins = extension_origins();

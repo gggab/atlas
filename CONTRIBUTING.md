@@ -43,6 +43,11 @@ bun run dev:app
 
 `dev:app` uses the isolated **同桌 DeskMate Dev** data profile. `bun run dev` runs the frontend only; existing `?scenario=` fixtures are browser mocks, not desktop or vendor CLI verification.
 
+Windows debug native messaging uses a versioned copy of the desktop executable
+to keep browser reconnections from locking Cargo's output. For changes to host
+registration, run the `browser_native::tests::dev_host` regression and verify
+`bun run dev:app` rebuilds while the installed extension remains enabled.
+
 ```sh
 bun run typecheck
 bun run lint

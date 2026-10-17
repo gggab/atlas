@@ -465,10 +465,16 @@ impl BrowserBridge {
         Ok(())
     }
     pub fn register(&self) -> Result<(), String> {
-        let manifest = json!({"name":browser_native::host_name(),"description":"DeskMate Browser local connection","path":std::env::current_exe().map_err(|e|e.to_string())?,"type":"stdio","allowed_origins":browser_native::extension_origins()});
         let path = self
             .binding_path()?
             .with_file_name("browser-native-host.json");
+        let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+        #[cfg(all(windows, debug_assertions))]
+        let executable = browser_native::prepare_dev_host(
+            &executable,
+            &path.with_file_name("browser-native-hosts"),
+        )?;
+        let manifest = json!({"name":browser_native::host_name(),"description":"DeskMate Browser local connection","path":executable,"type":"stdio","allowed_origins":browser_native::extension_origins()});
         browser_native::write_private(&path, &manifest)?;
         #[cfg(windows)]
         for browser in ["Google\\Chrome", "Microsoft\\Edge"] {

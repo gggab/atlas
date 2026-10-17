@@ -103,6 +103,11 @@ ownership from group membership or close a replaced/reused tab ID.
 
 The desktop binary doubles as the native messaging host before GUI/logging
 startup. It forwards bounded native frames to an authenticated loopback broker.
+On Windows, debug builds register a SHA-256-addressed executable copy under the
+app profile's `browser-native-hosts` directory. Chrome/Edge can keep that copy
+open without locking Cargo's `target/debug/atlas.exe` during rebuilds. Copies
+are published before registration; obsolete copies are removed on subsequent
+registration, with locked copies retained and cleanup failures logged.
 Only bootstrap/control metadata uses Native Messaging; CDP/screenshots remain
 on the existing WebSocket transport. No secret enters Agent snapshots/logs.
 Registration is per-user and app-managed; extension installation still requires
