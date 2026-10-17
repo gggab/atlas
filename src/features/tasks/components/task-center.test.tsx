@@ -76,6 +76,30 @@ beforeEach(() => {
     if (command === "tasks_snapshot")
       return { tasks: backend.task ? [backend.task] : [], notifications: [] };
     if (command === "threads_history" || command === "tasks_runs") return [];
+    if (command === "tasks_occurrences")
+      return [
+        {
+          id: "jan",
+          taskId: "task-1",
+          periodIndex: 24,
+          revision: 2,
+          localDate: "2026-01-31",
+          dueAt: 0,
+          state: "pending",
+          trackCompletion: true,
+          started: true,
+          timezone: "Asia/Shanghai",
+          updatedAt: 0,
+        },
+      ];
+    if (command === "tasks_calendar_preview")
+      return {
+        issues: [{ field: "missingDayPolicy", question: "短月如何处理？" }],
+        periods: [],
+        frozenPeriods: [],
+        timezoneVersion: "test",
+        dstPolicy: "固定规则",
+      };
     if (command === "tasks_control")
       return { ...backend.task, state: args?.action === "pause" ? "paused" : "cancelled" };
     return backend.task;
@@ -84,6 +108,123 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("independent task center", () => {
+  it("registers every-five-minute reminders without a date or Agent binding", async () => {
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.change(await screen.findByLabelText("标题"), { target: { value: "喝水" } });
+    fireEvent.change(screen.getByLabelText("提醒内容或检查目标"), {
+      target: { value: "起来喝水" },
+    });
+    fireEvent.change(screen.getByLabelText("重复规则"), { target: { value: "interval" } });
+    expect((screen.getByLabelText("每隔多少分钟") as HTMLInputElement).value).toBe("5");
+    expect(screen.queryByLabelText("首次执行时间（本机时区）")).toBeNull();
+    const before = Date.now();
+    fireEvent.submit(screen.getByRole("button", { name: "登记任务" }).closest("form")!);
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_upsert", {
+        input: expect.objectContaining({
+          kind: "reminder",
+          intervalMinutes: 5,
+          calendar: null,
+          executionThreadId: null,
+        }),
+      }),
+    );
+    const input = backend.invoke.mock.calls.find(([command]) => command === "tasks_upsert")![1]
+      .input;
+    expect(input.dueAt).toBeGreaterThanOrEqual(before + 300_000);
+    expect(input.dueAt).toBeLessThanOrEqual(Date.now() + 300_000);
+  });
+  it("restores an interval on edit and clears it when switched to once", async () => {
+    backend.task!.input.intervalMinutes = 5;
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "修改" }));
+    expect((screen.getByLabelText("重复规则") as HTMLSelectElement).value).toBe("interval");
+    expect((screen.getByLabelText("每隔多少分钟") as HTMLInputElement).value).toBe("5");
+    fireEvent.change(screen.getByLabelText("重复规则"), { target: { value: "once" } });
+    expect(screen.queryByLabelText("每隔多少分钟")).toBeNull();
+    fireEvent.submit(screen.getByRole("button", { name: "保存修改" }).closest("form")!);
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_upsert", {
+        input: expect.objectContaining({ id: "task-1", intervalMinutes: null, calendar: null }),
+      }),
+    );
+  });
+  it("discards a preview that finishes after the calendar rule has changed", async () => {
+    let finish: ((value: unknown) => void) | undefined;
+    const previous = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation((command: string, args?: Record<string, unknown>) =>
+      command === "tasks_calendar_preview"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : previous(command, args),
+    );
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.change(await screen.findByLabelText("标题"), { target: { value: "生日" } });
+    fireEvent.change(screen.getByLabelText("提醒内容或检查目标"), {
+      target: { value: "生日将近" },
+    });
+    fireEvent.change(screen.getByLabelText("重复规则"), { target: { value: "yearly" } });
+    fireEvent.submit(screen.getByRole("button", { name: "预览周期计划" }).closest("form")!);
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    fireEvent.change(screen.getByLabelText("提醒钟点"), { target: { value: "10:00" } });
+    finish!({
+      issues: [],
+      periods: [],
+      frozenPeriods: [],
+      timezoneVersion: "test",
+      dstPolicy: "fixed",
+    });
+    await screen.findByRole("button", { name: "预览周期计划" });
+    expect(screen.queryByRole("button", { name: "登记周期计划" })).toBeNull();
+  });
+  it("previews unresolved calendars and saves them as drafts without claiming activation", async () => {
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.change(await screen.findByLabelText("标题"), { target: { value: "房租" } });
+    fireEvent.change(screen.getByLabelText("提醒内容或检查目标"), {
+      target: { value: "请交房租" },
+    });
+    fireEvent.change(screen.getByLabelText("重复规则"), { target: { value: "monthly" } });
+    fireEvent.change(screen.getByLabelText("周期起始日期"), { target: { value: "2030-01-31" } });
+    const form = screen.getByRole("button", { name: "预览周期计划" }).closest("form")!;
+    fireEvent.submit(form);
+    await screen.findByText("短月如何处理？");
+    expect(backend.invoke.mock.calls.some(([name]) => name === "tasks_upsert")).toBe(false);
+    fireEvent.submit(form);
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_upsert", {
+        input: expect.objectContaining({
+          calendar: expect.objectContaining({ frequency: "monthly", missingDayPolicy: null }),
+        }),
+      }),
+    );
+  });
+  it("completes a named calendar period without completing the series", async () => {
+    backend.task!.input.calendar = {
+      frequency: "monthly",
+      startDate: "2024-01-31",
+      localTime: "09:00",
+      timezone: "Asia/Shanghai",
+      missingDayPolicy: "last_day",
+      reminderDays: [0],
+      trackCompletion: true,
+    };
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "还房租" }));
+    fireEvent.click(await screen.findByRole("button", { name: "完成 2026-01-31" }));
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith(
+        "tasks_control_occurrence",
+        expect.objectContaining({ id: "jan", revision: 2, taskRevision: 4, action: "complete" }),
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "标记完成" })).toBeNull();
+  });
   it("keeps portaled task content out of the titlebar's drag and double-click handlers", async () => {
     const mouseDown = vi.fn();
     const doubleClick = vi.fn();

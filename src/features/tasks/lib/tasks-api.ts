@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type TaskKind = "reminder" | "agent_check";
 export type TaskState =
+  | "needs_confirmation"
   | "active"
   | "waiting_input"
   | "paused"
@@ -16,6 +17,8 @@ export interface TaskInput {
   prompt: string;
   kind: TaskKind;
   dueAt: number;
+  calendar?: CalendarSpec | null;
+  intervalMinutes?: number | null;
   scopeKey?: string;
   sourceThreadId?: string | null;
   executionThreadId?: string | null;
@@ -25,6 +28,60 @@ export interface TaskInput {
   timeoutSeconds: number;
   quietHours?: { startMinute: number; endMinute: number } | null;
 }
+export interface CalendarSpec {
+  frequency: "daily" | "weekly" | "monthly" | "yearly";
+  startDate: string;
+  localTime: string;
+  timezone: string;
+  missingDayPolicy?: "last_day" | "next_day" | "skip" | null;
+  reminderDays: number[];
+  untilDate?: string | null;
+  trackCompletion: boolean;
+}
+export interface CalendarPreview {
+  issues: { field: string; question: string }[];
+  periods: {
+    index: number;
+    localDate: string;
+    timezone: string;
+    dueAt: number;
+    reminders: { leadDays: number; nominalLocal: string; at: number }[];
+  }[];
+  frozenPeriods: string[];
+  timezoneVersion: string;
+  dstPolicy: string;
+}
+export interface Occurrence {
+  id: string;
+  taskId: string;
+  periodIndex: number;
+  revision: number;
+  localDate: string;
+  dueAt: number;
+  state: "pending" | "completed" | "skipped" | "elapsed" | "superseded";
+  trackCompletion: boolean;
+  started: boolean;
+  timezone: string;
+  updatedAt: number;
+}
+export const calendarPreview = (calendar: CalendarSpec, id?: string) =>
+  invoke<CalendarPreview>("tasks_calendar_preview", { calendar, id });
+export const taskOccurrences = (id: string, before?: number) =>
+  invoke<Occurrence[]>("tasks_occurrences", { id, before });
+export const controlOccurrence = (
+  task: ScheduledTask,
+  period: Occurrence,
+  action: "complete" | "skip" | "snooze",
+  at?: number,
+) =>
+  invoke<Occurrence>("tasks_control_occurrence", {
+    taskId: task.id,
+    taskRevision: task.revision,
+    id: period.id,
+    revision: period.revision,
+    action,
+    at,
+  });
 export interface ScheduledTask {
   id: string;
   revision: number;

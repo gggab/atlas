@@ -18,6 +18,18 @@ remain usable. No temporary database or alternate execution path hides the error
   replayed in a burst.
 - Fixed reminders send their registered content without invoking a model.
   Delivery leaves the business item waiting for user confirmation.
+- Fixed reminders can also set `intervalMinutes` (integer 1–1440), mutually
+  exclusive with `calendar`. In the task center choose **按分钟间隔** (default 5).
+  Saving starts a fresh countdown; the first notification is one interval later.
+  Subsequent ticks follow elapsed time from that first tick, without timezone or
+  DST adjustments. MCP callers supply the explicit first `dueAt`.
+  They stay active until paused, completed or cancelled; `maxRuns` only limits
+  Agent execution. **结束提醒** ends the entire interval schedule.
+  Sleep/restart coalesces missed ticks into one notification and advances to the
+  next future tick. Only the latest unsent notification is retained, preventing
+  quiet-hour/outage backlogs; accepted notifications remain in history.
+  Resuming an overdue paused interval starts a fresh interval without replaying
+  paused ticks. Existing one-shot and calendar reminders keep their behavior.
 - Agent checks reuse the bound installed CLI, directory and conversation. They
   need a negotiated HTTP MCP connection and a valid task-server offer.
 - Optional per-task quiet hours defer native notification submission from 22:00
@@ -28,9 +40,11 @@ remain usable. No temporary database or alternate execution path hides the error
 
 The application must stay open and the computer awake. Startup and bounded
 wall-clock checks reconcile missed work. There is no independent daemon, device
-wake, mobile delivery or new access to email/chat/contact services. General cron,
-monthly/yearly/lunar calendars, automatic after-human-turn planning and extra
-notification channels are not implemented in this slice.
+wake, mobile delivery or new access to email/chat/contact services. Gregorian
+daily/weekly/monthly/yearly fixed reminders are described in
+[calendar schedules](calendar-schedules.md). General cron, lunar/holiday rules,
+automatic after-human-turn planning and extra notification channels are not
+implemented.
 
 ## Agent authorization and tools
 
@@ -51,6 +65,9 @@ cross-conversation ownership:
 | `tasks_upsert` | Persist an explicitly requested task; use a stable idempotency key and expected revision for edits |
 | `tasks_cancel` | Cancel a task owned by this conversation, with its inspected revision |
 | `tasks_report_run` | Stage the current admitted scheduled run's structured report |
+| `tasks_calendar_preview` | Validate calendar rules and preview future/frozen periods without activation |
+| `tasks_occurrences` | Page periods belonging to an owned task |
+| `tasks_control_occurrence` | Complete, skip or snooze one period with task/period revisions |
 
 Scheduled turns can inspect/report but cannot create, edit or cancel tasks.
 Reports choose exactly one of `done`, `waitingInput` or a `nextCheckAt` at least

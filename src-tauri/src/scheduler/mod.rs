@@ -1,3 +1,6 @@
+pub mod calendar;
+#[cfg(test)]
+mod calendar_tests;
 pub mod model;
 mod runner;
 mod store;
@@ -40,6 +43,7 @@ impl Scheduler {
         lock.try_lock()
             .map_err(|e| format!("Another process owns this profile's task scheduler: {e}"))?;
         let mut store = store::Store::open(&dir.join("scheduler.sqlite"))?;
+        store.refresh_calendar_timezones(now())?;
         store.recover(now())?;
         app.manage(Arc::new(Self {
             store: Arc::new(Mutex::new(store)),

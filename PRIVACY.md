@@ -164,3 +164,8 @@ its model service under that vendor's existing authentication and permissions.
 Fixed reminders do not invoke a model. OS desktop notifications may display the
 registered title and content. This feature adds no DeskMate cloud account,
 telemetry service, new communication-source access or mobile delivery channel.
+
+Recurring reminders additionally retain local calendar rules, named timezones,
+clarification drafts, per-period completion and reminder-slot records. Pausing
+notifications or archiving a conversation does not erase unpaid period history.
+These records stay in the same profile-local scheduler database.

@@ -77,8 +77,18 @@ Report bugs in [this fork's issue tracker](https://github.com/gggab/atlas/issues
 Keep React features under `src/features/<feature>/`, shared widgets under `src/components/`, primitives under `src/ui/`, and native commands in `src-tauri/src/commands/`. Follow the existing Zustand, IPC and style conventions in the architecture documentation. Never commit credentials or tokens. Use English for code comments, development documentation and Git messages; the main README is Chinese.
 ## Scheduler changes
 
+Minute-interval reminder changes must cover temporary SQLite restart, skipped
+ticks, pause/resume/stop, superseding older unsent notifications, and rejecting
+invalid intervals or mixed calendar/Agent rules. Verify form creation and editing;
+never register test reminders in a user's profile.
+
 For task changes, cover real SQLite restart/recovery, revision fences, admitted
 human/background competition, archive-preserving restore and notification routing.
 Follow the [scheduler verification guide](docs/reference/task-scheduler.md#development-verification).
 Browser mocks do not establish vendor-authenticated ACP or native notification
 delivery.
+
+Calendar changes must also cover the pure expansion engine, additive v1 migration,
+fixed-cutoff catch-up, frozen-period edits and per-period revision/delivery races.
+See [calendar schedules](docs/reference/calendar-schedules.md). Test against real
+temporary SQLite files; never create test reminders in a user's data profile.

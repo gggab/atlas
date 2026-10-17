@@ -65,10 +65,11 @@ Local file pages and website file uploads require **Allow access to file URLs** 
 
 ## 本地数据与记忆
 
-Durable reminders and bounded Agent checks are available from the titlebar task
-center. Tasks keep their own lifecycle when conversations are archived. The app
-must stay running; Agent task tools require explicit opt-in. See the
-[task scheduler reference](docs/reference/task-scheduler.md).
+标题栏任务中心支持单次提醒、按分钟间隔重复、公历日／周／月／年重复提醒和有次数限制的 Agent 检查。
+选择“按分钟间隔”并填写 5，即可保存后每隔 5 分钟提醒，直到暂停或结束；无需选择 Agent 或执行会话。
+周期规则不完整时保存为待确认，每期可独立完成、跳过或稍后提醒；会话归档不影响任务。
+应用需要保持运行，Agent 任务工具需要明确开启。详见
+[任务调度](docs/reference/task-scheduler.md)和[周期日历](docs/reference/calendar-schedules.md)。
 
 | 数据 | 存储方式 |
 |---|---|

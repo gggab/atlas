@@ -10,6 +10,8 @@ fn input(key: &str, kind: TaskKind) -> TaskInput {
         prompt: "Remind me to confirm payment".into(),
         kind,
         due_at: 2_000,
+        calendar: None,
+        interval_minutes: None,
         scope_key: "personal".into(),
         source_thread_id: Some("source-thread".into()),
         execution_thread_id: (kind == TaskKind::AgentCheck).then(|| "execution-thread".into()),
@@ -19,6 +21,94 @@ fn input(key: &str, kind: TaskKind) -> TaskInput {
         timeout_seconds: 300,
         quiet_hours: None,
     }
+}
+
+#[test]
+fn interval_reminders_survive_restart_skip_missed_ticks_and_stop_explicitly() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scheduler.sqlite");
+    let mut store = Store::open(&path).unwrap();
+    let mut request = input("every-five-minutes", TaskKind::Reminder);
+    request.interval_minutes = Some(5);
+    let task = store.upsert(request, 1_000).unwrap();
+    let run = store.claim_due(2_000, "boot-1").unwrap().unwrap();
+    store.finish_reminder(&run.id, 2_005).unwrap();
+    assert_eq!(store.get(&task.id).unwrap().next_check_at, Some(302_000));
+    assert_eq!(store.get(&task.id).unwrap().state, TaskState::Active);
+    drop(store);
+    let mut store = Store::open(&path).unwrap();
+    let run = store.claim_due(1_000_000, "boot-2").unwrap().unwrap();
+    store.finish_reminder(&run.id, 1_000_000).unwrap();
+    assert_eq!(store.get(&task.id).unwrap().next_check_at, Some(1_202_000));
+    assert!(store.claim_due(1_000_000, "boot-2").unwrap().is_none());
+    let current = store.get(&task.id).unwrap();
+    let paused = store
+        .control(
+            &task.id,
+            current.revision,
+            TaskAction::Pause,
+            None,
+            1_000_001,
+        )
+        .unwrap();
+    assert!(store.claim_due(2_000_000, "boot-2").unwrap().is_none());
+    let resumed = store
+        .control(
+            &task.id,
+            paused.revision,
+            TaskAction::Resume,
+            None,
+            2_000_000,
+        )
+        .unwrap();
+    assert_eq!(resumed.next_check_at, Some(2_300_000));
+    let ended = store
+        .control(
+            &task.id,
+            resumed.revision,
+            TaskAction::Complete,
+            None,
+            2_000_001,
+        )
+        .unwrap();
+    assert_eq!(ended.state, TaskState::Completed);
+    assert!(store.claim_due(3_000_000, "boot-2").unwrap().is_none());
+}
+
+#[test]
+fn interval_reminders_validate_the_kind_and_keep_only_the_latest_unsent_tick() {
+    let mut store = Store::memory();
+    for minutes in [0, 1441] {
+        let mut request = input("invalid-interval", TaskKind::Reminder);
+        request.interval_minutes = Some(minutes);
+        assert!(store.upsert(request, 1_000).is_err());
+    }
+    let mut agent = input("invalid-agent-interval", TaskKind::AgentCheck);
+    agent.interval_minutes = Some(5);
+    assert!(store.upsert(agent, 1_000).is_err());
+    let mut request = input("latest-tick", TaskKind::Reminder);
+    request.interval_minutes = Some(5);
+    store.upsert(request, 1_000).unwrap();
+    let first = store.claim_due(2_000, "boot").unwrap().unwrap();
+    store.finish_reminder(&first.id, 2_000).unwrap();
+    let second = store.claim_due(302_000, "boot").unwrap().unwrap();
+    store.finish_reminder(&second.id, 302_000).unwrap();
+    let notifications = store.notifications().unwrap();
+    assert_eq!(notifications.len(), 1);
+    assert_eq!(notifications[0].run_id, second.id);
+    store
+        .delivery_state(&notifications[0].id, "accepted", None, 302_001)
+        .unwrap();
+    for tick in 2..=12 {
+        let now = 2_000 + tick * 300_000;
+        let run = store.claim_due(now, "boot").unwrap().unwrap();
+        store.finish_reminder(&run.id, now).unwrap();
+    }
+    let notifications = store.notifications().unwrap();
+    assert_eq!(notifications.len(), 2);
+    assert!(notifications
+        .iter()
+        .any(|n| n.run_id == second.id && n.native_state == "accepted"));
 }
 
 #[test]

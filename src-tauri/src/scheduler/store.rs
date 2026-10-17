@@ -6,6 +6,8 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
 
 use super::model::*;
+#[path = "calendar_store.rs"]
+mod calendar_store;
 
 pub struct Store {
     db: Connection,
@@ -90,6 +92,7 @@ fn notify(
         next_attempt_at: now,
         read: false,
         dismissed: false,
+        calendar: r.calendar,
     };
     db.execute("INSERT INTO notification_outbox(id,task_id,revision,created_at,native_state,next_attempt_at,data) VALUES(?1,?2,?3,?4,'pending',?4,?5)",params![n.id,n.task_id,i64::try_from(n.revision)?,now,json(&n)?])?;
     Ok(())
@@ -125,11 +128,14 @@ fn invalidate(tx: &Transaction<'_>, id: &str, now: i64) -> Result<()> {
         r.ended_at = Some(now);
         save_run(tx, &r)?;
     }
-    tx.execute("UPDATE notification_outbox SET native_state='suppressed' WHERE task_id=?1 AND native_state NOT IN ('accepted','suppressed')",[id])?;
+    tx.execute("UPDATE notification_outbox SET native_state='suppressed' WHERE task_id=?1 AND native_state NOT IN ('accepted','suppressed','muted','exhausted')",[id])?;
     Ok(())
 }
 
 impl Store {
+    pub fn change_count(&self) -> u64 {
+        self.db.total_changes()
+    }
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
@@ -145,7 +151,7 @@ impl Store {
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
         let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         ensure!(
-            version <= 1,
+            version <= 2,
             "scheduler database schema is newer than this app"
         );
         if version == 0 {
@@ -160,6 +166,15 @@ impl Store {
             CREATE TABLE notification_outbox(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES tasks(id),revision INTEGER NOT NULL,created_at INTEGER NOT NULL,native_state TEXT NOT NULL,next_attempt_at INTEGER NOT NULL,data TEXT NOT NULL);
             CREATE INDEX notification_due ON notification_outbox(native_state,next_attempt_at);
             PRAGMA user_version=1; COMMIT;")?;
+        }
+        if version < 2 {
+            db.execute_batch("BEGIN IMMEDIATE;
+            CREATE TABLE calendar_occurrences(id TEXT PRIMARY KEY,task_id TEXT NOT NULL REFERENCES tasks(id),period_index INTEGER NOT NULL,state TEXT NOT NULL,due_at INTEGER NOT NULL,data TEXT NOT NULL,UNIQUE(task_id,period_index));
+            CREATE INDEX calendar_periods ON calendar_occurrences(task_id,period_index DESC);
+            CREATE TABLE calendar_reminders(id TEXT PRIMARY KEY,occurrence_id TEXT NOT NULL REFERENCES calendar_occurrences(id),task_id TEXT NOT NULL REFERENCES tasks(id),state TEXT NOT NULL,fire_at INTEGER NOT NULL,nominal_local TEXT,timezone TEXT,run_id TEXT);
+            CREATE INDEX calendar_reminders_due ON calendar_reminders(task_id,state,fire_at);
+            CREATE INDEX calendar_reminders_run ON calendar_reminders(run_id,state);
+            PRAGMA user_version=2; COMMIT;")?;
         }
         Ok(Self { db })
     }
@@ -184,6 +199,9 @@ impl Store {
         rows.map(|r| decode(r?)).collect()
     }
     pub fn upsert(&mut self, input: TaskInput, now: i64) -> Result<Task> {
+        if input.id.is_some() && input.calendar.is_some() {
+            self.prepare_calendars(now)?;
+        }
         ensure!(
             !input.title.trim().is_empty() && input.title.len() <= 256,
             "title must contain 1–256 bytes"
@@ -221,6 +239,16 @@ impl Store {
                 "Agent checks require a trusted thread, cwd and installed Agent"
             );
         }
+        if let Some(minutes) = input.interval_minutes {
+            ensure!(
+                (1..=1440).contains(&minutes),
+                "intervalMinutes must be between 1 and 1440"
+            );
+            ensure!(
+                input.kind == TaskKind::Reminder && input.calendar.is_none(),
+                "minute intervals require a fixed reminder without calendar rules"
+            );
+        }
         let tx = self.db.transaction()?;
         if input.id.is_none() {
             let existing: Option<String> = tx
@@ -246,7 +274,7 @@ impl Store {
             ensure!(count < 500, "active task limit reached");
         }
         ensure!(
-            input.due_at > now,
+            input.calendar.is_some() || input.due_at > now,
             "dueAt must be a future UTC timestamp in milliseconds"
         );
         let mut task = if let Some(id) = &input.id {
@@ -271,8 +299,13 @@ impl Store {
                 run_count: 0,
                 created_at: now,
                 updated_at: now,
+                calendar_progress: None,
+                calendar_issues: Vec::new(),
             }
         };
+        if input.calendar.is_some() || task.input.calendar.is_some() {
+            calendar_store::prepare_edit(&tx, &task, &input, now)?;
+        }
         invalidate(&tx, &task.id, now)?;
         task.revision += 1;
         task.next_check_at = Some(input.due_at);
@@ -280,7 +313,12 @@ impl Store {
         task.state = TaskState::Active;
         task.reason = None;
         task.updated_at = now;
+        calendar_store::configure(&tx, &mut task, now)?;
         tx.execute("INSERT INTO tasks(id,scope_key,creation_key,state,revision,next_check_at,data) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(id) DO UPDATE SET state=excluded.state,revision=excluded.revision,next_check_at=excluded.next_check_at,data=excluded.data",params![task.id,task.input.scope_key,task.input.idempotency_key,token(&task.state)?,i64::try_from(task.revision)?,task.next_check_at,json(&task)?])?;
+        if task.input.calendar.is_some() && task.state == TaskState::Active {
+            calendar_store::materialize(&tx, &mut task, now)?;
+            save_task(&tx, &task)?;
+        }
         tx.commit()?;
         Ok(task)
     }
@@ -298,6 +336,11 @@ impl Store {
             t.revision == revision,
             "task revision conflict; refresh before changing it"
         );
+        if t.input.calendar.is_some() {
+            let task = calendar_store::control_series(&tx, t, action, now)?;
+            tx.commit()?;
+            return Ok(task);
+        }
         if matches!(action, TaskAction::Resume | TaskAction::Snooze) {
             ensure!(
                 !matches!(t.state, TaskState::Completed | TaskState::Cancelled),
@@ -320,7 +363,12 @@ impl Store {
                 t.reason = None;
             }
             TaskAction::Resume | TaskAction::Snooze => {
-                let due = at.or(t.next_check_at).unwrap_or(t.input.due_at);
+                let due = match (at, t.input.interval_minutes) {
+                    (None, Some(minutes)) if t.next_check_at.is_none_or(|at| at <= now) => now
+                        .checked_add(i64::from(minutes) * 60_000)
+                        .context("next reminder time exceeds supported timestamp")?,
+                    _ => at.or(t.next_check_at).unwrap_or(t.input.due_at),
+                };
                 ensure!(due > now, "choose a new future time for this expired task");
                 t.next_check_at = Some(due);
                 t.state = TaskState::Active;
@@ -335,12 +383,18 @@ impl Store {
         Ok(t)
     }
     pub fn claim_due(&mut self, now: i64, boot: &str) -> Result<Option<Run>> {
+        self.prepare_calendars(now)?;
         let tx = self
             .db
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let data:Option<String>=tx.query_row("SELECT t.data FROM tasks t WHERE t.state='active' AND t.next_check_at<=?1 AND NOT EXISTS(SELECT 1 FROM runs r WHERE r.task_id=t.id AND r.state IN ('claimed','dispatching')) ORDER BY t.next_check_at,t.rowid LIMIT 1",[now],|r|r.get(0)).optional()?;
         let Some(data) = data else { return Ok(None) };
         let mut t: Task = decode(data)?;
+        if t.input.calendar.is_some() {
+            let run = calendar_store::claim(&tx, &mut t, now, boot)?;
+            tx.commit()?;
+            return Ok(run);
+        }
         let run = Run {
             id: uuid::Uuid::new_v4().to_string(),
             task_id: t.id.clone(),
@@ -354,6 +408,7 @@ impl Store {
             turn_seq: None,
             report: None,
             reason: None,
+            calendar: false,
         };
         t.next_check_at = None;
         save_task(&tx, &t)?;
@@ -431,6 +486,11 @@ impl Store {
     pub fn finish_reminder(&mut self, id: &str, now: i64) -> Result<()> {
         let tx = self.db.transaction()?;
         let (mut r, mut t) = valid_run(&tx, id)?;
+        if r.calendar {
+            calendar_store::settle(&tx, &mut t, &mut r, now)?;
+            tx.commit()?;
+            return Ok(());
+        }
         ensure!(
             t.input.kind == TaskKind::Reminder && r.state == RunState::Claimed,
             "not a pending reminder"
@@ -438,6 +498,17 @@ impl Store {
         r.state = RunState::Succeeded;
         r.ended_at = Some(now);
         t.state = TaskState::WaitingInput;
+        if let Some(minutes) = t.input.interval_minutes {
+            let interval = i128::from(minutes) * 60_000;
+            let due = i128::from(r.due_at);
+            let next = due + ((i128::from(now) - due).max(0) / interval + 1) * interval;
+            t.next_check_at = Some(
+                i64::try_from(next).context("next reminder time exceeds supported timestamp")?,
+            );
+            t.state = TaskState::Active;
+            // Replace older unsent ticks so quiet hours or outages never produce a burst.
+            tx.execute("UPDATE notification_outbox SET native_state='suppressed' WHERE task_id=?1 AND native_state IN ('pending','failed','unknown')", [&t.id])?;
+        }
         t.updated_at = now;
         notify(&tx, &t, &r, t.input.prompt.clone(), false, now)?;
         save_run(&tx, &r)?;
@@ -520,6 +591,10 @@ impl Store {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(q);
         for id in ids {
+            if load_run(&self.db, &id)?.calendar {
+                self.finish_reminder(&id, now)?;
+                continue;
+            }
             let tx = self.db.transaction()?;
             let (mut r, mut t) = valid_run(&tx, &id)?;
             if r.state == RunState::Claimed {
@@ -552,8 +627,20 @@ impl Store {
         Ok(())
     }
     pub fn pending_delivery(&self, now: i64) -> Result<Option<TaskNotification>> {
-        let data:Option<String>=self.db.query_row("SELECT n.data FROM notification_outbox n JOIN tasks t ON t.id=n.task_id AND t.revision=n.revision WHERE n.native_state IN ('pending','failed','unknown') AND n.next_attempt_at<=?1 AND t.state NOT IN ('paused','cancelled') ORDER BY n.created_at LIMIT 1",[now],|r|r.get(0)).optional()?;
-        data.map(decode).transpose()
+        for _ in 0..20 {
+            let data:Option<String>=self.db.query_row("SELECT n.data FROM notification_outbox n JOIN tasks t ON t.id=n.task_id AND t.revision=n.revision WHERE n.native_state IN ('pending','failed','unknown') AND n.next_attempt_at<=?1 AND t.state NOT IN ('paused','cancelled') ORDER BY n.created_at LIMIT 1",[now],|r|r.get(0)).optional()?;
+            let Some(data) = data else { return Ok(None) };
+            let n: TaskNotification = decode(data)?;
+            let id = n.id.clone();
+            if let Some(n) = self.delivery_notification(n)? {
+                return Ok(Some(n));
+            }
+            self.db.execute(
+                "UPDATE notification_outbox SET native_state='suppressed' WHERE id=?1",
+                [id],
+            )?;
+        }
+        Ok(None)
     }
     pub fn delivery_state(
         &mut self,

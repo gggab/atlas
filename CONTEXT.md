@@ -39,6 +39,11 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
   successful terminal result and a valid structured report for Agent checks.
 - **Notification outbox** — Rust-owned delivery intent committed with task
   progress. OS acceptance, reading and business completion remain separate.
+- **Calendar period** — one nominal daily/weekly/monthly/yearly occurrence with
+  independent completion and revision. Its identity survives schedule edits and
+  skipped dates. A reminder slot is a notification opportunity, not a bill.
+- **Calendar draft** — unresolved structured rules awaiting clarification;
+  `needs_confirmation` never enters the execution queue.
 
 - **Project** — a local folder opened in DeskMate and shown in the sidebar. The unit almost everything else is scoped to: the editor state, the file index, the git watcher, the knowledge base, the capture store. *Avoid: workspace.* The stored names still say `workspace` — `state.json`'s `workspaces` / `activeWorkspaceId`, the `workspace_id` columns in `sessions.db`, the `workspaceId` argument of the fileindex / recent-files / git-watch / mention commands and the events that carry it, the `"workspace"` mention tag, and the `workspace.*` keybinding action ids. Those are **storage keys**, not the concept: renaming one is a data migration that breaks existing installs, not a rename. Every such site carries a comment saying so.
 - **Historical native session** — an old record carrying the `atlas-agent` storage key. Its transcript and checkpoints remain readable; its removed engine cannot be resumed.

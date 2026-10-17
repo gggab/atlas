@@ -71,3 +71,43 @@ pub async fn tasks_mark_read(id: String, dismissed: bool, app: AppHandle) -> Res
     scheduler.changed();
     Ok(())
 }
+
+#[tauri::command]
+pub async fn tasks_calendar_preview(
+    calendar: crate::scheduler::calendar::CalendarSpec,
+    id: Option<String>,
+    app: AppHandle,
+) -> Result<crate::scheduler::calendar::CalendarPreview, String> {
+    Scheduler::get(&app)?
+        .call(move |s| s.calendar_preview(calendar, id.as_deref(), now()))
+        .await
+}
+#[tauri::command]
+pub async fn tasks_occurrences(
+    id: String,
+    before: Option<u64>,
+    app: AppHandle,
+) -> Result<Vec<Occurrence>, String> {
+    Scheduler::get(&app)?
+        .call(move |s| s.occurrences(&id, before, 50))
+        .await
+}
+#[tauri::command]
+pub async fn tasks_control_occurrence(
+    task_id: String,
+    task_revision: u64,
+    id: String,
+    revision: u64,
+    action: OccurrenceAction,
+    at: Option<i64>,
+    app: AppHandle,
+) -> Result<Occurrence, String> {
+    let scheduler = Scheduler::get(&app)?;
+    let result = scheduler
+        .call(move |s| {
+            s.control_occurrence(&task_id, task_revision, &id, revision, action, at, now())
+        })
+        .await?;
+    scheduler.changed();
+    Ok(result)
+}

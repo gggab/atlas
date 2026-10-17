@@ -10,6 +10,7 @@ pub enum TaskKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskState {
+    NeedsConfirmation,
     Active,
     WaitingInput,
     Paused,
@@ -72,7 +73,12 @@ pub struct TaskInput {
     pub title: String,
     pub prompt: String,
     pub kind: TaskKind,
+    #[serde(default)]
     pub due_at: i64,
+    #[serde(default)]
+    pub calendar: Option<super::calendar::CalendarSpec>,
+    #[serde(default)]
+    pub interval_minutes: Option<u16>,
     #[serde(default)]
     pub scope_key: String,
     pub source_thread_id: Option<String>,
@@ -98,6 +104,53 @@ pub struct Task {
     pub run_count: u32,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub calendar_progress: Option<CalendarProgress>,
+    #[serde(default)]
+    pub calendar_issues: Vec<super::calendar::CalendarIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarProgress {
+    pub cursor: u64,
+    pub activated_at: i64,
+    pub cutoff: Option<i64>,
+    pub ready: bool,
+    pub paused_at: Option<i64>,
+    pub pause_windows: Vec<(i64, i64)>,
+    pub timezone_version: String,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OccurrenceState {
+    Pending,
+    Completed,
+    Skipped,
+    Elapsed,
+    Superseded,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OccurrenceAction {
+    Complete,
+    Skip,
+    Snooze,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Occurrence {
+    pub id: String,
+    pub task_id: String,
+    pub period_index: u64,
+    pub revision: u64,
+    pub local_date: String,
+    pub due_at: i64,
+    pub state: OccurrenceState,
+    pub track_completion: bool,
+    pub started: bool,
+    pub timezone: String,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +168,8 @@ pub struct Run {
     pub turn_seq: Option<u64>,
     pub report: Option<RunReport>,
     pub reason: Option<String>,
+    #[serde(default)]
+    pub calendar: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,4 +203,6 @@ pub struct TaskNotification {
     pub read: bool,
     #[serde(default)]
     pub dismissed: bool,
+    #[serde(default)]
+    pub calendar: bool,
 }

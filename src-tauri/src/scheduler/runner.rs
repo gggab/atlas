@@ -16,9 +16,21 @@ impl Scheduler {
                     break;
                 }
                 let boot = self.boot.clone();
-                let run = match self.call(move |s| s.claim_due(now(), &boot)).await {
-                    Ok(Some(run)) => run,
-                    Ok(None) => break,
+                let run = match self
+                    .call(move |s| {
+                        let before = s.change_count();
+                        let run = s.claim_due(now(), &boot)?;
+                        Ok((run, s.change_count() != before))
+                    })
+                    .await
+                {
+                    Ok((run, changed)) => {
+                        if changed {
+                            self.changed();
+                        }
+                        let Some(run) = run else { break };
+                        run
+                    }
                     Err(e) => {
                         tracing::error!("scheduler claim failed: {e}");
                         break;
@@ -275,7 +287,8 @@ impl Scheduler {
             } else {
                 None
             };
-            let notification = crate::notifier::Notification {
+            let delivery_check = n.clone();
+            let mut notification = crate::notifier::Notification {
                 tag: n.id.clone(),
                 group: format!("task:{}", n.task_id),
                 title: n.title,
@@ -300,12 +313,16 @@ impl Scheduler {
             let id = n.id.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 let mut store = store.lock();
-                let task = store.get(&n.task_id).map_err(|e| e.to_string())?;
-                if task.revision != n.revision
-                    || matches!(task.state, TaskState::Paused | TaskState::Cancelled)
-                {
+                let current = store
+                    .delivery_notification(delivery_check)
+                    .map_err(|e| e.to_string())?;
+                let Some(current) = current else {
+                    store
+                        .delivery_state(&id, "suppressed", None, now())
+                        .map_err(|e| e.to_string())?;
                     return Ok::<_, String>(());
-                }
+                };
+                notification.body = current.body;
                 let result = notifier.backend().show(notification);
                 store
                     .delivery_state(

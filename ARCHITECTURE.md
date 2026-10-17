@@ -62,6 +62,12 @@ without an open project. Archive affects visibility only. See
 [task scheduling](docs/reference/task-scheduler.md) and
 [ADR-0017](docs/adr/0017-durable-task-scheduling.md).
 
+Gregorian calendars use the pure `scheduler/calendar.rs` engine for preview and
+execution. Schema v2 adds stable business periods and authoritative reminder slots;
+`calendar_store.rs` owns bounded materialization, revision-checked period controls
+and merged catch-up. See [calendar schedules](docs/reference/calendar-schedules.md)
+and [ADR-0018](docs/adr/0018-gregorian-calendar-reminders.md).
+
 Organized by **feature**, not file type:
 
 ```
