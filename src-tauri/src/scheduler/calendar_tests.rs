@@ -344,7 +344,7 @@ fn v1_migration_preserves_old_task_and_notification_records() {
     let notification = db.notifications().unwrap()[0].id.clone();
     drop(db);
     let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("DROP TABLE calendar_reminders; DROP TABLE calendar_occurrences; PRAGMA user_version=1;
+    conn.execute_batch("DROP TABLE calendar_reminders; DROP TABLE calendar_occurrences; DROP TABLE deleted_task_keys; PRAGMA user_version=1;
         UPDATE tasks SET data=json_remove(data,'$.calendarProgress','$.calendarIssues','$.input.calendar');
         UPDATE runs SET data=json_remove(data,'$.calendar');
         UPDATE notification_outbox SET data=json_remove(data,'$.calendar');").unwrap();

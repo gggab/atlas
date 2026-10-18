@@ -6,6 +6,7 @@ mod logging;
 #[cfg(target_os = "macos")]
 mod menu;
 mod notifier;
+mod personal;
 mod scheduler;
 mod state;
 mod window_background;
@@ -258,6 +259,7 @@ pub fn run() {
                 tracing::error!("{message}");
                 app.manage(scheduler::SchedulerUnavailable(message));
             }
+            app.manage(personal::PersonalState::open(app.path().app_config_dir()?));
             commands::agents::install_manager(app.handle());
             // Silent background refresh of model pricing from models.dev — first
             // launch populates the cache; later launches update only on change.
@@ -335,7 +337,17 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::tasks::tasks_snapshot,
             commands::tasks::tasks_upsert,
+            commands::personal::personal_snapshot,
+            commands::personal::personal_session,
+            commands::personal::personal_save_memory,
+            commands::personal::personal_forget_memory,
+            commands::personal::personal_confirm_memory,
+            commands::personal::personal_dismiss_memory,
+            commands::personal::personal_confirm_proposal,
+            commands::personal::personal_dismiss_proposal,
             commands::tasks::tasks_control,
+            commands::tasks::tasks_reopen,
+            commands::tasks::tasks_delete,
             commands::tasks::tasks_runs,
             commands::tasks::tasks_mark_read,
             commands::tasks::tasks_calendar_preview,

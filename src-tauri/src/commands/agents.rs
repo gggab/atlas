@@ -258,6 +258,23 @@ struct MemoryIngestMiddleware {
 
 impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
     fn on_event(&self, envelope: &SessionDeltaEnvelope) {
+        if let Some(personal) = self.app.try_state::<crate::personal::PersonalState>() {
+            match envelope.delta {
+                SessionDelta::TurnFinished { turn_seq, .. } => {
+                    personal.finish_turn(&envelope.session_id, Some(turn_seq))
+                }
+                SessionDelta::Status {
+                    status:
+                        atlas_agent_wire::SessionStatus::Idle | atlas_agent_wire::SessionStatus::Error,
+                    turn_seq,
+                    ..
+                } => personal.finish_turn(&envelope.session_id, Some(turn_seq)),
+                SessionDelta::AgentDisconnected { .. } => {
+                    personal.finish_turn(&envelope.session_id, None)
+                }
+                _ => {}
+            }
+        }
         if envelope.task_run_id.is_some() {
             return;
         }
@@ -587,6 +604,9 @@ pub fn install_manager(app: &AppHandle) {
                 Arc::new(move || crate::scheduler::agent_tools_enabled(&task_app)),
             );
         }
+        if let Some(personal) = app.try_state::<crate::personal::PersonalState>() {
+            offers = offers.with_personal(personal.directory.clone(), personal.offers.clone());
+        }
         host.set_session_mcp(Arc::new(offers));
         // `memory_search` also answers from the project's indexed documents.
         let index_app = app.clone();
@@ -632,7 +652,11 @@ pub fn install_manager(app: &AppHandle) {
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
             },
-            vec![code_router, super::task_server::router(app.clone())],
+            vec![
+                code_router,
+                super::task_server::router(app.clone()),
+                super::personal_server::router(app.clone()),
+            ],
         );
     }
 
@@ -1079,7 +1103,7 @@ pub async fn agents_replay_transcript(
 }
 
 /// Atlas's stored transcript → the `Message` shape the renderer paints.
-fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<Message> {
+pub(super) fn transcript_to_messages(t: super::agent_transcript::StoredTranscript) -> Vec<Message> {
     t.messages
         .into_iter()
         .enumerate()
@@ -1196,9 +1220,15 @@ pub fn threads_projects(
     cwd: Option<String>,
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
+    app: AppHandle,
 ) -> Result<Vec<super::agent_host::ThreadProjectWire>, CmdError> {
-    host.thread_projects(cwd.as_deref(), &watcher.last_modified())
-        .map_err(CmdError::from)
+    let mut projects = host
+        .thread_projects(cwd.as_deref(), &watcher.last_modified())
+        .map_err(CmdError::from)?;
+    if let Some(personal) = app.try_state::<crate::personal::PersonalState>() {
+        projects.retain(|p| !p.paths.iter().any(|path| personal.is_directory(path)));
+    }
+    Ok(projects)
 }
 
 /// Every thread, archived or not, newest-started first — the history view.
@@ -1325,10 +1355,11 @@ pub async fn agents_send(
     // rather than flattened into the prose — the ACP-native way to hand an
     // agent a file, and every agent is required to accept it.
     resource_links: Option<Vec<ResourceLinkSpec>>,
+    personal_timezone: Option<String>,
     host: State<'_, Arc<AgentHost>>,
     sharing: State<'_, MemorySharingState>,
     app: AppHandle,
-) -> Result<(), String> {
+) -> Result<Option<crate::personal::ContextReceipt>, String> {
     // `agent_turn_started` is NOT emitted here. It used to be, but this runs
     // before `start_turn`, so it could not know the `turn_seq` that joins a
     // start to its completion — and a send that supersedes a running turn
@@ -1356,6 +1387,27 @@ pub async fn agents_send(
     let cwd = snapshot.cwd;
 
     let prepared = host.prepare_turn(&key, None).map_err(|e| e.to_string())?;
+    let receipt = if let Some(personal) = app.try_state::<crate::personal::PersonalState>() {
+        match personal
+            .admit_human(&key.session_id, prepared.turn_seq, text.clone())
+            .await?
+        {
+            Some(source) => {
+                match crate::personal::context(&app, &key.session_id, source, personal_timezone)
+                    .await
+                {
+                    Ok(context) => Some(context),
+                    Err(error) => {
+                        personal.finish_turn(&key.session_id, Some(prepared.turn_seq));
+                        return Err(error);
+                    }
+                }
+            }
+            None => None,
+        }
+    } else {
+        None
+    };
 
     // Session capture: record the prompt and bind the session.
     //
@@ -1413,11 +1465,14 @@ pub async fn agents_send(
         app.state::<SharedMemoryStore>()
             .register_session(&key.session_id, &cwd, &plugin_id);
     }
-    host.start_prepared(
-        prepared,
-        prompt::with_resource_links(prompt::compose(text, images), links),
-    );
-    Ok(())
+    let mut content = prompt::with_resource_links(prompt::compose(text, images), links);
+    if let Some(receipt) = &receipt {
+        content.push(acp::ContentBlock::Text(acp::TextContent::new(
+            receipt.context.clone(),
+        )));
+    }
+    host.start_prepared(prepared, content);
+    Ok(receipt)
 }
 
 /// Record admitted background input with durable provenance, without recording

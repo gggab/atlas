@@ -34,6 +34,11 @@ const TerminalPanel = lazy(() =>
     default: m.TerminalPanel,
   })),
 );
+const PersonalPanel = lazy(() =>
+  import("@/features/personal/components/personal-panel").then((m) => ({
+    default: m.PersonalPanel,
+  })),
+);
 const EditorPanel = lazy(() =>
   import("@/features/editor/components/editor-panel").then((m) => ({ default: m.EditorPanel })),
 );
@@ -126,6 +131,7 @@ import { PROJECTLESS_TYPES, type TabType } from "@/lib/constants";
 // `ElementType` also admits raw tag names, which a fallback cannot be.
 const tabIcons: Record<TabType, FallbackIcon> = {
   chat: AtlasIcon,
+  personal: MessageSquare,
   canvas: Map,
   browser: Globe,
   tasks: CheckSquare,
@@ -958,6 +964,8 @@ function TabContent({ tab }: { tab: Tab }) {
       return <LogPanel />;
     case "usage":
       return <UsagePanel />;
+    case "personal":
+      return <PersonalPanel tabId={tab.id} />;
     case "artifacts":
       return <ArtifactsPanel />;
     case "media":

@@ -77,6 +77,39 @@ Report bugs in [this fork's issue tracker](https://github.com/gggab/atlas/issues
 Keep React features under `src/features/<feature>/`, shared widgets under `src/components/`, primitives under `src/ui/`, and native commands in `src-tauri/src/commands/`. Follow the existing Zustand, IPC and style conventions in the architecture documentation. Never commit credentials or tokens. Use English for code comments, development documentation and Git messages; the main README is Chinese.
 ## Scheduler changes
 
+Personal assistant changes must cover the fixed projectless/global window, history
+without a vendor connection, draft retention on reconnect failure, unchanged human text versus application context, real human
+source validation, profile separation, optimistic memory revisions and deletion.
+Use temporary SQLite files for inert proposals, freeze/retry/version conflicts
+and independent memory/task receipts. Personal cross-session ownership applies
+only to fixed reminders, preserves source IDs and must never grant project or
+Agent-check access. Test MCP offer negotiation and omission of project/browser/
+SSH services. Do not create test facts or reminders in a user's profile.
+See [personal assistant](docs/reference/personal-assistant.md). Vendor-authenticated
+chat/tool calls and native notification receipt require separate desktop checks.
+Automatic-memory changes also require literal-source evidence, post-turn trusted
+candidate confirmation, unresolved-question rejection, per-key rename/delete/relearn
+barriers (including concurrent connections), honest stale-create deferral, and
+bounded deterministic recall with explicit omissions. Keep old JSON/data compatible.
+Use the fictional semantic fixtures for real-CLI decision checks; these are separate
+from actual MCP transport and persistence verification.
+Keep the personal assistant on the shared Agents chat components and verify fixed
+header behavior, vendor switches, queue/permission gates and real task receipts.
+Cover permission/model application before binding, structured first-send holds,
+failure draft retention, queue order during running turns and error holds across
+remounts. A mock composer must respect the same session-readiness gate as ChatPanel.
+MCP discovery tests must include the cache metadata required by current clients;
+a connected transport with an empty tool list is a failure. With an installed SDK,
+set `ATLAS_CLAUDE_SDK_DIR` and run the ignored
+`claude_discovers_personal_and_task_tools` test. It performs no model turn.
+Use `?scenario=personal-assistant` for the separate fictional browser UI check.
+The separately ignored `claude_registers_a_default_weekly_reminder_in_temporary_sqlite`
+check makes a real vendor model turn against an isolated MCP fixture and temporary
+SQLite, including expired weekly and one-off defaults with explicit notices.
+Run it explicitly with the installed SDK; never point it at user-profile
+databases. The fixture uses production schemas/calendar/store, while production
+session authorization and native delivery still need their own checks.
+
 Minute-interval reminder changes must cover temporary SQLite restart, skipped
 ticks, pause/resume/stop, superseding older unsent notifications, and rejecting
 invalid intervals or mixed calendar/Agent rules. Verify form creation and editing;
@@ -84,6 +117,10 @@ never register test reminders in a user's profile.
 
 For task changes, cover real SQLite restart/recovery, revision fences, admitted
 human/background competition, archive-preserving restore and notification routing.
+Re-enable/delete checks additionally cover terminal edit/pause bypass rejection,
+cumulative Agent budgets, late reservations/results/notifications, atomic FK
+cleanup, v1/v2 migration and hashed deletion barriers across restart. Use temporary
+profiles only; deletion is not secure erasure and does not affect chat/memory.
 Follow the [scheduler verification guide](docs/reference/task-scheduler.md#development-verification).
 Browser mocks do not establish vendor-authenticated ACP or native notification
 delivery.

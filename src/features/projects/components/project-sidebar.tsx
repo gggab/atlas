@@ -994,6 +994,20 @@ export function ProjectSidebar() {
            *  Linear's does, in "More", the ⌘⌥N module palette. Logs and Skills left
            *  the rail: Usage and Settings in the org row already reach them. */}
           <nav className="pt-1 pb-1 space-y-px">
+            <NavItem
+              icon={<MessageCircle size={14} />}
+              label="个人助手"
+              onClick={() =>
+                addTab({
+                  id: "personal-assistant",
+                  type: "personal",
+                  title: "个人助手",
+                  closable: true,
+                  dirty: false,
+                  data: {},
+                })
+              }
+            />
             <CaptureControl />
 
             <SectionHeaderRow

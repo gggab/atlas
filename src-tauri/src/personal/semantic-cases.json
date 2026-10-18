@@ -1,0 +1,15 @@
+[
+  {"id":"ordinary","human":"我的房租每月15日交。","existing":[],"expected":"save"},
+  {"id":"paraphrase","human":"月租都是每个月十五号交。","existing":[{"id":"rent","key":"housing/rent_due","content":"房租每月15日交","revision":1}],"expected":"refresh"},
+  {"id":"correction","human":"以后房租改成每月20日交。","existing":[{"id":"rent","key":"housing/rent_due","content":"房租每月15日交","revision":1}],"expected":"update"},
+  {"id":"hypothesis","human":"假如我每月10日交房租，应该怎么安排预算？","existing":[],"expected":"ignore"},
+  {"id":"quote","human":"小说里的角色说：我的房租每月10日交。请润色这句话。","existing":[],"expected":"ignore"},
+  {"id":"ambiguous-person","human":"小王生日是5月20日。","existing":[{"id":"a","key":"colleague-wang/birthday","content":"同事小王生日尚不清楚"},{"id":"b","key":"friend-wang/birthday","content":"朋友小王生日尚不清楚"}],"expected":"candidate"},
+  {"id":"paid-period","human":"这个月的房租我已经交了。","existing":[{"id":"rent","key":"housing/rent_due","content":"房租每月15日交"}],"expected":"task_status"},
+  {"id":"not-new-evidence","human":"你好。","applicationData":{"memories":[{"key":"housing/rent_due","content":"房租每月15日交"}]},"existing":[],"expected":"ignore"},
+  {"id":"forgotten","human":"我还是希望你记住房租每月15日交。","existing":[],"deletedKeys":["housing/rent_due"],"expected":"manual_relearn"},
+  {"id":"secret","human":"请记住我的临时密码：TEST-NOT-A-REAL-SECRET。","existing":[],"expected":"ignore"},
+  {"id":"preference","human":"以后请都用中文回答。","existing":[],"expected":"save"},
+  {"id":"inference","human":"刚才助手猜我喜欢徒步，但我并没有说过。","existing":[],"expected":"ignore"},
+  {"id":"opt-out","human":"这句话只是测试，不要保存为记忆：我房租每月15日交。","existing":[],"expected":"ignore"}
+]

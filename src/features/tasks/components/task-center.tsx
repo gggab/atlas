@@ -11,6 +11,8 @@ import { useTaskCenter } from "../stores/task-center-store";
 import { CalendarFields, newCalendar } from "./calendar-fields";
 import {
   controlTask,
+  reopenTask,
+  deleteTask,
   calendarPreview,
   controlOccurrence,
   taskOccurrences,
@@ -67,6 +69,12 @@ export function TaskCenter() {
   const [snapshot, setSnapshot] = useState<TaskSnapshot>({ tasks: [], notifications: [] });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<{
+    kind: "reopen" | "delete";
+    task: ScheduledTask;
+  } | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const refreshVersion = useRef(0);
   const [threads, setThreads] = useState<TaskThread[]>([]);
   const [runs, setRuns] = useState<TaskRun[]>([]);
   const [editing, setEditing] = useState<ScheduledTask | null>(null);
@@ -99,11 +107,14 @@ export function TaskCenter() {
   }, [open, settings.agentTaskTools, prepareNativePermission]);
 
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     try {
-      setSnapshot(await tasksSnapshot());
+      const value = await tasksSnapshot();
+      if (version !== refreshVersion.current) return;
+      setSnapshot(value);
       setError(null);
     } catch (e) {
-      setError(String(e));
+      if (version === refreshVersion.current) setError(String(e));
     }
   }, []);
 
@@ -301,6 +312,50 @@ export function TaskCenter() {
     receiptKey.current = crypto.randomUUID();
   };
 
+  const confirmOperation = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!operation || busy) return;
+    const data = new FormData(event.currentTarget);
+    const { task, kind } = operation;
+    setBusy(true);
+    setOperationError(null);
+    try {
+      if (kind === "delete") {
+        await deleteTask(task);
+        useNotificationsStore.getState().actions.removeTask(task.id);
+        if (selectedId === task.id) show();
+        if (editing?.id === task.id) {
+          setEditing(null);
+          reviseCalendar(null);
+          setIntervalMinutes(null);
+          form.current?.reset();
+        }
+      } else {
+        const calendar = task.input.calendar?.untilDate
+          ? { ...task.input.calendar, untilDate: String(data.get("until") ?? "") || null }
+          : null;
+        const result = await reopenTask({
+          id: task.id,
+          revision: task.revision,
+          at:
+            task.input.calendar || task.input.intervalMinutes
+              ? null
+              : new Date(String(data.get("at"))).getTime(),
+          calendar,
+          maxRuns: task.input.kind === "agent_check" ? Number(data.get("maxRuns")) : null,
+        });
+        show(result.id);
+        if (result.state === "needs_confirmation") edit(result);
+      }
+      setOperation(null);
+      await refresh();
+    } catch (e) {
+      setOperationError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <Button
@@ -379,6 +434,30 @@ export function TaskCenter() {
                     </p>
                   )}
                   <div className="flex flex-wrap gap-1">
+                    {(task.state === "completed" || task.state === "cancelled") && (
+                      <>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => {
+                            setOperationError(null);
+                            setOperation({ kind: "reopen", task });
+                          }}
+                        >
+                          重新启用
+                        </Button>
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => {
+                            setOperationError(null);
+                            setOperation({ kind: "delete", task });
+                          }}
+                        >
+                          删除
+                        </Button>
+                      </>
+                    )}
                     {(task.state === "active" ||
                       (task.input.calendar && task.state === "waiting_input")) && (
                       <Button
@@ -734,6 +813,115 @@ export function TaskCenter() {
               </div>
             </form>
           </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={open && !!operation}
+        onOpenChange={(value) => {
+          if (!value && !busy) setOperation(null);
+        }}
+      >
+        <DialogContent showCloseButton={!busy}>
+          <DialogTitle>{operation?.kind === "delete" ? "删除任务" : "重新启用任务"}</DialogTitle>
+          <DialogDescription>
+            {operation?.kind === "delete"
+              ? `删除“${operation.task.input.title}”及其执行记录、周期记录和应用内通知，不可撤销。聊天与个人记忆保留；已经弹出的系统通知不保证撤回。`
+              : `重新启用“${operation?.task.input.title}”，保留已有历史，过去的提醒不补发。`}
+          </DialogDescription>
+          {operation && (
+            <form className="space-y-3" onSubmit={(event) => void confirmOperation(event)}>
+              {operation.kind === "reopen" && (
+                <>
+                  {!operation.task.input.calendar && !operation.task.input.intervalMinutes && (
+                    <label className="block text-xs">
+                      新的执行时间（本机时区）
+                      <Input
+                        name="at"
+                        type="datetime-local"
+                        required
+                        defaultValue={localInputTime(
+                          Math.max(operation.task.input.dueAt, Date.now() + 3600000),
+                        )}
+                      />
+                    </label>
+                  )}
+                  {!!operation.task.input.intervalMinutes && (
+                    <p className="text-sm">
+                      确认后 {operation.task.input.intervalMinutes} 分钟首次提醒，之后正常重复。
+                    </p>
+                  )}
+                  {operation.task.input.calendar && (
+                    <p className="text-sm">
+                      沿用原周期与 {operation.task.input.calendar.timezone}{" "}
+                      时区，保留已完成、跳过及待处理期次。规则不完整时仍需补充确认。
+                    </p>
+                  )}
+                  {operation.task.input.calendar?.untilDate && (
+                    <label className="block text-xs">
+                      新的结束日期（可留空持续提醒）
+                      <Input
+                        name="until"
+                        type="date"
+                        min={operation.task.input.calendar.untilDate}
+                        defaultValue={operation.task.input.calendar.untilDate}
+                      />
+                    </label>
+                  )}
+                  {operation.task.input.kind === "agent_check" && (
+                    <>
+                      <p className="text-sm">
+                        累计已执行 {operation.task.runCount} 次，不会清零；提高上限会授权额外的
+                        Agent 执行。
+                      </p>
+                      {operation.task.runCount >= 100 && (
+                        <p className="text-sm text-destructive">
+                          已达到累计100次的上限，请新建任务。
+                        </p>
+                      )}
+                      <label className="block text-xs">
+                        累计执行次数上限
+                        <Input
+                          name="maxRuns"
+                          type="number"
+                          min={operation.task.runCount + 1}
+                          max={100}
+                          required
+                          defaultValue={operation.task.input.maxRuns}
+                        />
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
+              {operationError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {operationError}
+                </p>
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => setOperation(null)}
+                >
+                  返回
+                </Button>
+                <Button
+                  type="submit"
+                  variant={operation.kind === "delete" ? "destructive" : "default"}
+                  disabled={
+                    busy ||
+                    (operation.kind === "reopen" &&
+                      operation.task.input.kind === "agent_check" &&
+                      operation.task.runCount >= 100)
+                  }
+                >
+                  {operation.kind === "delete" ? "确认删除" : "确认重新启用"}
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </>

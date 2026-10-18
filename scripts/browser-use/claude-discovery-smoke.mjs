@@ -10,6 +10,11 @@ import { tmpdir } from "node:os";
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const config = JSON.parse(input);
+const expectedTools = config.expectedTools ?? {
+  fixed: ["browser_repl", "browser_reset", "browser_start", "browser_status"],
+  missing_metadata: [],
+};
+const names = Object.keys(expectedTools);
 const sdkDirectory = path.resolve(process.argv[2]);
 const require = createRequire(path.join(sdkDirectory, "package.json"));
 const { query } = await import(pathToFileURL(path.join(sdkDirectory, "sdk.mjs")).href);
@@ -37,7 +42,7 @@ try {
       strictMcpConfig: true,
       tools: [],
       mcpServers: Object.fromEntries(
-        ["fixed", "missing_metadata"].map((name) => [
+        names.map((name) => [
           name,
           {
             type: "http",
@@ -54,7 +59,7 @@ try {
       while (Date.now() < deadline) {
         const servers = await client.mcpServerStatus();
         if (
-          ["fixed", "missing_metadata"].every((name) => {
+          names.every((name) => {
             const server = servers.find((item) => item.name === name);
             return server && server.status !== "pending";
           })
@@ -68,22 +73,14 @@ try {
       timer = setTimeout(() => reject(new Error("Claude discovery timed out")), 45_000);
     }),
   ]);
-  const fixed = status.find((server) => server.name === "fixed");
-  const broken = status.find((server) => server.name === "missing_metadata");
-  assert.equal(fixed?.status, "connected");
-  const names = (fixed.tools ?? []).map((tool) => tool.name).sort();
-  assert.deepEqual(names, ["browser_repl", "browser_reset", "browser_start", "browser_status"]);
-  assert.equal((broken?.tools ?? []).length, 0, "Claude must reject the old response");
-  console.log(
-    JSON.stringify({
-      fixed: { status: fixed.status, tools: names },
-      missing_metadata: {
-        status: broken?.status,
-        tools: (broken?.tools ?? []).map((tool) => tool.name),
-      },
-      modelTurns: 0,
-    }),
-  );
+  const result = names.map((name) => {
+    const server = status.find((item) => item.name === name);
+    const tools = (server?.tools ?? []).map((tool) => tool.name).sort();
+    if (expectedTools[name].length) assert.equal(server?.status, "connected");
+    assert.deepEqual(tools, [...expectedTools[name]].sort(), name);
+    return { name, status: server?.status, tools };
+  });
+  console.log(JSON.stringify({ servers: result, modelTurns: 0 }));
 } finally {
   clearTimeout(timer);
   release();

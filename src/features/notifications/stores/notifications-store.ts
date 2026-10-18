@@ -74,6 +74,7 @@ interface NotificationsState {
   actions: {
     add: (n: NewNotification) => void;
     syncTasks: (items: AppNotification[]) => void;
+    removeTask: (taskId: string) => void;
     dismiss: (id: string) => void;
     clearAll: () => void;
     markAllRead: () => void;
@@ -135,6 +136,10 @@ export const useNotificationsStore = createSelectors(
         items: [],
         panelOpen: false,
         actions: {
+          removeTask: (taskId) =>
+            set((s) => ({
+              items: s.items.filter((i) => i.target?.type !== "task" || i.target.taskId !== taskId),
+            })),
           syncTasks: (items) =>
             set((s) => {
               const existing = new Map(s.items.map((i) => [i.id, i]));

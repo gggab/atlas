@@ -65,6 +65,37 @@ pub async fn tasks_runs(id: String, app: AppHandle) -> Result<Vec<Run>, String> 
 }
 
 #[tauri::command]
+pub async fn tasks_reopen(
+    request: ReopenTask,
+    host: State<'_, Arc<AgentHost>>,
+    app: AppHandle,
+) -> Result<Task, String> {
+    let scheduler = Scheduler::get(&app)?;
+    let host = host.inner().clone();
+    let task = scheduler
+        .call(move |s| s.reopen(request, &host.active_task_runs(), now()))
+        .await?;
+    scheduler.changed();
+    Ok(task)
+}
+
+#[tauri::command]
+pub async fn tasks_delete(
+    id: String,
+    revision: u64,
+    host: State<'_, Arc<AgentHost>>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let scheduler = Scheduler::get(&app)?;
+    let host = host.inner().clone();
+    scheduler
+        .call(move |s| s.delete(&id, revision, &host.active_task_runs()))
+        .await?;
+    scheduler.changed();
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn tasks_mark_read(id: String, dismissed: bool, app: AppHandle) -> Result<(), String> {
     let scheduler = Scheduler::get(&app)?;
     scheduler.call(move |s| s.mark_read(&id, dismissed)).await?;

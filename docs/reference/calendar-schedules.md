@@ -68,7 +68,8 @@ can change for untouched future periods, retaining their IDs. A period is frozen
 when its due reminder time has passed, any slot was reserved, or it was completed
 or skipped. Edit preview preserves its snapshot and lists up to 20 recent frozen
 dates. Resume before editing a paused series. Claimed runs and unfinished history
-catch-up reject edits until they settle. Ended calendars require a new series.
+catch-up reject edits until they settle. Ended calendars require explicit re-enable
+before editing, or a new series if the anchor/frequency must change.
 
 Edits reset the scan for the new rule revision, never paid states or identities.
 Unsubmitted notices invalidated by edits rearm from unresolved slots once;
@@ -79,7 +80,11 @@ Pause stops notifications, not business obligations. Resume retains unpaid
 periods and materializes intervening periods but suppresses slots in durable
 pause intervals; it does not burst-send paused reminders. Unsubmitted pre-pause
 slots may create one merged notice. Cancel ends the series while preserving
-history. Series-wide complete/snooze are rejected; use period controls. An end
+history. Explicit re-enable preserves the same period IDs, cursor and paid/unpaid
+states, suppresses old unsubmitted slots and records an optional `reopenedAt`
+cutoff for slots not yet materialized. Older JSON defaults to `None`, preserving
+normal restart catch-up. An existing end date may be extended/removed; other
+rules remain unchanged during re-enable. Series-wide complete/snooze are rejected; use period controls. An end
 date stops recurrence without paying outstanding periods.
 
 ## Catch-up and delivery

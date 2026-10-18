@@ -1,7 +1,11 @@
 pub mod calendar;
 #[cfg(test)]
 mod calendar_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 pub mod model;
+#[cfg(test)]
+mod reminder_smoke;
 mod runner;
 mod store;
 #[cfg(test)]

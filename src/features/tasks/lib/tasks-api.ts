@@ -132,6 +132,15 @@ export const tasksSnapshot = () => invoke<TaskSnapshot>("tasks_snapshot");
 export const saveTask = (input: TaskInput) => invoke<ScheduledTask>("tasks_upsert", { input });
 export const controlTask = (task: ScheduledTask, action: TaskAction, at?: number) =>
   invoke<ScheduledTask>("tasks_control", { id: task.id, revision: task.revision, action, at });
+export const reopenTask = (request: {
+  id: string;
+  revision: number;
+  at: number | null;
+  calendar: CalendarSpec | null;
+  maxRuns: number | null;
+}) => invoke<ScheduledTask>("tasks_reopen", { request });
+export const deleteTask = (task: ScheduledTask) =>
+  invoke<void>("tasks_delete", { id: task.id, revision: task.revision });
 export const taskRuns = (id: string) => invoke<TaskRun[]>("tasks_runs", { id });
 export const markTaskNotificationRead = (id: string, dismissed = false) =>
   invoke<void>("tasks_mark_read", { id, dismissed });

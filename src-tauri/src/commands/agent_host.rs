@@ -783,6 +783,7 @@ impl AgentHost {
                 .collect(),
             supports_logout: connection.supports_logout(),
             supports_load_session: connection.supports_load_session(),
+            supports_resume_session: connection.supports_resume_session(),
             supports_session_list: connection.session_list().is_some(),
             supports_fork: false,
             supports_rewind: connection.supports_rewind(),
@@ -1242,6 +1243,9 @@ impl AgentHost {
 
     pub fn task_run_origin(&self, session: &str) -> Option<String> {
         lock(&self.turn_origins).get(session).cloned()
+    }
+    pub fn active_task_runs(&self) -> Vec<String> {
+        self.admissions.active_task_runs()
     }
 
     pub fn set_scheduled_activity_explainer(
@@ -2950,6 +2954,7 @@ pub struct PluginCapabilities {
     pub auth_kinds: Vec<String>,
     pub supports_logout: bool,
     pub supports_load_session: bool,
+    pub supports_resume_session: bool,
     pub supports_session_list: bool,
     pub supports_fork: bool,
     pub supports_rewind: bool,
@@ -3832,6 +3837,41 @@ mod tests {
 
         assert_eq!(record.sessions().unwrap()[0].ended_at, Some(200));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn personal_first_send_can_bind_a_connected_draft() {
+        let (host, _dir) = fresh_host_with_external(Arc::new(RebindingAgent {
+            fresh_id: "personal-first-send",
+        }))
+        .await;
+        let profile = tempfile::tempdir().unwrap();
+        let personal = crate::personal::PersonalState::open(profile.path().into());
+        let agent = host.spawn(TEST_AGENT_ID).await.unwrap().agent_id;
+        let session = host
+            .new_session(agent, personal.directory.clone(), Vec::new())
+            .await
+            .unwrap();
+        let history = host.history().unwrap();
+        let id = acp::SessionId::new(session.key.session_id.as_str());
+
+        assert!(history.store().thread_for_session(&id).is_none());
+        let draft = history.thread_for_session(&id).expect("connected draft");
+        assert!(draft.is_draft());
+        personal
+            .bind(crate::personal::store::Binding {
+                thread_id: draft.thread_id.to_string(),
+                session_id: session.key.session_id.clone(),
+                agent: TEST_AGENT_ID.into(),
+            })
+            .await
+            .unwrap();
+        assert!(personal
+            .admit_human(&session.key.session_id, 1, "A fictional preference".into())
+            .await
+            .unwrap()
+            .is_some());
+        assert!(history.store().thread(draft.thread_id).unwrap().is_draft());
     }
 
     /// Issue #76: a native session's model must be known to capture BEFORE

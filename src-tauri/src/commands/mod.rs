@@ -54,6 +54,8 @@ pub mod models;
 pub mod models_pricing;
 pub mod notifier;
 pub mod pdf_annotations;
+pub mod personal;
+pub mod personal_server;
 pub mod plans;
 pub mod project_session;
 pub mod recent_files;

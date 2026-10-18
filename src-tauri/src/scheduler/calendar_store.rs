@@ -100,6 +100,7 @@ pub(super) fn configure(_db: &Connection, t: &mut Task, now: i64) -> Result<()> 
     }
     let previous = t.calendar_progress.take();
     t.calendar_progress = Some(CalendarProgress {
+        reopened_at: previous.as_ref().and_then(|p| p.reopened_at),
         cursor: spec.first_index(now)?,
         activated_at: previous.as_ref().map_or(now, |p| p.activated_at),
         cutoff: None,
@@ -108,6 +109,57 @@ pub(super) fn configure(_db: &Connection, t: &mut Task, now: i64) -> Result<()> 
         pause_windows: previous.map_or_else(Vec::new, |p| p.pause_windows),
         timezone_version: chrono_tz::IANA_TZDB_VERSION.into(),
     });
+    t.next_check_at = Some(now);
+    Ok(())
+}
+pub(super) fn reopen(
+    db: &Connection,
+    t: &mut Task,
+    calendar: Option<CalendarSpec>,
+    now: i64,
+) -> Result<()> {
+    let old = t.input.calendar.as_ref().context("missing calendar")?;
+    if let Some(spec) = calendar {
+        let mut expected = old.clone();
+        expected.until_date = spec.until_date.clone();
+        ensure!(
+            spec == expected,
+            "Re-enable preserves calendar rules except an extended or removed end date"
+        );
+        ensure!(
+            spec.until_date.is_none()
+                || old
+                    .until_date
+                    .as_ref()
+                    .is_some_and(|end| spec.until_date.as_ref().is_some_and(|next| next >= end)),
+            "Only extend or remove an existing calendar end date"
+        );
+        t.input.calendar = Some(spec);
+    }
+    if t.calendar_progress.is_none() {
+        t.state = TaskState::Active;
+        configure(db, t, now)?;
+        return Ok(());
+    }
+    let preview = calendar::preview(t.input.calendar.as_ref().unwrap(), now)?;
+    ensure!(
+        preview.issues.is_empty(),
+        "Adjust the calendar end date before re-enabling: {}",
+        preview
+            .issues
+            .iter()
+            .map(|i| i.question.as_str())
+            .collect::<Vec<_>>()
+            .join("; ")
+    );
+    rearm_unsubmitted(db, &t.id)?;
+    db.execute("UPDATE calendar_reminders SET state='suppressed' WHERE task_id=?1 AND state='pending' AND fire_at<=?2",params![t.id,now])?;
+    let p = t.calendar_progress.as_mut().unwrap();
+    p.reopened_at = Some(now);
+    p.paused_at = None;
+    p.cutoff = None;
+    p.ready = false;
+    t.state = TaskState::Active;
     t.next_check_at = Some(now);
     Ok(())
 }
@@ -165,6 +217,7 @@ pub(super) fn materialize(db: &Connection, t: &mut Task, now: i64) -> Result<()>
             save_occurrence(db, &o)?;
             for reminder in &plan.reminders {
                 let suppressed = reminder.at < p.activated_at
+                    || p.reopened_at.is_some_and(|at| reminder.at <= at)
                     || p.pause_windows
                         .iter()
                         .any(|(from, to)| reminder.at >= *from && reminder.at < *to);
@@ -508,6 +561,14 @@ impl Store {
         &self,
         mut n: TaskNotification,
     ) -> Result<Option<TaskNotification>> {
+        let deleted: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM deleted_task_keys WHERE task_id=?1)",
+            [&n.task_id],
+            |r| r.get(0),
+        )?;
+        if deleted {
+            return Ok(None);
+        }
         let task = load_task(&self.db, &n.task_id)?;
         if task.revision != n.revision
             || matches!(

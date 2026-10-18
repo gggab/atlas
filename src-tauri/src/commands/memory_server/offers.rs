@@ -65,6 +65,8 @@ pub struct MemorySessionOffers {
         Arc<crate::scheduler::Scheduler>,
         Arc<dyn Fn() -> bool + Send + Sync>,
     )>,
+    personal_directory: Option<std::path::PathBuf>,
+    personal_offers: Option<Arc<std::sync::Mutex<std::collections::HashSet<String>>>>,
 }
 
 impl MemorySessionOffers {
@@ -76,6 +78,8 @@ impl MemorySessionOffers {
             browser: None,
             code: None,
             tasks: None,
+            personal_directory: None,
+            personal_offers: None,
         }
     }
 
@@ -107,14 +111,36 @@ impl MemorySessionOffers {
         self.tasks = Some((scheduler, gate));
         self
     }
+
+    pub fn with_personal(
+        mut self,
+        directory: std::path::PathBuf,
+        offers: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    ) -> Self {
+        self.personal_directory = Some(directory);
+        self.personal_offers = Some(offers);
+        self
+    }
 }
 
 impl SessionMcpServers for MemorySessionOffers {
     fn offer(&self, request: &SessionMcpRequest) -> SessionMcpOffer {
         let cwd = request.cwd.to_string_lossy().into_owned();
         let agent = request.agent_id.as_str().to_string();
+        let personal = self
+            .personal_directory
+            .as_ref()
+            .is_some_and(|dir| dir == &request.cwd);
+        if personal {
+            if let (Some(offers), Some(id)) = (&self.personal_offers, &request.session_id) {
+                offers
+                    .lock()
+                    .expect("personal offers")
+                    .remove(&id.to_string());
+            }
+        }
         // The gate reads the sharing file; only asked when it can matter.
-        let sharing_on = request.http_mcp && (self.gate)(&cwd);
+        let sharing_on = !personal && request.http_mcp && (self.gate)(&cwd);
         let url = self.host.url();
         let decision = OfferDecision::decide(request.http_mcp, sharing_on, url.is_some());
         tracing::info!(
@@ -140,7 +166,7 @@ impl SessionMcpServers for MemorySessionOffers {
             entries.push((MEMORY_SERVER_NAME, url));
         }
         // SSH is offered even when shared memory is disabled.
-        if request.http_mcp {
+        if request.http_mcp && !personal {
             if let Some(url) = self.ssh.as_ref().and_then(|ssh| ssh.url()) {
                 entries.push(("atlas_ssh", url));
             }
@@ -148,8 +174,13 @@ impl SessionMcpServers for MemorySessionOffers {
                 entries.push(("atlas_browser", url));
             }
         }
-        if let (Some(CodeOfferDecision::Included), Some(url)) = (code, code_url) {
+        if let (false, Some(CodeOfferDecision::Included), Some(url)) = (personal, code, code_url) {
             entries.push((CODE_SERVER_NAME, url));
+        }
+        if personal && request.http_mcp {
+            if let Some(url) = self.host.url_at(crate::commands::personal_server::PATH) {
+                entries.push((crate::commands::personal_server::NAME, url));
+            }
         }
         let task_url = self.host.url_at(crate::commands::task_server::PATH);
         let tasks_included = request.http_mcp
@@ -175,9 +206,24 @@ impl SessionMcpServers for MemorySessionOffers {
             })
             .collect();
         let scheduler = self.tasks.as_ref().map(|(scheduler, _)| scheduler.clone());
+        let personal_offers = self.personal_offers.clone();
+        let personal_included = personal
+            && request.http_mcp
+            && self
+                .host
+                .url_at(crate::commands::personal_server::PATH)
+                .is_some();
         SessionMcpOffer::new(servers, move |session| match session {
             Some(id) => {
                 tokens.bind(&token, &id.to_string());
+                if personal_included {
+                    if let Some(offers) = &personal_offers {
+                        offers
+                            .lock()
+                            .expect("personal offers")
+                            .insert(id.to_string());
+                    }
+                }
                 if let Some(scheduler) = &scheduler {
                     if tasks_included {
                         scheduler.note_offer(&id.to_string());

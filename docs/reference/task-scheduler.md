@@ -16,6 +16,24 @@ remain usable. No temporary database or alternate execution path hides the error
 - Pause, resume, cancel, mark complete, edit or postpone a task by one hour.
   Resuming an expired one-shot requires a new future time; old reminders are not
   replayed in a burst.
+- Completed and cancelled tasks offer **重新启用** and **删除** in Task Center.
+  Re-enable preserves the task ID, source, execution and period history. One-shots
+  and Agent checks require a future time; minute intervals start a fresh countdown.
+  Calendar reminders retain their anchor and zone and never replay old slots.
+  An existing end date can be extended or removed. An unresolved calendar remains
+  a non-executable draft. Agent usage is cumulative; increasing its limit (at most
+  100) requires an explicit field change, never a silent reset.
+- Delete requires an in-app confirmation and is limited to completed/cancelled
+  tasks. It atomically removes the task, runs, calendar periods/slots and outbox.
+  Chat, memory, proposals, CLI effects and already-submitted OS banners remain
+  independent. A minimal task ID and hash of the scoped creation key persist to
+  reject old creation retries; an intentional new task needs a new key. This is
+  not secure erasure or a recycle bin. Unknown IDs fail; repeated deletion of a
+  known deleted ID is idempotent.
+- Both operations check the inspected revision and live turn reservations under
+  the Store lock. A previous execution still finishing rejects the operation with
+  a retryable explanation. Ordinary edits, pause/resume and snooze cannot revive
+  ended tasks. These two operations are UI/IPC only; no new MCP authority is added.
 - Fixed reminders send their registered content without invoking a model.
   Delivery leaves the business item waiting for user confirmation.
 - Fixed reminders can also set `intervalMinutes` (integer 1–1440), mutually
@@ -58,6 +76,15 @@ listener, independently of shared memory. All offered services share the same
 session token. Unbound tokens and mismatched thread/Agent/directory bindings are
 rejected. Task tools cannot accept caller-selected execution directories or
 cross-conversation ownership:
+
+The [personal assistant](personal-assistant.md) is a deliberate scoped exception:
+backend-created personal sessions may manage fixed reminders sourced from other
+personal sessions in the same profile. They cannot acquire project reminders or
+another session's Agent checks, choose scope via tool arguments, or rewrite the
+original source. Personal mutations require an admitted human turn. Ordinary
+project conversations retain their existing ownership rules. Suggestions use
+inert, versioned personal proposal cards; a UI confirmation registers them using
+an idempotent scheduler request. No application-data block is a human source.
 
 | Tool | Contract |
 | --- | --- |
@@ -130,6 +157,13 @@ Agent completion banners are suppressed for scheduled turns; the scheduler owns
 their outcome delivery, while real permission requests remain visible.
 
 ## Development verification
+
+The personal assistant's approved automatic registration policy is documented in
+[Personal assistant](personal-assistant.md#registering-reminders-from-conversation).
+Its own clear future obligations use the standard scheduler and Task Center;
+memory entries or vendor-local memory files are not task registrations. The
+personal/task MCP tool lists carry required cache metadata and have a real Claude
+SDK discovery regression, separately from persistence and native delivery checks.
 
 Run frontend typechecks, lint, task-center and notification tests, then the Vite
 build. Run Rust scheduler, task MCP, turn admission, background restore,

@@ -16,7 +16,7 @@
 // a row carries a lot of resume edge-cases — a second implementation would drift
 // from the first within a release.
 
-import { forwardRef, memo, useState } from "react";
+import { forwardRef, memo, useState, type ReactNode } from "react";
 import { MenuGlyph } from "@/ui/animated-icon";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
 import { Popover } from "@base-ui/react/popover";
@@ -76,6 +76,8 @@ interface ChatHeaderProps {
   acpSessionId?: string;
   /** Shown on the picker trigger. */
   title: string;
+  fixed?: boolean;
+  actions?: ReactNode;
   roleFilter: RoleFilter;
   onRoleFilterChange: (f: RoleFilter) => void;
   onOpenSearch: () => void;
@@ -106,6 +108,8 @@ function ChatHeaderImpl({
   tabId,
   acpSessionId,
   title,
+  fixed,
+  actions,
   roleFilter,
   onRoleFilterChange,
   onOpenSearch,
@@ -130,63 +134,70 @@ function ChatHeaderImpl({
     <div className="relative shrink-0">
       <HintGroup>
         <div className="flex h-[46px] items-center gap-2 px-6">
-          <HeaderCircleButton title="New session" onClick={onNewSession}>
-            <Plus size={13} />
-          </HeaderCircleButton>
+          {!fixed && (
+            <HeaderCircleButton title="New session" onClick={onNewSession}>
+              <Plus size={13} />
+            </HeaderCircleButton>
+          )}
 
           {/* Session picker */}
-          <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
-            <Popover.Trigger
-              render={
-                /* Same outline as the circles, just pill-shaped. Bare text on a
+          {fixed ? (
+            <span className="truncate text-sm font-medium text-foreground">{title}</span>
+          ) : (
+            <Popover.Root open={pickerOpen} onOpenChange={setPickerOpen}>
+              <Popover.Trigger
+                render={
+                  /* Same outline as the circles, just pill-shaped. Bare text on a
                 bare header gave no hint that the title was a control at all. */
-                <button
-                  type="button"
-                  className={cn(
-                    "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
-                    CONTROL_H,
-                    OUTLINE,
-                    "text-sm font-medium leading-none text-[var(--foreground)]",
-                    "cursor-pointer outline-none",
-                  )}
-                  title="Switch session"
-                >
-                  <span className="truncate">{title}</span>
-                  <ChevronDown
-                    size={12}
+                  <button
+                    type="button"
                     className={cn(
-                      "shrink-0 text-[var(--muted-foreground)] transition-transform",
-                      pickerOpen && "rotate-180",
+                      "flex min-w-0 max-w-[46%] items-center gap-1.5 rounded-full px-3",
+                      CONTROL_H,
+                      OUTLINE,
+                      "text-sm font-medium leading-none text-[var(--foreground)]",
+                      "cursor-pointer outline-none",
                     )}
-                  />
-                </button>
-              }
-            />
-            <Popover.Portal>
-              <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
-                <Popover.Popup
-                  className={cn(
-                    "overflow-hidden rounded-xl select-none inset-highlight shadow-md",
-                    // Border, translucent fill, blur AND the enter animation all on
-                    // THIS element. Splitting them isolates the layer and kills the
-                    // backdrop blur (see the feedback panel for the same rule).
-                    "border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl",
-                    // Grows out of its trigger's top-left corner.
-                    "atlas-panel-in-tl",
-                  )}
-                >
-                  {/* The sidebar's own search input is the combo box's filter. */}
-                  <SessionSidebar
-                    tabId={tabId}
-                    variant="dropdown"
-                    onOpened={() => setPickerOpen(false)}
-                  />
-                </Popover.Popup>
-              </Popover.Positioner>
-            </Popover.Portal>
-          </Popover.Root>
+                    title="Switch session"
+                  >
+                    <span className="truncate">{title}</span>
+                    <ChevronDown
+                      size={12}
+                      className={cn(
+                        "shrink-0 text-[var(--muted-foreground)] transition-transform",
+                        pickerOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                }
+              />
+              <Popover.Portal>
+                <Popover.Positioner className="z-popover" align="start" sideOffset={6}>
+                  <Popover.Popup
+                    className={cn(
+                      "overflow-hidden rounded-xl select-none inset-highlight shadow-md",
+                      // Border, translucent fill, blur AND the enter animation all on
+                      // THIS element. Splitting them isolates the layer and kills the
+                      // backdrop blur (see the feedback panel for the same rule).
+                      "border border-[var(--atlas-element-active)] bg-[var(--card)]/95 backdrop-blur-2xl",
+                      // Grows out of its trigger's top-left corner.
+                      "atlas-panel-in-tl",
+                    )}
+                  >
+                    {/* The sidebar's own search input is the combo box's filter. */}
+                    <SessionSidebar
+                      tabId={tabId}
+                      variant="dropdown"
+                      onOpened={() => setPickerOpen(false)}
+                    />
+                  </Popover.Popup>
+                </Popover.Positioner>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
 
           <div className="flex-1" />
+          {actions}
           <BrowserUseControls sessionId={acpSessionId} />
 
           {/* Left of Find, so the two "go back to something" controls sit

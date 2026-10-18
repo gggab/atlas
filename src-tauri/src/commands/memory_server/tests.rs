@@ -1134,6 +1134,26 @@ fn offered(offer: &SessionMcpOffer) -> Option<(String, String, String)> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn personal_offers_are_negotiated_separately_from_project_memory() {
+    let directory = temp_project("personal-offer");
+    let host = running_host(always_on()).await;
+    let accepted = Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+    let offers = MemorySessionOffers::new(host, always_on())
+        .with_personal(directory.clone().into(), accepted.clone());
+    let offer = offers.offer(&request(true, &directory, None));
+    assert_eq!(
+        offered(&offer).unwrap().0,
+        crate::commands::personal_server::NAME
+    );
+    offer.bind(&acp::SessionId::new("personal-1"));
+    assert!(accepted.lock().unwrap().contains("personal-1"));
+    assert!(offered(&offers.offer(&request(false, &directory, Some("personal-1")))).is_none());
+    assert!(!accepted.lock().unwrap().contains("personal-1"));
+    let ordinary = offers.offer(&request(true, "/ordinary-project", None));
+    assert_eq!(offered(&ordinary).unwrap().0, MEMORY_SERVER_NAME);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn an_http_agent_is_offered_the_server_with_a_token_that_binds_to_its_session() {
     let project = temp_project("offer");
     let host = running_host(always_on()).await;

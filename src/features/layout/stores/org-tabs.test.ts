@@ -107,6 +107,12 @@ describe("global tab persistence", () => {
       expect(PROJECTLESS_TYPES.has(type)).toBe(true);
     }
   });
+
+  it("personal assistant is global and available without a project", () => {
+    expect(PROJECTLESS_TYPES.has("personal")).toBe(true);
+    expect(GLOBAL_TAB_TYPES.has("personal")).toBe(true);
+    expect(persistable([{ type: "personal", closable: true }])).toEqual([]);
+  });
 });
 
 describe("migrateTabType", () => {

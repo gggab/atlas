@@ -125,6 +125,7 @@ export interface TranscriptHandle {
 }
 
 interface TranscriptProps {
+  onRememberMessage?: (messageId: string) => void;
   tabId: string;
   acpSessionId: string;
   messages: ChatMessage[];
@@ -282,6 +283,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     onStallSwitch,
     onStallCopyDiagnostics,
     workingEpoch,
+    onRememberMessage,
   },
   ref,
 ) {
@@ -913,6 +915,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             priority={safeStart + i}
             onToggleExpand={toggleExpand}
             onSaveKb={onSaveKb}
+            onRememberMessage={onRememberMessage}
             canRetryRowId={canRetryRowId}
             pinScopeKey={pinScopeKey}
           />
@@ -929,6 +932,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
       toggleTurn,
       toggleExpand,
       onSaveKb,
+      onRememberMessage,
     ],
   );
 
@@ -1023,6 +1027,7 @@ function RowView({
   onExpandTurn,
   onSaveKb,
   canRetryRowId,
+  onRememberMessage,
   pinScopeKey,
 }: {
   row: Row;
@@ -1033,6 +1038,7 @@ function RowView({
   onToggleExpand: (id: string) => void;
   onExpandTurn: (turnId: string) => void;
   onSaveKb: () => void;
+  onRememberMessage?: (messageId: string) => void;
   /** Id of the one row allowed to show a retry button, or `undefined` when no
    *  retry is possible. An id compare here keeps `UserRowView`'s prop a plain
    *  boolean. */
@@ -1055,6 +1061,7 @@ function RowView({
           canRetry={row.id === canRetryRowId}
           pinScopeKey={pinScopeKey}
           onToggleExpand={onToggleExpand}
+          onRememberMessage={onRememberMessage}
         />
       );
     case RowKind.Prose:

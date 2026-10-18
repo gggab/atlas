@@ -36,8 +36,10 @@ const permissionActions = {
 };
 
 import { sshScenario } from "./ssh";
+import { personalAssistant } from "./personal-assistant";
 
 const all: Scenario[] = [
+  personalAssistant,
   sshScenario,
   {
     name: "default",

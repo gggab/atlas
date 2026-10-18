@@ -498,6 +498,16 @@ export const useLayoutStore = createSelectors(
             }),
           addTab: (tab, groupId) =>
             set((s) => {
+              if (tab.type === "personal") {
+                const existing = s.tabs.find((t) => t.type === "personal");
+                if (existing) {
+                  s.focusedGroupId = groupOf(existing);
+                  s.activeByGroup[s.focusedGroupId] = existing.id;
+                  pushTabHistory(s, existing.id);
+                  syncActiveMirror(s);
+                  return;
+                }
+              }
               // chat: each session is its own tab. File-backed viewers (editor /
               // diff / media / svg / pdf / notebook / unsupported) are one-per-FILE (deduped
               // by id, which is `${type}:${path}`) so opening a different file

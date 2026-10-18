@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::{ensure, Context, Result};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::model::*;
 #[path = "calendar_store.rs"]
@@ -11,6 +12,26 @@ mod calendar_store;
 
 pub struct Store {
     db: Connection,
+}
+fn creation_hash(scope: &str, key: &str) -> Result<String> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&(scope, key))?)
+    ))
+}
+fn ensure_no_live_runs(db: &Connection, task: &str, active_runs: &[String]) -> Result<()> {
+    for run in active_runs {
+        let exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM runs WHERE id=?1 AND task_id=?2)",
+            params![run, task],
+            |r| r.get(0),
+        )?;
+        ensure!(
+            !exists,
+            "A previous execution is still finishing; retry afterwards"
+        );
+    }
+    Ok(())
 }
 fn decode<T: DeserializeOwned>(text: String) -> Result<T> {
     Ok(serde_json::from_str(&text)?)
@@ -151,7 +172,7 @@ impl Store {
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
         let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         ensure!(
-            version <= 2,
+            version <= 3,
             "scheduler database schema is newer than this app"
         );
         if version == 0 {
@@ -175,6 +196,11 @@ impl Store {
             CREATE INDEX calendar_reminders_due ON calendar_reminders(task_id,state,fire_at);
             CREATE INDEX calendar_reminders_run ON calendar_reminders(run_id,state);
             PRAGMA user_version=2; COMMIT;")?;
+        }
+        if version < 3 {
+            db.execute_batch("BEGIN IMMEDIATE;
+            CREATE TABLE deleted_task_keys(task_id TEXT PRIMARY KEY,creation_hash TEXT NOT NULL UNIQUE);
+            PRAGMA user_version=3; COMMIT;")?;
         }
         Ok(Self { db })
     }
@@ -251,6 +277,15 @@ impl Store {
         }
         let tx = self.db.transaction()?;
         if input.id.is_none() {
+            let deleted: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM deleted_task_keys WHERE creation_hash=?1)",
+                [creation_hash(&input.scope_key, &input.idempotency_key)?],
+                |r| r.get(0),
+            )?;
+            ensure!(
+                !deleted,
+                "This task was deleted; an intentional new task needs a new creation key"
+            );
             let existing: Option<String> = tx
                 .query_row(
                     "SELECT data FROM tasks WHERE scope_key=?1 AND creation_key=?2",
@@ -279,6 +314,10 @@ impl Store {
         );
         let mut task = if let Some(id) = &input.id {
             let t = load_task(&tx, id)?;
+            ensure!(
+                !matches!(t.state, TaskState::Completed | TaskState::Cancelled),
+                "Use explicit re-enable for an ended task"
+            );
             ensure!(
                 input.expected_revision == Some(t.revision),
                 "task revision conflict; inspect again"
@@ -336,6 +375,10 @@ impl Store {
             t.revision == revision,
             "task revision conflict; refresh before changing it"
         );
+        ensure!(
+            !matches!(t.state, TaskState::Completed | TaskState::Cancelled),
+            "Use explicit re-enable for an ended task"
+        );
         if t.input.calendar.is_some() {
             let task = calendar_store::control_series(&tx, t, action, now)?;
             tx.commit()?;
@@ -382,6 +425,120 @@ impl Store {
         tx.commit()?;
         Ok(t)
     }
+    pub fn reopen(
+        &mut self,
+        request: ReopenTask,
+        active_runs: &[String],
+        now: i64,
+    ) -> Result<Task> {
+        let tx = self.db.transaction()?;
+        let mut task = load_task(&tx, &request.id)?;
+        ensure!(
+            task.revision == request.revision,
+            "task revision conflict; refresh before changing it"
+        );
+        ensure!(
+            matches!(task.state, TaskState::Completed | TaskState::Cancelled),
+            "Only completed or cancelled tasks can be re-enabled"
+        );
+        ensure_no_live_runs(&tx, &task.id, active_runs)?;
+        let count: u32 = tx.query_row(
+            "SELECT count(*) FROM tasks WHERE state NOT IN ('completed','cancelled')",
+            [],
+            |r| r.get(0),
+        )?;
+        ensure!(count < 500, "active task limit reached");
+        if let Some(max) = request.max_runs {
+            ensure!(
+                task.input.kind == TaskKind::AgentCheck && (1..=100).contains(&max),
+                "invalid Agent execution limit"
+            );
+            task.input.max_runs = max;
+        }
+        ensure!(task.input.kind!=TaskKind::AgentCheck || task.run_count<task.input.max_runs,"Execution limit exhausted; explicitly increase the limit (up to 100) or create a new task");
+        if task.input.calendar.is_some() {
+            ensure!(
+                request.at.is_none(),
+                "Calendar reminders use their saved local rules"
+            );
+            calendar_store::reopen(&tx, &mut task, request.calendar, now)?;
+        } else {
+            ensure!(
+                request.calendar.is_none(),
+                "Re-enable preserves the task's schedule type"
+            );
+            let due = if let Some(minutes) = task.input.interval_minutes {
+                ensure!(
+                    request.at.is_none(),
+                    "Interval reminders start a fresh countdown"
+                );
+                now.checked_add(i64::from(minutes) * 60_000)
+                    .context("next reminder time exceeds supported timestamp")?
+            } else {
+                request
+                    .at
+                    .context("Choose a new future time to re-enable this task")?
+            };
+            ensure!(due > now, "Choose a future time to re-enable this task");
+            task.state = TaskState::Active;
+            task.next_check_at = Some(due);
+        }
+        invalidate(&tx, &task.id, now)?;
+        task.revision += 1;
+        if task.state != TaskState::NeedsConfirmation {
+            task.reason = None;
+        }
+        task.updated_at = now;
+        save_task(&tx, &task)?;
+        if task.input.calendar.is_some() && task.state == TaskState::Active {
+            calendar_store::materialize(&tx, &mut task, now)?;
+            ensure!(task.state==TaskState::Active,"Re-enable needs an unhandled future period; extend or remove the calendar end date");
+        }
+        tx.commit()?;
+        Ok(task)
+    }
+
+    pub fn delete(&mut self, id: &str, revision: u64, active_runs: &[String]) -> Result<()> {
+        let tx = self.db.transaction()?;
+        let deleted: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM deleted_task_keys WHERE task_id=?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if deleted {
+            return Ok(());
+        }
+        let task = load_task(&tx, id)?;
+        ensure!(
+            task.revision == revision,
+            "task revision conflict; refresh before deleting it"
+        );
+        ensure!(
+            matches!(task.state, TaskState::Completed | TaskState::Cancelled),
+            "Only completed or cancelled tasks can be deleted"
+        );
+        ensure_no_live_runs(&tx, id, active_runs)?;
+        tx.execute(
+            "INSERT INTO deleted_task_keys(task_id,creation_hash) VALUES(?1,?2)",
+            params![
+                id,
+                creation_hash(&task.input.scope_key, &task.input.idempotency_key)?
+            ],
+        )?;
+        for table in [
+            "calendar_reminders",
+            "calendar_occurrences",
+            "notification_outbox",
+            "runs",
+            "tasks",
+        ] {
+            let column = if table == "tasks" { "id" } else { "task_id" };
+            tx.execute(&format!("DELETE FROM {table} WHERE {column}=?1"), [id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn claim_due(&mut self, now: i64, boot: &str) -> Result<Option<Run>> {
         self.prepare_calendars(now)?;
         let tx = self
@@ -649,11 +806,18 @@ impl Store {
         error: Option<String>,
         now: i64,
     ) -> Result<()> {
-        let text: String = self.db.query_row(
-            "SELECT data FROM notification_outbox WHERE id=?1",
-            [id],
-            |r| r.get(0),
-        )?;
+        let text: Option<String> = self
+            .db
+            .query_row(
+                "SELECT data FROM notification_outbox WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // A queued delivery acknowledgement may arrive after explicit deletion.
+        let Some(text) = text else {
+            return Ok(());
+        };
         let mut n: TaskNotification = decode(text)?;
         n.native_state = state.into();
         n.native_error = error;
@@ -671,11 +835,18 @@ impl Store {
         Ok(())
     }
     pub fn mark_read(&mut self, id: &str, dismissed: bool) -> Result<()> {
-        let text: String = self.db.query_row(
-            "SELECT data FROM notification_outbox WHERE id=?1",
-            [id],
-            |r| r.get(0),
-        )?;
+        let text: Option<String> = self
+            .db
+            .query_row(
+                "SELECT data FROM notification_outbox WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        // Notification-list synchronization can race task deletion.
+        let Some(text) = text else {
+            return Ok(());
+        };
         let mut n: TaskNotification = decode(text)?;
         n.read = true;
         n.dismissed |= dismissed;

@@ -27,7 +27,7 @@ use atlas_acp_thread::connection::AgentId;
 use atlas_acp_thread::thread::AcpThreadEvent;
 use chrono::{DateTime, Utc};
 
-use crate::model::ThreadId;
+use crate::model::{ThreadId, ThreadMetadata};
 use crate::paths::{PathList, WorktreePaths};
 use crate::store::{LiveThreadUpdate, ThreadMetadataStore};
 
@@ -105,6 +105,12 @@ impl ThreadRecorder {
 
     pub fn store(&self) -> &ThreadMetadataStore {
         &self.store
+    }
+
+    /// Find a live conversation, including a draft whose session ID is not persisted.
+    pub fn thread_for_session(&self, session_id: &acp::SessionId) -> Option<ThreadMetadata> {
+        let thread_id = self.lock().get(session_id).copied()?;
+        self.store.thread(thread_id)
     }
 
     /// Bind a live session to a history row that already exists.

@@ -27,6 +27,43 @@ fn snapshot(is_draft: bool, title: Option<&str>, dirs: &[&str]) -> ThreadSnapsho
 }
 
 #[test]
+fn a_live_draft_is_addressable_without_persisting_its_session_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = store(&dir);
+    let recorder = ThreadRecorder::new(store.clone());
+    let session = acp::SessionId::new("personal-first-send");
+
+    assert!(recorder.thread_for_session(&session).is_none());
+    assert!(store.threads().is_empty(), "a lookup must not mint a row");
+    recorder.record_connected(
+        &"test-agent".into(),
+        &session,
+        snapshot(true, None, &["/tmp/personal-assistant"]),
+    );
+
+    assert!(store.thread_for_session(&session).is_none());
+    let draft = recorder.thread_for_session(&session).expect("live draft");
+    assert!(draft.is_draft());
+    assert_eq!(store.threads().len(), 1);
+
+    recorder.record(
+        &"test-agent".into(),
+        &session,
+        &AcpThreadEvent::NewEntry,
+        snapshot(false, None, &["/tmp/personal-assistant"]),
+    );
+    let sent = recorder.thread_for_session(&session).unwrap();
+    assert_eq!(sent.thread_id, draft.thread_id);
+    assert_eq!(sent.session_id.as_ref(), Some(&session));
+    recorder.forget(&session);
+    assert!(recorder.thread_for_session(&session).is_none());
+    assert!(
+        store.thread(sent.thread_id).is_some(),
+        "sent history remains"
+    );
+}
+
+#[test]
 fn a_new_chat_appears_in_history_as_a_draft_and_gains_its_session_id_on_the_first_send() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(&dir);

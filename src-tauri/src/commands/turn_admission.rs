@@ -11,6 +11,14 @@ pub struct TurnPermit {
 }
 
 impl TurnAdmissions {
+    pub fn active_task_runs(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .filter_map(Clone::clone)
+            .collect()
+    }
     pub fn reserve(
         self: &Arc<Self>,
         session: &str,
@@ -53,6 +61,7 @@ mod tests {
     fn reservation_covers_the_window_before_begin_turn_and_releases_on_drop() {
         let admission = Arc::new(TurnAdmissions::default());
         let scheduled = admission.reserve("s", Some("run".into())).unwrap();
+        assert_eq!(admission.active_task_runs(), vec!["run"]);
         let another = admission.clone();
         assert!(
             std::thread::spawn(move || another.reserve("s", None).is_err())
@@ -62,6 +71,7 @@ mod tests {
         assert!(admission.scheduled("s"));
         assert!(admission.reserve("other", None).is_ok());
         drop(scheduled);
+        assert!(admission.active_task_runs().is_empty());
         let human = admission.reserve("s", None).unwrap();
         assert!(!admission.scheduled("s"));
         assert!(admission.reserve("s", Some("another-run".into())).is_err());

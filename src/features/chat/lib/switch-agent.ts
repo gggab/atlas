@@ -18,6 +18,7 @@ import {
   type TurnEnd,
 } from "./remember";
 import { projectPathForTab } from "./tab-project";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 
 /** The window event a handoff fires; the composer of `tabId` inserts the
  *  previous conversation as a past-session chip. */
@@ -84,6 +85,16 @@ export function switchAgentForTab(
   const chat = useChatStore.getState();
   const sess = chat.sessions[tabId];
   if ((sess?.agentType ?? NATIVE_AGENT) === next) return;
+
+  if (useLayoutStore.getState().tabs.some((t) => t.id === tabId && t.type === "personal")) {
+    if (isBusyAgentStatus(sess?.status)) {
+      toast("请先停止当前回复，再切换个人助手 Agent。");
+      return;
+    }
+    chat.actions.clearSession(tabId);
+    chat.actions.switchChatAgent(tabId, next);
+    return;
+  }
 
   const startingOnly = isStartingOnly(sess);
   if (!startingOnly && isBusyAgentStatus(sess?.status)) {

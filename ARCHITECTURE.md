@@ -52,6 +52,29 @@ src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (inv
 
 ### Durable task scheduler
 
+The global, projectless `personal` tab reuses the chat store, transcript renderer
+and approval UI with a text composer. `personal/` owns profile-local
+`personal.sqlite`, immutable personal session bindings, human provenance, explicit
+facts/preferences and inert proposal cards. `commands/personal.rs` exposes IPC;
+`commands/personal_server.rs` mounts session-authorized tools at `/personal` on the
+existing MCP listener. Only backend-created personal sessions receive that scope.
+Personal sessions receive a bounded, visible application-data block on human sends;
+project sends and project memory remain unchanged. See
+[personal assistant](docs/reference/personal-assistant.md).
+The fixed window reads application-owned history independently of CLI availability.
+Its personal controller renders the shared Agents `ChatPanel`, supplying scoped
+connection/send behavior and history. The standard composer, permissions, tool
+details and queue gates remain shared; personal memory/plan UI is a closed-by-default
+drawer rather than an alternative conversation form. Approved reminder defaults
+are application context, while real scheduler snapshots own registration receipts.
+CLI execution contexts reconnect on send; unsupported restoration may create an
+internal context with a visible limitation notice while retaining earlier text.
+`personal/memory.rs` owns evidence-bound foreground learning, inert candidates and
+transactional per-key forgetting/rename/relearn barriers. `personal/recall.rs`
+selects current core/relevant records deterministically within a 4,000-character
+memory pack, with explicit omitted IDs and tool expansion. MCP instructions request
+ordinary-chat learning; tool availability is not extraction-completion evidence.
+
 `src-tauri/src/scheduler/` owns profile-local `scheduler.sqlite` (tasks, runs and
 notification outbox), deadline wakeups, recovery and Rust native delivery.
 `commands/tasks.rs` provides IPC; `commands/task_server.rs` serves independently
@@ -67,6 +90,12 @@ execution. Schema v2 adds stable business periods and authoritative reminder slo
 `calendar_store.rs` owns bounded materialization, revision-checked period controls
 and merged catch-up. See [calendar schedules](docs/reference/calendar-schedules.md)
 and [ADR-0018](docs/adr/0018-gregorian-calendar-reminders.md).
+
+Schema v3 adds minimal hashed creation-key tombstones for explicit deletion.
+UI-only re-enable/delete check revisions and active `TurnAdmissions` under the
+Store mutex. Re-enable preserves task/period identities and cumulative Agent
+usage; an optional durable reopen cutoff suppresses old calendar slots. Delete
+removes dependent scheduler rows in one transaction while fencing old retries.
 
 Organized by **feature**, not file type:
 

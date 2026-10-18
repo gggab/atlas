@@ -1,5 +1,6 @@
 export const TAB_TYPES = [
   "chat",
+  "personal",
   "canvas",
   "browser",
   "tasks",
@@ -23,10 +24,14 @@ export const TAB_TYPES = [
 export type TabType = (typeof TAB_TYPES)[number];
 
 /** Tab types available with no project open. */
-export const PROJECTLESS_TYPES: ReadonlySet<TabType> = new Set<TabType>(["settings", "usage"]);
+export const PROJECTLESS_TYPES: ReadonlySet<TabType> = new Set<TabType>([
+  "settings",
+  "usage",
+  "personal",
+]);
 
 /** Global views excluded from per-project editor state. */
-export const GLOBAL_TAB_TYPES: ReadonlySet<TabType> = new Set<TabType>(["usage"]);
+export const GLOBAL_TAB_TYPES: ReadonlySet<TabType> = new Set<TabType>(["usage", "personal"]);
 
 /**
  * Tab types that were renamed. Persisted layout / editor state written by an

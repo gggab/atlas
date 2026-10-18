@@ -21,6 +21,28 @@ const add = (
   });
 
 describe("local notifications", () => {
+  it("removes only the deleted task's cached notifications", () => {
+    add(undefined);
+    const taskNotice = (id: string) => ({
+      id,
+      kind: "task-reminder" as const,
+      source: "app" as const,
+      title: "Reminder",
+      body: "Due",
+      timestamp: new Date().toISOString(),
+      target: { type: "task" as const, taskId: id },
+      read: false,
+    });
+    const actions = useNotificationsStore.getState().actions;
+    actions.syncTasks([taskNotice("deleted"), taskNotice("other")]);
+    actions.removeTask("deleted");
+    expect(
+      useNotificationsStore
+        .getState()
+        .items.map((i) => (i.target?.type === "task" ? i.target.taskId : "terminal"))
+        .sort(),
+    ).toEqual(["other", "terminal"]);
+  });
   it("reconciles durable task notifications by ID without duplicate unread items", () => {
     add(undefined);
     const n = {

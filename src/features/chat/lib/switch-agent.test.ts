@@ -30,6 +30,7 @@ const toast = vi.hoisted(() =>
 vi.mock("sonner", () => ({ toast }));
 
 import { useChatStore } from "../stores/chat-store";
+import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useMemorySharingStore } from "@/features/memory/stores/memory-sharing-store";
 import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { DEFAULT_SETTINGS, type AppSettings } from "@/features/settings/lib/app-settings";
@@ -46,8 +47,23 @@ import {
 } from "./switch-agent";
 
 const TAB = "tab-1";
+afterEach(() => useLayoutStore.setState({ tabs: [] }));
 
 describe("switchAgentForTab while starting", () => {
+  it("switches a personal assistant in place without a project chat or history handoff", () => {
+    useLayoutStore.setState({
+      tabs: [
+        { id: TAB, type: "personal", title: "Personal", closable: true, dirty: false, data: {} },
+      ],
+    });
+    useChatStore.getState().actions.addMessage(TAB, "user", "A personal fact");
+    useChatStore.getState().actions.setDraft(TAB, "Unsent message");
+    switchAgentForTab(TAB, "codex");
+    expect(useChatStore.getState().sessions[TAB].agentType).toBe("codex");
+    expect(useChatStore.getState().drafts[TAB]).toBe("Unsent message");
+    expect(openAgentChatInNewTab).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     openAgentChatInNewTab.mockClear();

@@ -158,6 +158,13 @@ delivery records in the current profile's local `scheduler.sqlite`. Dev and
 Release profiles are separate. Archiving a conversation leaves registered tasks
 running. Deleting only a source conversation does not erase independent task
 records; manage those tasks in the task center.
+Completed and cancelled tasks can be explicitly re-enabled or deleted. Deletion
+removes scheduler task content, runs, calendar periods/slots and application
+notification records. It retains only the task ID and a SHA-256 hash of the scoped
+creation key to prevent stale requests from recreating the deleted task. These
+markers are not automatically purged. Chat, personal memory, proposals, external
+CLI effects and already-submitted OS notifications remain independent. Deletion
+is not a secure-erasure guarantee.
 
 Agent checks send their registered task input to the selected external CLI and
 its model service under that vendor's existing authentication and permissions.
@@ -169,3 +176,32 @@ Recurring reminders additionally retain local calendar rules, named timezones,
 clarification drafts, per-period completion and reminder-slot records. Pausing
 notifications or archiving a conversation does not erase unpaid period history.
 These records stay in the same profile-local scheduler database.
+
+## Local personal assistant
+
+The project-independent personal assistant stores facts, preferences, source
+quotes, inert memory candidates, human messages, bindings and plan proposals in the current
+profile's `personal.sqlite`. Dev and Release remain separate. When you send a
+personal message, a bounded set of saved personal data and plans is provided to
+the selected external Agent along with the message. The UI exposes the data
+provided on that send. Your provider's processing and retention policies apply.
+The computer's current named timezone is included to calculate reminder defaults
+and is saved with registered calendar reminders. Clear personal obligations can
+create reminders under the approved defaults; expired default slots are skipped
+with notice, while future recurring slots remain scheduled.
+The dedicated directory is not a filesystem sandbox; CLI global configuration
+and existing permissions still apply. DeskMate does not automatically grant its
+project memory, code, browser or SSH tool services to personal sessions.
+
+During a human chat turn the selected Agent is instructed to learn clearly stated
+stable personal information through authorized tools, without requiring a special
+"remember" phrase. This is best effort and does not scan all historical chats or
+use a separate background extractor. Uncertain candidates require explicit action;
+source quotes, origin and save status are visible. You can edit or delete saved
+entries and explicitly re-learn forgotten content through the manual editor.
+Deletion keeps a minimal hashed-key barrier and removes current/candidate memory
+value copies. It does not create a secure-erasure guarantee. Deleting saved memory removes it from subsequent personal memory reads;
+it does not erase earlier messages, current vendor-model context, independent
+reminders or vendor records. Changing memory does not silently change reminders.
+Saved memory and task registration have separate receipts. This feature adds no
+cloud synchronization, new communication-source access or encryption-at-rest claim.

@@ -34,6 +34,10 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
   conversation visibility. Source references trace the request; an execution
   binding selects the authorized conversation/Agent/cwd. Archive does not pause
   it. Explicit task controls and completion conditions own its lifetime.
+- **Task re-enable** — an explicit UI action reopening the same completed or
+  cancelled task, preserving its ID/history and cumulative execution usage.
+  Old reminder slots remain suppressed. Deletion removes scheduler content and
+  leaves only an ID and hashed creation-key barrier against stale retries.
 - **Scheduled run** — one claimed execution, keyed by a durable run ID; distinct
   from its task, ACP session and notification. Success requires a matching
   successful terminal result and a valid structured report for Agent checks.
@@ -80,6 +84,22 @@ Shared memory reaches an agent one way only: it **pulls** it through the **memor
 The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` — is what DeskMate *used to* prepend. Every DeskMate reader still strips it (`atlas_agent_transcript::strip_injected_context`): the Claude memory directory, capture transcripts, the session handoff, the chat's echoed prompts. Files written while DeskMate pushed still carry it, and the loop it once caused (an agent saved DeskMate's block into its own memory file and DeskMate read the copy back in as a new fact) must stay closed.
 
 ## External Agent ownership
+
+**Personal assistant** is a global entry, independent of a work project. Its
+profile-local personal space is separate from repository shared memory. Session
+purpose is assigned by the backend at creation; a project conversation cannot be
+promoted by an MCP argument. Personal fixed reminders share this space while
+preserving their source conversation; Agent checks keep their execution boundary.
+Human sends in this entry include a bounded `PERSONAL ASSISTANT DATA` block as
+separate ACP content. Readers recognize it as application data, not human prose;
+personal writes require a separately recorded human source and admitted turn.
+This is an explicit exception to project shared memory's pull-only behavior.
+The foreground Agent is instructed to learn new clear human assertions through
+personal MCP with exact raw-source evidence and revisions; this is best effort,
+not guaranteed extraction. Application-managed recall provides bounded core and
+relevant active memory on sends. Inert candidates, hashed forgetting barriers and
+trusted UI confirmation remain distinct from task registration. It adds no
+background extractor, model-generated summary or session rotation.
 
 **Browser automation session** is one ACP session's persistent JS REPL and
 explicitly shared daily Chrome/Edge tabs, connected through DeskMate Browser.

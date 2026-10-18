@@ -31,7 +31,7 @@ vi.mock("@/features/settings/stores/settings-store", () => ({
 }));
 vi.mock("@/features/notifications/stores/notifications-store", () => ({
   useNotificationsStore: {
-    getState: () => ({ actions: { syncTasks: backend.sync } }),
+    getState: () => ({ actions: { syncTasks: backend.sync, removeTask: vi.fn() } }),
     subscribe: (
       handler: (
         current: { items: AppNotification[] },
@@ -102,12 +102,160 @@ beforeEach(() => {
       };
     if (command === "tasks_control")
       return { ...backend.task, state: args?.action === "pause" ? "paused" : "cancelled" };
+    if (command === "tasks_delete") {
+      backend.task = null;
+      return null;
+    }
+    if (command === "tasks_reopen") {
+      backend.task = { ...backend.task!, state: "active", revision: backend.task!.revision + 1 };
+      return backend.task;
+    }
     return backend.task;
   });
 });
 afterEach(cleanup);
 
 describe("independent task center", () => {
+  it.each(["completed", "cancelled"] as const)(
+    "re-enables a %s task with its existing identity and an explicit time",
+    async (state) => {
+      backend.task!.state = state;
+      render(<TaskCenter />);
+      fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+      fireEvent.click(await screen.findByRole("button", { name: "重新启用" }));
+      expect(backend.invoke.mock.calls.some(([c]) => c === "tasks_reopen")).toBe(false);
+      const due = localFuture();
+      fireEvent.change(screen.getByLabelText("新的执行时间（本机时区）"), {
+        target: { value: due },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "确认重新启用" }));
+      await waitFor(() =>
+        expect(backend.invoke).toHaveBeenCalledWith("tasks_reopen", {
+          request: expect.objectContaining({
+            id: "task-1",
+            revision: 4,
+            at: new Date(due).getTime(),
+          }),
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("button", { name: "确认重新启用" })).toBeNull(),
+      );
+      expect(await screen.findByRole("button", { name: "暂停" })).toBeTruthy();
+    },
+  );
+  it("confirms deletion before removing a terminal task and its selected details", async () => {
+    backend.task!.state = "cancelled";
+    render(<TaskCenter />);
+    useTaskCenter.getState().show("task-1");
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    expect(screen.getByText(/执行记录、周期记录和应用内通知/)).toBeTruthy();
+    expect(backend.invoke.mock.calls.some(([c]) => c === "tasks_delete")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(backend.task).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_delete", { id: "task-1", revision: 4 }),
+    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "还房租" })).toBeNull());
+    expect(useTaskCenter.getState().selectedId).toBeNull();
+  });
+  it("does not offer deletion or re-enable for an active task", async () => {
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    await screen.findByRole("button", { name: "还房租" });
+    expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新启用" })).toBeNull();
+  });
+  it("keeps the row and confirmation when deletion fails", async () => {
+    backend.task!.state = "completed";
+    const original = backend.invoke.getMockImplementation()!;
+    backend.invoke.mockImplementation(async (...args) => {
+      if (args[0] === "tasks_delete") throw new Error("revision conflict");
+      return original(...args);
+    });
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    expect(await screen.findByText(/revision conflict/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认删除" })).toBeTruthy();
+    expect(backend.task).not.toBeNull();
+  });
+  it("re-enables an interval with a fresh countdown instead of a stale date", async () => {
+    backend.task!.state = "cancelled";
+    backend.task!.input.intervalMinutes = 5;
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用" }));
+    expect(screen.queryByLabelText("新的执行时间（本机时区）")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "确认重新启用" }));
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_reopen", {
+        request: expect.objectContaining({ id: "task-1", at: null }),
+      }),
+    );
+  });
+  it("lets the user explicitly raise the cumulative Agent limit without clearing usage", async () => {
+    backend.task!.state = "completed";
+    backend.task!.input.kind = "agent_check";
+    backend.task!.runCount = 20;
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用" }));
+    expect(screen.getByText(/累计已执行 20 次/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("累计执行次数上限"), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认重新启用" }));
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_reopen", {
+        request: expect.objectContaining({ maxRuns: 25 }),
+      }),
+    );
+  });
+  it("extends a finite calendar while preserving its rule identity", async () => {
+    backend.task!.state = "completed";
+    backend.task!.input.calendar = {
+      frequency: "weekly",
+      startDate: "2026-01-01",
+      localTime: "09:00",
+      timezone: "Asia/Shanghai",
+      reminderDays: [0],
+      untilDate: "2026-01-31",
+      trackCompletion: true,
+    };
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用" }));
+    fireEvent.change(screen.getByLabelText("新的结束日期（可留空持续提醒）"), {
+      target: { value: "2027-12-31" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认重新启用" }));
+    await waitFor(() =>
+      expect(backend.invoke).toHaveBeenCalledWith("tasks_reopen", {
+        request: expect.objectContaining({
+          calendar: expect.objectContaining({
+            frequency: "weekly",
+            startDate: "2026-01-01",
+            timezone: "Asia/Shanghai",
+            untilDate: "2027-12-31",
+          }),
+        }),
+      }),
+    );
+  });
+  it("explains the exhausted absolute execution cap instead of offering an impossible confirmation", async () => {
+    backend.task!.state = "completed";
+    backend.task!.input.kind = "agent_check";
+    backend.task!.runCount = 100;
+    render(<TaskCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用" }));
+    expect(screen.getByText("已达到累计100次的上限，请新建任务。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "确认重新启用" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
   it("registers every-five-minute reminders without a date or Agent binding", async () => {
     render(<TaskCenter />);
     fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
@@ -306,3 +454,8 @@ describe("independent task center", () => {
     );
   });
 });
+
+function localFuture() {
+  const date = new Date(Date.now() + 3600000);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}

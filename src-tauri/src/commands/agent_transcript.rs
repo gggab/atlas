@@ -396,7 +396,23 @@ pub fn list(config_dir: &Path, cwd: &str) -> Vec<AgentSessionMeta> {
 
 /// Read one transcript back for replay.
 pub fn read(config_dir: &Path, cwd: &str, session_id: &str) -> Option<StoredTranscript> {
-    read_file(&dir_for(config_dir, cwd).join(format!("{}.json", sanitize_id(session_id))))
+    read_checked(config_dir, cwd, session_id).ok().flatten()
+}
+
+/// A missing transcript is empty; an unreadable or corrupt one must remain visible as an error.
+pub fn read_checked(
+    config_dir: &Path,
+    cwd: &str,
+    session_id: &str,
+) -> std::io::Result<Option<StoredTranscript>> {
+    let path = dir_for(config_dir, cwd).join(format!("{}.json", sanitize_id(session_id)));
+    match std::fs::read(path) {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Some)
+            .map_err(std::io::Error::other),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 /// Read one transcript file.
@@ -804,6 +820,17 @@ mod tests {
 #[cfg(test)]
 mod scheduled_transcript_tests {
     use super::*;
+    #[test]
+    fn checked_replay_distinguishes_missing_from_corrupt_history() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_checked(dir.path(), "/personal", "one")
+            .unwrap()
+            .is_none());
+        let folder = dir_for(dir.path(), "/personal");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("one.json"), "invalid").unwrap();
+        assert!(read_checked(dir.path(), "/personal", "one").is_err());
+    }
     #[test]
     fn scheduled_origin_and_message_identity_survive_disk_replay() {
         let dir = tempfile::tempdir().unwrap();

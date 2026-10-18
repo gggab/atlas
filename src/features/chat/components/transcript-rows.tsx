@@ -54,6 +54,7 @@ export const UserRowView = memo(function UserRowView({
   canRetry = false,
   pinScopeKey,
   onToggleExpand,
+  onRememberMessage,
 }: {
   row: UserRow;
   /** Passed rather than read from a store: house rule 3, and a primitive prop
@@ -74,6 +75,7 @@ export const UserRowView = memo(function UserRowView({
   /** Pin scope for this thread — resolved once by the transcript. */
   pinScopeKey: string;
   onToggleExpand: (id: string) => void;
+  onRememberMessage?: (messageId: string) => void;
 }) {
   const clampRef = useRef<HTMLDivElement>(null);
   const clampHeight = useWholeLineClamp(clampRef, !row.expanded);
@@ -162,6 +164,7 @@ export const UserRowView = memo(function UserRowView({
           timestamp={row.timestamp}
           pinScopeKey={pinScopeKey}
           toggleAbove={clampable(row)}
+          onRememberMessage={onRememberMessage}
         />
       </div>
     </Column>

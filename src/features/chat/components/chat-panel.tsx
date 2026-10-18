@@ -1,4 +1,14 @@
-import { lazy, Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   clearAgentQuestion,
   notifyAgentSignInRequired,
@@ -26,6 +36,7 @@ import {
   agentTypeFromPluginId,
   pluginIdForAgent,
   CLAUDE_PERMISSION_MODES,
+  type ChatMessage,
 } from "@/types/agent";
 import {
   agentMeta,
@@ -160,6 +171,19 @@ import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../
 
 interface ChatPanelProps {
   tabId: string;
+  personal?: {
+    messages: ChatMessage[];
+    busy: boolean;
+    onSend: (
+      content: string,
+      mentions: MentionData[],
+      attachments?: ImageAttachment[],
+    ) => Promise<void>;
+    onReconnect: () => Promise<unknown>;
+    onRememberMessage: (id: string) => void;
+    actions: ReactNode;
+    notice: ReactNode;
+  };
 }
 
 // Once-per-app-session guard for the background Codex pre-warm (below).
@@ -244,7 +268,7 @@ async function respawnAndRebind(tabId: string): Promise<boolean> {
 // store's active-tab write and re-emits these elements), and each of those
 // walked its whole transcript's row list. Streaming re-renders still arrive
 // through this panel's own store subscription.
-export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
+export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelProps) {
   // Subscribe to ONLY this tab's session. Streaming chunks on other tabs
   // shouldn't repaint this panel — immer preserves reference equality for
   // unchanged sub-paths, so `s.sessions[tabId]` only changes when this tab
@@ -358,12 +382,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     return first.slice(0, 60) || "New chat";
   }, [session?.title, session?.firstUserContent]);
 
+  const visibleMessages = personal?.messages ?? session?.messages ?? [];
   const filteredMessages = useMemo(
     () =>
-      roleFilter === "all"
-        ? (session?.messages ?? [])
-        : (session?.messages ?? []).filter((m) => m.role === roleFilter),
-    [session?.messages, roleFilter],
+      roleFilter === "all" ? visibleMessages : visibleMessages.filter((m) => m.role === roleFilter),
+    [visibleMessages, roleFilter],
   );
 
   const acpSessionId = session?.acpSessionId ?? "";
@@ -388,8 +411,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // default needs no probe, so there is no window in which the tab has to sit
   // session-less waiting to find out which agent it is.
   useEffect(() => {
-    if (!session) createSession(tabId);
-  }, [tabId, session, createSession]);
+    if (!session && !personal) createSession(tabId);
+  }, [tabId, session, createSession, !!personal]);
 
   // Bind an ACP agent + session to this tab as soon as the panel mounts.
   // The agent spawn takes 1–3 s warm and up to 30 s on a cold `npx` cache,
@@ -399,6 +422,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // it once `acpSessionId` is set. Skipped when a session is already bound
   // (sidebar resume, or a tab re-mount).
   useEffect(() => {
+    if (personal) return;
     if (!session?.agentType) return;
     if (session.acpSessionId) return;
     let cancelled = false;
@@ -773,7 +797,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // `cancelled` guard), preventing a stale bind from clobbering the tab. This
     // matters even when acpSessionId was already undefined (switch during the
     // first bind), where acpSessionId alone wouldn't change.
-  }, [tabId, !!session, session?.acpSessionId, session?.agentType]);
+  }, [tabId, !!session, session?.acpSessionId, session?.agentType, !!personal]);
 
   // Backfill the ACP model picker for ALREADY-bound sessions. The bind effect
   // above returns early once `acpSessionId` is set, so a session that was bound
@@ -925,7 +949,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // before (a persisted modes cache exists), so we never spawn one they only
   // ever ignore.
   useEffect(() => {
-    if (acpPrewarmStarted) return;
+    if (personal || acpPrewarmStarted) return;
     acpPrewarmStarted = true;
     const timers: ReturnType<typeof setTimeout>[] = [];
     installedExternals().forEach((agent, i) => {
@@ -977,7 +1001,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
   // the latest logic while keeping a constant identity. This is the H1 fix:
   // ChatPanel still re-renders per chunk, but its heavy composer subtree bails.
   const onSendStable = useCallback(
-    (content: string, mentions: MentionData[]) => handleSendRef.current?.(content, mentions),
+    (content: string, mentions: MentionData[], attachments?: ImageAttachment[]) =>
+      handleSendRef.current?.(content, mentions, attachments),
     [],
   );
   const onStopStable = useCallback(() => handleStopRef.current?.(), []);
@@ -1035,7 +1060,11 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // its falling edge is the real "sendable now" signal for that path.
     // A mode a resume could not restore holds the gate the same way, until the
     // user picks one (`resume-mode.ts`).
-    const curResuming = !!session?.resumePending || !!session?.unrestoredModeId;
+    const curResuming =
+      !!session?.resumePending ||
+      !!session?.unrestoredModeId ||
+      (!!personal &&
+        (personal.busy || session?.status === "error" || isBusyAgentStatus(session?.status)));
     const prevResuming = prevResumingRef.current;
     prevResumingRef.current = curResuming;
     const prevHeldElsewhere = prevHeldElsewhereRef.current;
@@ -1096,6 +1125,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     session?.resumePending,
     session?.unrestoredModeId,
     session?.steeringPending,
+    personal?.busy,
     heldElsewhere,
     tabId,
   ]);
@@ -1147,6 +1177,10 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
    *  forget the cached agent, re-arm the per-tab dedupes and bind again. The
    *  held first message stays held and dispatches when the new bind lands. */
   const handleRestartAgent = async () => {
+    if (personal) {
+      await personal.onReconnect();
+      return;
+    }
     const pid = pluginIdForAgent(useChatStore.getState().sessions[tabId]?.agentType);
     setBindEpoch((n) => n + 1);
     logEvent({
@@ -1259,9 +1293,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // appears. The MessageInput's queued-messages strip already shows the
     // pending text as a chip — same UX as "type while running".
     let bound = useChatStore.getState().sessions[tabId];
+    if (personal && (personal.busy || isBusyAgentStatus(bound?.status))) {
+      useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+      return;
+    }
     // Dead agent process: respawn + resume first, then send (H4). Explicitly
     // user-initiated — this is the "next send lazily rebinds" path.
-    if (bound?.disconnected) {
+    if (bound?.disconnected && !personal) {
       const ok = await rebindDisconnectedSession(tabId);
       if (!ok) {
         addMessage(
@@ -1303,6 +1341,14 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // transcript has painted from disk but the agent spawn + ACP `session/load`
     // haven't landed, so the optimistic `acpSessionId` points at a session the
     // manager hasn't installed. Queue rather than send into the void.
+    if (personal) {
+      if (bound?.resumePending) {
+        useChatStore.getState().actions.enqueueMessage(tabId, actualContent);
+        return;
+      }
+      await personal.onSend(content, mentions, attachments);
+      return;
+    }
     if (!bound?.acpAgentId || !bound.acpSessionId || bound.resumePending) {
       const cs = useChatStore.getState();
       // The FIRST message into a session that is still starting is not
@@ -1434,11 +1480,12 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
     // of a flex column that shrinks the chat. The session sidebar (left) stays
     // a normal flex column.
     <div ref={rootRef} className="h-full flex relative">
-      <SessionSidebar tabId={tabId} />
+      {!personal && <SessionSidebar tabId={tabId} />}
 
       {/* `data-chat-drop-zone`: Finder drops land anywhere on the conversation
           column, not just the composer (see `attachPaths` in message-input). */}
       <div data-chat-drop-zone className="relative flex-1 flex flex-col min-w-0">
+        {personal?.notice}
         {/* The header FLOATS over the transcript rather than sitting above it in
             the column. That is what lets the thread scroll underneath and be
             progressively blurred by the band the transcript draws at its top
@@ -1446,7 +1493,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             and a header that owns its own row has nothing behind it but the
             panel background. The transcript reserves `HEADER_INSET` of top
             padding so the first row still starts below the bar. */}
-        {session.messages.length === 0 ? (
+        {!personal && visibleMessages.length === 0 ? (
           <div className="flex-1 overflow-y-auto">
             {session.transcriptLoading ? <LoadingTranscriptState /> : <WelcomeState />}
           </div>
@@ -1458,6 +1505,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
                 tabId={tabId}
                 acpSessionId={acpSessionId}
                 messages={filteredMessages}
+                onRememberMessage={personal?.onRememberMessage}
                 isStreaming={session.status === "running"}
                 turnInProgress={isBusyAgentStatus(session.status)}
                 agentType={session.agentType}
@@ -1478,7 +1526,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
               <ChatHeader
                 tabId={tabId}
                 acpSessionId={acpSessionId}
-                title={headerTitle}
+                title={personal ? "个人助手" : headerTitle}
+                fixed={!!personal}
+                actions={personal?.actions}
                 roleFilter={roleFilter}
                 onRoleFilterChange={setRoleFilter}
                 onOpenSearch={onOpenSearchStable}
@@ -1529,6 +1579,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
             onStop={onStopStable}
             running={isBusyAgentStatus(session.status) || hasInFlightToolCalls(session)}
             stopping={!!session.stopping}
+            disabled={!!personal?.busy}
+            onReconnect={personal?.onReconnect}
           />
         </div>
       </div>
@@ -1536,7 +1588,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
       {bashPanelOpen && (
         <Suspense fallback={null}>
           <BashHistoryPanel
-            messages={session.messages}
+            messages={visibleMessages}
             onJump={(idx) => {
               if (roleFilter !== "all") setRoleFilter("all");
               window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index: idx } }));
@@ -1562,7 +1614,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           transcript rows. */}
       {detailOpen && (
         <Suspense fallback={null}>
-          <DetailPanel tabId={tabId} messages={session.messages} />
+          <DetailPanel tabId={tabId} messages={visibleMessages} />
         </Suspense>
       )}
 
@@ -1589,7 +1641,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
           <ChatSearchPalette
             open={searchPaletteOpen}
             onOpenChange={setSearchPaletteOpen}
-            messages={session.messages}
+            messages={visibleMessages}
             onJump={(idx) =>
               window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index: idx } }))
             }
@@ -1606,7 +1658,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId }: ChatPanelProps) {
  *  An agent that was UNINSTALLED is the one case a restart cannot fix. That
  *  state is not this banner's: `RemovedAgentBar` (tucked into the composer,
  *  rendered from `message-input.tsx`) takes it, and offers a switch. */
-function DisconnectedBanner({ tabId }: { tabId: string }) {
+function DisconnectedBanner({
+  tabId,
+  onReconnect,
+}: {
+  tabId: string;
+  onReconnect?: () => Promise<unknown>;
+}) {
   const disconnected = useChatStore((s) => !!s.sessions[tabId]?.disconnected);
   const bindError = useChatStore((s) => s.sessions[tabId]?.bindError);
   const updatedTo = useChatStore((s) => s.sessions[tabId]?.updatedTo);
@@ -1636,7 +1694,8 @@ function DisconnectedBanner({ tabId }: { tabId: string }) {
         onClick={async () => {
           setRestarting(true);
           try {
-            await rebindDisconnectedSession(tabId);
+            if (onReconnect) await onReconnect();
+            else await rebindDisconnectedSession(tabId);
           } finally {
             setRestarting(false);
           }
@@ -1682,12 +1741,16 @@ const ChatComposer = memo(function ChatComposer({
   onStop,
   running,
   stopping,
+  disabled,
+  onReconnect,
 }: {
   tabId: string;
   onSend: (message: string, mentions: MentionData[], attachments?: ImageAttachment[]) => void;
   onStop: () => void;
   running: boolean;
   stopping: boolean;
+  disabled?: boolean;
+  onReconnect?: () => Promise<unknown>;
 }) {
   // OpenCode / Cursor / Kilo auth used to raise a "copy `cursor-agent login`"
   // pill here. It is gone: `atlas:auth-required` now routes ONLY to the
@@ -1702,13 +1765,14 @@ const ChatComposer = memo(function ChatComposer({
     <>
       <div className="relative">
         <AgentUpdateBar tabId={tabId} />
-        <DisconnectedBanner tabId={tabId} />
+        <DisconnectedBanner tabId={tabId} onReconnect={onReconnect} />
         <MessageInput
           tabId={tabId}
           onSend={onSend}
           onStop={onStop}
           running={running}
           stopping={stopping}
+          disabled={disabled}
           placeholder="Ask DeskMate what to do ..."
         />
       </div>

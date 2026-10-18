@@ -49,6 +49,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useChatStore } from "../stores/chat-store";
 import { useLiveElsewhereStore } from "../stores/live-elsewhere-store";
 import { ChatPanel } from "./chat-panel";
+import { ensureAgent } from "../lib/agents-api";
+import type { ComponentProps } from "react";
 
 const TAB = "tab-1";
 const SESSION = "sess-live";
@@ -76,11 +78,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-function mount() {
+function mount(personal?: ComponentProps<typeof ChatPanel>["personal"]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ChatPanel tabId={TAB} />
+      <ChatPanel tabId={TAB} personal={personal} />
     </QueryClientProvider>,
   );
 }
@@ -92,6 +94,114 @@ function chatSend(text: string) {
 }
 
 describe("ChatPanel holds every send into a session live elsewhere", () => {
+  it("preserves personal sends while the controller is busy and drains once ready", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const personal = {
+      messages: [],
+      busy: true,
+      onSend: vi.fn(async () => {}),
+      onReconnect: async () => {},
+      onRememberMessage: () => {},
+      actions: null,
+      notice: null,
+    };
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ChatPanel tabId={TAB} personal={personal} />
+      </QueryClientProvider>,
+    );
+    chatSend("Keep this message");
+    await waitFor(() => expect(queue()).toEqual(["Keep this message"]));
+    expect(personal.onSend).not.toHaveBeenCalled();
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <ChatPanel tabId={TAB} personal={{ ...personal, busy: false }} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(personal.onSend).toHaveBeenCalledTimes(1));
+    expect(queue()).toEqual([]);
+  });
+
+  it("uses personal lifecycle instead of binding a project session", async () => {
+    useChatStore.getState().actions.clearSession(TAB);
+    vi.mocked(ensureAgent).mockClear();
+    const onSend = vi.fn(async () => {});
+    mount({
+      messages: [],
+      busy: false,
+      onSend,
+      onReconnect: async () => {},
+      onRememberMessage: () => {},
+      actions: null,
+      notice: null,
+    });
+    chatSend("A personal obligation");
+    await waitFor(() =>
+      expect(onSend).toHaveBeenCalledWith("A personal obligation", [], undefined),
+    );
+    expect(ensureAgent).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it("does not rotate a personal queue when busy ends during a running turn or after failure", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const personal = {
+      messages: [],
+      busy: true,
+      onSend: vi.fn(async () => {}),
+      onReconnect: async () => {},
+      onRememberMessage: () => {},
+      actions: null,
+      notice: null,
+    };
+    useChatStore.getState().actions.updateSessionStatus(TAB, "running");
+    const view = render(
+      <QueryClientProvider client={client}>
+        <ChatPanel tabId={TAB} personal={personal} />
+      </QueryClientProvider>,
+    );
+    act(() => {
+      useChatStore.getState().actions.enqueueMessage(TAB, "first");
+      useChatStore.getState().actions.enqueueMessage(TAB, "second");
+    });
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <ChatPanel tabId={TAB} personal={{ ...personal, busy: false }} />
+      </QueryClientProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(queue()).toEqual(["first", "second"]);
+    expect(personal.onSend).not.toHaveBeenCalled();
+    act(() => useChatStore.getState().actions.updateSessionStatus(TAB, "error"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(queue()).toEqual(["first", "second"]);
+    expect(personal.onSend).not.toHaveBeenCalled();
+    view.unmount();
+    mount({ ...personal, busy: false });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(queue()).toEqual(["first", "second"]);
+    expect(personal.onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps personal sends behind the shared live-elsewhere gate", async () => {
+    const onSend = vi.fn(async () => {});
+    useLiveElsewhereStore.getState().actions.setLive([SESSION]);
+    mount({
+      messages: [],
+      busy: false,
+      onSend,
+      onReconnect: async () => {},
+      onRememberMessage: () => {},
+      actions: null,
+      notice: null,
+    });
+    chatSend("A personal obligation");
+    await waitFor(() => expect(queue()).toEqual(["A personal obligation"]));
+    expect(onSend).not.toHaveBeenCalled();
+    act(() => useLiveElsewhereStore.getState().actions.sendAnyway(SESSION));
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps next-step instructions in the Agent prompt", async () => {
     mount();
     chatSend("继续");

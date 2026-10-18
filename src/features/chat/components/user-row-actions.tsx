@@ -67,7 +67,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CopyGlyph } from "@/ui/animated-icon";
-import { CornerUpRight, Pin, RefreshCw } from "lucide-react";
+import { Brain, CornerUpRight, Pin, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { copyText } from "@/lib/clipboard";
@@ -93,6 +93,7 @@ export function ActionButton({
       <button
         type="button"
         onClick={onClick}
+        aria-label={label}
         aria-pressed={active}
         className={cn(
           "flex h-5 w-5 items-center justify-center rounded-md cursor-pointer",
@@ -158,6 +159,7 @@ export function UserRowActions({
   timestamp,
   pinScopeKey,
   toggleAbove,
+  onRememberMessage,
 }: {
   tabId: string;
   /** The cleaned prompt — `row.text`, already stripped of injected context and
@@ -183,6 +185,7 @@ export function UserRowActions({
    *  padding below. Resolved by the row via `clampable`, so the toggle and
    *  this answer can never disagree. */
   toggleAbove: boolean;
+  onRememberMessage?: (messageId: string) => void;
 }) {
   // The one subscription a row is allowed. It is not the chat store: the pins
   // store is written only when someone clicks a pin, so this never fires on a
@@ -263,6 +266,11 @@ export function UserRowActions({
         <ActionButton label="Pin message" onClick={onPin} active={pinned}>
           <Pin size={12} fill={pinned ? "currentColor" : "none"} />
         </ActionButton>
+        {onRememberMessage && (
+          <ActionButton label="保存为个人记忆" onClick={() => onRememberMessage(messageId)}>
+            <Brain size={12} />
+          </ActionButton>
+        )}
         {/* A turn-out arrow, not a pencil. Nothing is edited in place — the
             prompt goes back to the composer and leaves as a NEW turn, which is
             the shape this glyph has carried here since it was a plain resend. */}

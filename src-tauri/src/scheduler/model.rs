@@ -41,6 +41,16 @@ pub enum TaskAction {
     Snooze,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReopenTask {
+    pub id: String,
+    pub revision: u64,
+    pub at: Option<i64>,
+    pub calendar: Option<super::calendar::CalendarSpec>,
+    pub max_runs: Option<u32>,
+}
+
 fn default_runs() -> u32 {
     20
 }
@@ -113,6 +123,8 @@ pub struct Task {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarProgress {
+    #[serde(default)]
+    pub reopened_at: Option<i64>,
     pub cursor: u64,
     pub activated_at: i64,
     pub cutoff: Option<i64>,

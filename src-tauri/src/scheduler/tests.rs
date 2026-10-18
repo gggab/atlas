@@ -24,6 +24,93 @@ fn input(key: &str, kind: TaskKind) -> TaskInput {
 }
 
 #[test]
+fn personal_confirmation_recovers_the_same_task_after_a_partial_receipt_and_restart() {
+    use crate::personal::{
+        proposal_task,
+        store::{ProposalInput, Store as PersonalStore},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let personal_file = dir.path().join("personal.sqlite");
+    let scheduler_file = dir.path().join("scheduler.sqlite");
+    let mut personal = PersonalStore::open(&personal_file).unwrap();
+    let mut scheduler = Store::open(&scheduler_file).unwrap();
+    personal.bind("personal-a", "session-a", "agent").unwrap();
+    personal
+        .note_human("personal-a", "human-a", "Suggest rent reminder")
+        .unwrap();
+    let draft = personal
+        .propose(
+            "personal-a",
+            "human-a",
+            ProposalInput {
+                id: None,
+                expected_revision: None,
+                key: "rent".into(),
+                title: "Rent".into(),
+                prompt: "Pay rent".into(),
+                due_at: 2000,
+                calendar: None,
+                interval_minutes: None,
+                questions: vec![],
+            },
+        )
+        .unwrap();
+    assert!(scheduler.list(None).unwrap().is_empty());
+    let frozen = personal.claim_proposal(&draft.id, draft.revision).unwrap();
+    let registered = scheduler.upsert(proposal_task(&frozen), 1000).unwrap();
+    drop(personal);
+    drop(scheduler);
+    let mut personal = PersonalStore::open(&personal_file).unwrap();
+    let mut scheduler = Store::open(&scheduler_file).unwrap();
+    let recovered = personal.claim_proposal(&draft.id, draft.revision).unwrap();
+    let same = scheduler.upsert(proposal_task(&recovered), 3000).unwrap();
+    assert_eq!(same.id, registered.id);
+    assert_eq!(scheduler.list(None).unwrap().len(), 1);
+    assert_eq!(same.input.source_thread_id.as_deref(), Some("personal-a"));
+    personal
+        .settle_proposal(&draft.id, draft.revision, Some(&same.id))
+        .unwrap();
+    assert!(personal.proposals().unwrap().is_empty());
+    assert!(personal.memories().unwrap().is_empty());
+}
+
+#[test]
+fn failed_personal_registration_leaves_an_editable_draft_and_no_task() {
+    use crate::personal::{
+        proposal_task,
+        store::{ProposalInput, Store as PersonalStore},
+    };
+    let mut personal = PersonalStore::open_memory().unwrap();
+    let mut scheduler = Store::memory();
+    personal.bind("a", "sa", "agent").unwrap();
+    personal.note_human("a", "ha", "Remind me").unwrap();
+    let draft = personal
+        .propose(
+            "a",
+            "ha",
+            ProposalInput {
+                id: None,
+                expected_revision: None,
+                key: "rent".into(),
+                title: "Rent".into(),
+                prompt: "Pay rent".into(),
+                due_at: 0,
+                calendar: None,
+                interval_minutes: None,
+                questions: vec![],
+            },
+        )
+        .unwrap();
+    let frozen = personal.claim_proposal(&draft.id, draft.revision).unwrap();
+    assert!(scheduler.upsert(proposal_task(&frozen), 1000).is_err());
+    personal
+        .settle_proposal(&draft.id, draft.revision, None)
+        .unwrap();
+    assert_eq!(personal.proposals().unwrap()[0].state, "pending");
+    assert!(scheduler.list(None).unwrap().is_empty());
+}
+
+#[test]
 fn interval_reminders_survive_restart_skip_missed_ticks_and_stop_explicitly() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("scheduler.sqlite");
