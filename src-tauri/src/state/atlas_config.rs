@@ -335,7 +335,7 @@ pub struct AppSettings {
     pub git_blame_inline: bool,
     /// Background `git fetch` of the open project — on activation, on window
     /// focus, and every few minutes — so ahead/behind reflects the remote.
-    /// Default ON. See `crate::commands::git_autofetch`.
+    /// Legacy preference retained for config compatibility; no scheduler consumes it.
     #[serde(default = "default_true")]
     pub git_auto_fetch: bool,
     /// Keep the computer awake while an Atlas agent is actively running.

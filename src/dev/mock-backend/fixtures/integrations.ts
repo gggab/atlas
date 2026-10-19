@@ -248,15 +248,6 @@ let clonedRepos: ClonedRepo[] = [
   clonedRepo("acme/legacy-billing", "master", null),
 ];
 
-const REMOTE_BRANCHES: Record<string, string[]> = {
-  "acme-design-tokens": ["main", "next", "release/3.x", "renovate/bun-1.x"],
-  "vercel-swr": ["main", "v1", "canary"],
-};
-
-// ── PDF annotations ─────────────────────────────────────────────────────────
-
-/** The two-page PDF seeded into the fake tree. Annotations are keyed by the
- *  PDF's absolute path, exactly as Rust keys `.atlas/pdf-annotations.json`. */
 const SPEC_PDF = abs("docs/spec.pdf");
 
 /**
@@ -323,10 +314,6 @@ export interface IntegrationsResponses {
   list_cloned_repos: ClonedRepo[];
   read_repo_readme: string;
   delete_cloned_repo: Unread;
-  list_remote_branches: string[];
-  switch_cloned_repo_branch: Unread;
-  update_cloned_repo: string;
-  fetch_cloned_repo_meta: ClonedRepo["meta"];
 
   pdf_annotations_load: PdfAnnotation[];
   pdf_annotations_save: Unread;
@@ -390,50 +377,6 @@ export const integrationsHandlers: TypedHandlers<IntegrationsResponses> = {
   /** `ls-remote` over the network, so an unreachable remote is a real outcome:
    *  the repo Atlas has no cached metadata for is also the one that fails here,
    *  which is what the branch popover's error line is for. */
-  list_remote_branches: async ({ repoName }): Promise<string[]> => {
-    const name = String(repoName);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const branches = REMOTE_BRANCHES[name];
-    if (!branches) fail("fatal: could not read from remote repository");
-    return [...branches];
-  },
-  switch_cloned_repo_branch: async ({ repoName, branch }): Promise<string> => {
-    const name = String(repoName);
-    const next = String(branch);
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    clonedRepos = clonedRepos.map((r) => (r.name === name ? { ...r, branch: next } : r));
-    return next;
-  },
-  /** Refuses on a detached HEAD, exactly as Rust does — `vercel-swr` is seeded
-   *  in that state precisely so the refusal is reachable. */
-  update_cloned_repo: async ({ repoName }): Promise<string> => {
-    const repo = clonedRepos.find((r) => r.name === String(repoName));
-    if (!repo) fail("that repository is not cloned here");
-    if (!repo.branch) fail("the clone is not on a branch — pick one first");
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    return repo.branch;
-  },
-  /** The back-fill the panel runs, once, for every row whose `meta` is null. */
-  fetch_cloned_repo_meta: async ({ repoName }): Promise<RepoMeta> => {
-    const name = String(repoName);
-    const repo = clonedRepos.find((r) => r.name === name);
-    if (!repo) fail("cannot tell which GitHub repository this is");
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    const known = SEARCH_RESULTS.find((row) => row.full_name === repo.display_name);
-    const meta: RepoMeta = known
-      ? {
-          description: known.description,
-          language: known.language,
-          stars: known.stars,
-          forks: known.forks,
-          html_url: known.html_url,
-          updated_at: known.updated_at,
-        }
-      : repoMeta("", "", 0, 0, repo.display_name, iso(-900));
-    clonedRepos = clonedRepos.map((r) => (r.name === name ? { ...r, meta } : r));
-    return meta;
-  },
-
   // ── Feedback ──────────────────────────────────────────────────────────────
   /**
    * Succeeds. The panel keeps the user's draft on a rejection and clears it on

@@ -136,3 +136,21 @@ Calendar changes must also cover the pure expansion engine, additive v1 migratio
 fixed-cutoff catch-up, frozen-period edits and per-period revision/delivery races.
 See [calendar schedules](docs/reference/calendar-schedules.md). Test against real
 temporary SQLite files; never create test reminders in a user's data profile.
+
+## Source Control removal checks
+
+Keep the retired Source Control entry points out of the sidebar, command palette,
+layout templates and right-panel renderer. Preserve shared read-only Git consumers
+(explorer/editor/chat diffs, project summaries and checkpoints), and do not reactivate
+background fetch. Saved Source Control layouts must close the slot without changing
+central tabs or widths; saved SSH layouts must still reopen.
+
+```sh
+bun run test -- src/features/ssh/components/ssh-host.test.ts src/features/notifications/lib/prefs.test.ts tests/ipc-contract.test.ts
+bun run typecheck
+bun run lint
+bun run build
+```
+
+These checks do not establish native desktop/CLI behavior. Verify SSH panel reopening
+and chat diffs in DeskMate Dev separately when a desktop runtime is available.

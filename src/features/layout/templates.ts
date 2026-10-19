@@ -1,7 +1,6 @@
 import type { TabType } from "@/lib/constants";
 
 type LeftSection = "files" | "knowledge";
-type RightSection = "changes" | "github" | "git-graph";
 
 /** A predefined panel/split/tab arrangement applied via the layout switcher
  *  (⌘⌥L) or Settings → Layouts. Applied to the ACTIVE project. */
@@ -12,7 +11,6 @@ export interface LayoutTemplate {
   /** Side panel visibility (omitted = hidden). */
   panels: { left?: boolean; right?: boolean };
   leftSection?: LeftSection;
-  rightSection?: RightSection;
   /** Split columns, left→right (1–3). Each cell is the tab type that fills it. */
   columns: { type: TabType; title: string }[];
   /** Index of the column to focus after applying (default last). */
@@ -62,14 +60,6 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
       { type: "terminal", title: "Terminal" },
     ],
     focus: 0,
-  },
-  {
-    id: "review",
-    name: "Review",
-    description: "Agent with the code-review panel open.",
-    panels: { right: true },
-    rightSection: "changes",
-    columns: [{ type: "chat", title: "Agents" }],
   },
   {
     id: "usage",

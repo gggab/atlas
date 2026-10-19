@@ -60,7 +60,7 @@ export const useProjectGitStore = createSelectors(
       // (the watcher watches .git/HEAD|refs|index, NOT the working tree), so a
       // plain unstaged edit (+N/-M) would never reach us. We ALSO listen to the
       // fs working-tree watcher (`atlas:explorer:changed`) so the live +/-
-      // counts track uncommitted edits, mirroring the source-control panel.
+      // counts track uncommitted edits in the project.
       void listen<{ project?: string }>("atlas:git-changed", (e) => {
         const p = e.payload?.project;
         if (p && fetched.has(p)) get().actions.refresh(p);

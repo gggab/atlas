@@ -1,5 +1,5 @@
 /**
- * A tool payload, rendered with the same machinery as the source-control diff.
+ * A tool payload, rendered with the same machinery as chat diffs.
  *
  * Built on `highlightDiffLine` + the `.diff-syntax` scope rather than on
  * `highlight.js` directly, and that is the whole design:

@@ -223,7 +223,7 @@ wrote; `toml_edit` just preserves whatever comments are already there.
 | `adaptiveSuggestions` | `"agent"` \| `"off"` | `"agent"` | exactly one of these two strings |
 | `agentSwitchBehavior` | `"new-tab"` \| `"handoff"` \| `"reset"` | `"reset"` | exactly one of these three strings. An empty chat always switches in place and a running one always gets a new tab, whatever this says |
 | `gitBlameInline` | boolean | `true` | — |
-| `gitAutoFetch` | boolean | `true` | — |
+| `gitAutoFetch` | boolean | `true` | legacy compatibility key; ignored after Source Control removal |
 | `keepAwakeWhileRunning` | boolean | `false` | no effect on Windows |
 | `instructionSync` | boolean | `false` | — . See [Mirrored instructions](#mirrored-instructions-instructionsync) |
 | `rememberBeforeSwitch` | boolean | `false` | — . Acts only on a chat with a conversation whose agent advertises `/remember` (the bundled `remember` skill); waits at most 3 minutes, and the user can switch at once |

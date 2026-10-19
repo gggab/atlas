@@ -45,7 +45,6 @@ import { pickAndAddProject } from "@/features/projects/lib/pick-project";
 import { flushAll } from "@/features/projects/lib/flush-registry";
 import { captureSnapshot } from "@/features/projects/lib/project-snapshot";
 import { useExplorerStore } from "@/features/explorer/stores/explorer-store";
-import { useGitStore } from "@/features/git/stores/git-store";
 import { listen } from "@tauri-apps/api/event";
 import {
   useRecentFilesStore,
@@ -132,7 +131,7 @@ export function App() {
     return () => void off.then((f) => f());
   }, []);
 
-  // App warnings (auto-fetch failing, behind remote, config.toml errors).
+  // App warnings (config.toml errors and Agent update failures).
   useEffect(() => startAppWarnings(), []);
 
   // Keybinding profiles: load once, then pick up hand edits to
@@ -1022,11 +1021,6 @@ export function App() {
       // backgrounded project must keep watching — its commits still need
       // linking to its Sessions. Tearing one down is `teardownHot`'s job, with
       // the project id it actually owns.
-      // Auto-fetch, by contrast, only follows the project on screen.
-      void useGitStore
-        .getState()
-        .actions.setAutoFetchProject(null)
-        .catch(() => {});
       void invoke("recent_files_close_project").catch(() => {});
       // Drop the mention cache so the @-picker doesn't briefly
       // surface the previous project's notes / symbols on a fresh
@@ -1042,9 +1036,7 @@ export function App() {
     // close (above) and project teardown (`markFileIndexClosedFor`).
     const projectId = activeProjectId();
     void openFileIndex(currentProject.path);
-    // Git watcher: emits `atlas:git-changed` on commit / checkout /
-    // branch ops. Replaces the 3-second polling that git-graph-panel
-    // used to do via `refetchInterval` on `git_graph_signature`.
+    // Git watcher keeps file decorations and recorded branch metadata fresh.
     // Keyed by project so each open project keeps its own resident watcher.
     void invoke("git_watch_start", {
       projectPath: currentProject.path,
@@ -1056,12 +1048,6 @@ export function App() {
     void instructionSync
       .start(currentProject.path, projectId)
       .catch((e) => console.warn("instruction sync start failed:", e));
-    // Background fetch follows the project this window shows, so its Pull
-    // badge reflects the remote (Rust `git_autofetch`).
-    void useGitStore
-      .getState()
-      .actions.setAutoFetchProject(currentProject.path)
-      .catch(() => {});
     // Capture: a bound Project just became active — open its store (which
     // also heals a folder rename) and kick its transcript import and drain.
     // A no-op for Projects that never enabled capture.

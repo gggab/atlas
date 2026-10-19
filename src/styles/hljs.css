@@ -166,7 +166,7 @@ code.hljs {
 }
 
 /* Inline diffs inside a fenced ```diff block — the same keys the diff view
-   uses, so a diff in chat matches the diff in the source-control panel. */
+   uses, so chat code and diffs share the same colors. */
 .hljs-addition {
   color: var(--atlas-diff-added-text);
   background-color: var(--atlas-diff-added-background);

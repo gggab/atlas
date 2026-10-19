@@ -65,8 +65,7 @@ export interface AppSettings {
   /** Inline Git blame in the code editor — dim author/age/summary annotation
    *  trailing the active line. Off = the CodeMirror extension isn't loaded. */
   gitBlameInline: boolean;
-  /** Background `git fetch` of the open project (on open, on window focus,
-   *  every few minutes) so the Pull badge reflects the remote. Never pulls. */
+  /** Legacy config key; ignored since Source Control and auto-fetch were removed. */
   gitAutoFetch: boolean;
   /** Keep the computer awake while an DeskMate agent is actively running.
    *  Default OFF. Prevents idle system sleep; display can still turn off. */

@@ -252,7 +252,6 @@ pub fn run() {
             app.manage(keep_awake);
             commands::atlas_config::start_watcher(app.handle(), atlas_config);
             commands::themes::start_watcher(app.handle());
-            commands::git_autofetch::start(app.handle());
 
             // Mirror the (possibly updated) telemetry id + migration marker
             // back into `state.json` so both agree and a downgrade still
@@ -360,7 +359,6 @@ pub fn run() {
         .manage(FileIndexState::new())
         .manage(GitWatcherState::new())
         .manage(commands::instruction_sync::InstructionSyncState::new())
-        .manage(commands::git_autofetch::GitAutoFetchState::new())
         .manage(RecentFilesState::new())
         .manage(MentionCacheState::new())
         .manage(Arc::new(KnowledgeMetaState::new()))
@@ -375,28 +373,19 @@ pub fn run() {
         // Drop a window's per-window index + mention caches when it closes, so
         // its file watcher stops and memory is freed (these states are keyed by
         // webview label for multi-window project scoping).
-        .on_window_event(|window, event| {
-            match event {
-                tauri::WindowEvent::Destroyed => {
-                    let label = window.label();
-                    background::client_window_destroyed(window.app_handle(), label);
-                    if let Some(root) = window.state::<FileIndexState>().drop_window(label) {
-                        commands::fileindex::close_code_index(window.app_handle(), &root);
-                    }
-                    window.state::<MentionCacheState>().drop_window(label);
-                    window
-                        .state::<commands::git_autofetch::GitAutoFetchState>()
-                        .drop_window(label);
-                    window
-                        .state::<commands::instruction_sync::InstructionSyncState>()
-                        .drop_window(label);
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::Destroyed => {
+                let label = window.label();
+                background::client_window_destroyed(window.app_handle(), label);
+                if let Some(root) = window.state::<FileIndexState>().drop_window(label) {
+                    commands::fileindex::close_code_index(window.app_handle(), &root);
                 }
-                // Coming back to Atlas is when a stale Pull badge misleads.
-                tauri::WindowEvent::Focused(true) => {
-                    commands::git_autofetch::on_window_focused(window.app_handle(), window.label());
-                }
-                _ => {}
+                window.state::<MentionCacheState>().drop_window(label);
+                window
+                    .state::<commands::instruction_sync::InstructionSyncState>()
+                    .drop_window(label);
             }
+            _ => {}
         })
         .invoke_handler({
             let handler: fn(tauri::ipc::Invoke) -> bool = tauri::generate_handler![
@@ -494,61 +483,13 @@ pub fn run() {
                 commands::fs::fs_add_to_gitignore,
                 commands::git::git_status_fresh,
                 commands::git::git_log,
-                commands::git::git_diff_all,
                 commands::git::git_workspace_summary,
                 commands::usage_dashboard::usage_dashboard,
                 commands::capture::capture_session_summary,
                 commands::usage_dashboard::usage_export_markdown,
                 commands::usage_dashboard::usage_write_file,
-                commands::git::git_diff_file,
-                commands::git::git_stage,
-                commands::git::git_unstage,
-                commands::git::git_list_branches,
-                commands::git::git_checkout,
-                commands::git::git_create_branch,
                 commands::git::git_blame_file,
-                commands::git::git_graph_signature,
-                commands::git_graph::git_graph_build,
-                // Extended source-control manager operations.
-                commands::git_ops::git_branches_full,
-                commands::git_ops::git_rename_branch,
-                commands::git_ops::git_branch_delete,
-                commands::git_ops::git_merge_branch,
-                commands::git_ops::git_merge_preview,
-                commands::git_ops::git_fetch,
-                commands::git_autofetch::git_autofetch_set_active,
-                commands::git_ops::git_pull,
-                commands::git_ops::git_push,
-                commands::git_ops::git_publish_branch,
-                commands::git_ops::git_remotes,
-                commands::git_ops::git_remote_add,
-                commands::git_ops::git_remote_remove,
-                commands::git_ops::git_stash_list,
-                commands::git_ops::git_stash_push,
-                commands::git_ops::git_stash_apply,
-                commands::git_ops::git_stash_pop,
-                commands::git_ops::git_stash_drop,
-                commands::git_ops::git_discard,
-                commands::git_ops::git_delete_added,
-                commands::git_ops::git_reset,
-                commands::git_ops::git_revert,
-                commands::git_ops::git_cherry_pick,
-                commands::git_ops::git_tags,
-                commands::git_ops::git_create_tag,
-                commands::git_ops::git_delete_tag,
-                commands::git_ops::git_show,
-                commands::git_ops::git_inprogress,
-                commands::git_ops::git_op_control,
-                commands::git_ops::git_commit_v2,
                 commands::git_snapshot::git_snapshot,
-                commands::git_stage_ops::git_stage_hunk,
-                commands::git_stage_ops::git_unstage_hunk,
-                commands::git_stage_ops::git_discard_hunk,
-                commands::git_conflicts::git_conflict_state,
-                commands::git_conflicts::git_resolve_file,
-                commands::git_ops::git_rebase,
-                commands::git_ops::git_undo_commit,
-                commands::git_ops::git_squash_last,
                 commands::git_watcher::git_watch_start,
                 commands::git_watcher::git_watch_stop,
                 commands::instruction_sync::instruction_sync_start,
@@ -566,7 +507,6 @@ pub fn run() {
                 commands::capture::capture_retry_watcher,
                 commands::capture::artifacts_session,
                 commands::capture::artifacts_payload,
-                commands::capture::capture_commit_sessions,
                 commands::capture::artifacts_board,
                 commands::capture::artifacts_checkpoints,
                 commands::mention_search::mention_search,
@@ -582,10 +522,6 @@ pub fn run() {
                 commands::github::list_cloned_repos,
                 commands::github::read_repo_readme,
                 commands::github::delete_cloned_repo,
-                commands::github::list_remote_branches,
-                commands::github::switch_cloned_repo_branch,
-                commands::github::update_cloned_repo,
-                commands::github::fetch_cloned_repo_meta,
                 // Legacy Claude-CLI subprocess commands (claude_run/stream/stop/check/version)
                 // were replaced by ACP. Session-history readers below are still in use.
                 commands::gitdiff::git_diff_structured,

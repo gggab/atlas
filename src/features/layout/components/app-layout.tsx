@@ -67,8 +67,7 @@ export function AppLayout() {
     else if (!showLeft && !panel.isCollapsed()) panel.collapse();
   }, [showLeft]);
   // SSH output is global and remains available without a project.
-  const showRight =
-    rightPanel.visible && (!!currentProject || rightPanel.mode === "remote-execution");
+  const showRight = rightPanel.visible;
   const isLinux =
     typeof window !== "undefined" && navigator.userAgent.toLowerCase().includes("linux");
 

@@ -110,9 +110,10 @@ describe("the decision honours the settings", () => {
 });
 
 describe("the catalog drives the groups", () => {
-  it("every kind appears in exactly one group, with a label", () => {
+  it("every active kind appears in exactly one group, with a label", () => {
     const seen = TIER_ORDER.flatMap((tier) => kindsInTier(tier).map((k) => k.kind));
-    expect([...seen].sort()).toEqual([...kinds].sort());
+    expect([...seen].sort()).toEqual(kinds.filter((kind) => !catalogEntry(kind).retired).sort());
+    expect(seen.some((kind) => kind.startsWith("git-"))).toBe(false);
     for (const kind of kinds) expect(catalogEntry(kind).label.length).toBeGreaterThan(0);
     expect(seen.every(isNotificationKind)).toBe(true);
   });

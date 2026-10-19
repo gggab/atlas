@@ -8,7 +8,7 @@
 // horizontal-scrolling problems — there simply isn't width for two code columns
 // beside a gutter.
 //
-// Geometry matches the Git Graph's fullscreen (`git-graph-panel.tsx`), so the
+// Fullscreen geometry keeps the diff comfortably inside the window; the
 // two "expand this into the whole window" surfaces behave identically.
 
 import { useEffect, useState } from "react";

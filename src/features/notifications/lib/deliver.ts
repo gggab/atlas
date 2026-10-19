@@ -27,7 +27,6 @@ import { useNotificationsStore } from "../stores/notifications-store";
 import { promptSignIn } from "@/features/chat/lib/agent-signin";
 
 import { openConfigFile } from "@/features/settings/lib/atlas-config-api";
-import { openGitPanel } from "@/features/git/lib/open-git-panel";
 import { openSettingsSection } from "@/features/settings/lib/open-settings";
 
 import {
@@ -67,7 +66,7 @@ export function openNotificationTarget(t: NotificationTarget): void {
       openSettingsSection(t.section);
       return;
     case "git-panel":
-      void openGitPanel(t.projectId);
+      toast.info("Source Control has been removed. Use your terminal or Git client.");
       return;
     case "config-file":
       void openConfigFile().catch((err) => console.warn("open config.toml failed:", err));

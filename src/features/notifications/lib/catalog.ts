@@ -28,6 +28,8 @@ export type ToastVariant = "default" | "success" | "error";
 export interface CatalogEntry {
   /** What Settings calls this kind in its group. */
   label: string;
+  /** Readable in saved history, with no current producer or settings switch. */
+  retired?: true;
   /** Not switchable: Settings lists it as always on, and the prefs mapping
    *  leaves it at the defaults (no master, tier or kind switch applies). */
   locked?: true;
@@ -310,6 +312,7 @@ export const NOTIFICATION_CATALOG = {
   // A success is only worth saying after a long wait (rules in
   // `outcome-notifier-rules.ts`); a failure always is.
   "git-op-done": {
+    retired: true,
     label: "Git push, pull or fetch finished",
     tier: "outcome",
     source: "app",
@@ -320,6 +323,7 @@ export const NOTIFICATION_CATALOG = {
     groupKey: targetGroupKey,
   },
   "git-op-failed": {
+    retired: true,
     label: "Git push, pull or fetch failed",
     tier: "outcome",
     source: "app",
@@ -332,6 +336,7 @@ export const NOTIFICATION_CATALOG = {
   // App warnings (ATL-386): something degraded that the user can fix. Quiet —
   // no sound, and the OS banner is off in the default warning-tier switches.
   "git-autofetch-failing": {
+    retired: true,
     label: "Auto-fetch keeps failing",
     tier: "warning",
     source: "app",
@@ -342,6 +347,7 @@ export const NOTIFICATION_CATALOG = {
     groupKey: targetGroupKey,
   },
   "git-behind": {
+    retired: true,
     label: "Branch fell behind its remote",
     tier: "warning",
     source: "app",

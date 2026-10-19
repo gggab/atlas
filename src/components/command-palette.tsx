@@ -22,7 +22,6 @@ import {
   ScrollText,
   Gauge,
   Code,
-  GitBranch,
   ArrowLeftToLine,
   ArrowRightToLine,
   Brain,
@@ -60,7 +59,6 @@ export function CommandPalette({
     toggleTabBar,
     toggleZenMode,
     setLeftSection,
-    setRightSection,
     addGroup,
     focusAdjacentGroup,
     closeGroup,
@@ -103,10 +101,6 @@ export function CommandPalette({
   const showLeft = (section: "files" | "knowledge") => {
     if (!useLayoutStore.getState().leftPanel.visible) toggleLeftPanel();
     setLeftSection(section);
-  };
-  const showRight = (section: "changes" | "github" | "git-graph") => {
-    if (!useLayoutStore.getState().rightPanel.visible) toggleRightPanel();
-    setRightSection(section);
   };
 
   const commands = useMemo<Command[]>(
@@ -207,7 +201,7 @@ export function CommandPalette({
       },
       {
         id: "toggle-right",
-        label: "Toggle Source Control Panel",
+        label: "Toggle Remote Execution Panel",
         actionId: "panels.right",
         icon: PanelRight,
         category: "Layout",
@@ -288,21 +282,6 @@ export function CommandPalette({
         category: "View",
         action: () => showLeft("knowledge"),
       },
-      {
-        id: "view-changes",
-        label: "Show Source Control",
-        icon: PanelRight,
-        category: "View",
-        action: () => showRight("changes"),
-      },
-      {
-        id: "view-git-graph",
-        label: "Show Git Graph",
-        icon: GitBranch,
-        category: "View",
-        action: () => showRight("git-graph"),
-      },
-
       // ── App ──
       {
         id: "settings",
@@ -329,7 +308,6 @@ export function CommandPalette({
       toggleTabBar,
       toggleZenMode,
       setLeftSection,
-      setRightSection,
       addGroup,
       focusAdjacentGroup,
       closeGroup,

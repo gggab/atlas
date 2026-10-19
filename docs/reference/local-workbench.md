@@ -14,6 +14,27 @@ when the connected CLI explicitly advertises the ACP steering extension.
 - The gateway extraction orchestrator, jobs and UI entry points are removed. MCP active writes and local event capture remain. No replacement account, paid API or execution engine was introduced.
 - Retained historical sync columns and native source tags support existing records only; no cloud client or native launcher remains.
 
+## Source Control removal
+
+The Source Control module, including Changes, commit history/graph, stashes,
+branch/remote management and its GitHub sidebar, has been removed. Sidebar and
+command-palette entries, the Review layout, Git-specific shortcut presets,
+auto-fetch activation/settings and panel-specific notifications are removed too.
+Use an external Git client or the terminal for repository writes.
+
+The right panel now hosts Remote execution only and starts hidden. Existing
+Source Control layouts close that slot on restore, preserving its width and
+central tabs; saved Remote execution layouts retain their visibility.
+
+Shared Git plumbing remains for explorer decorations, editor blame, chat/standalone
+diffs, project summaries, recorded branch metadata and checkpoints. GitHub search
+and cloning from chat remain available. Legacy notification history and config
+keys stay readable; old Git notification targets explain that the panel was removed.
+Panel-only Git IPC commands, their mocks and the automatic fetch scheduler are
+removed. Shared read-only commands remain; status snapshots no longer load branch
+lists, stashes or in-progress operations. No repository, credential, transcript,
+checkpoint or memory data is deleted.
+
 ## Other features: recommendations, not removals
 
 The [task scheduler](task-scheduler.md) adds profile-local durable reminders and

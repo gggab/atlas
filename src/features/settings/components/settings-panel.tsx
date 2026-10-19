@@ -449,15 +449,6 @@ function GeneralSettings() {
         />
       </SettingRow>
       <SettingRow
-        label="Auto-fetch from remote"
-        description="Quietly run `git fetch` for the open project when it opens, when DeskMate regains focus, and every few minutes, so the Pull badge shows what the remote has. It only updates remote-tracking branches — it never pulls, merges, or touches your files."
-      >
-        <Toggle
-          checked={settings.gitAutoFetch}
-          onChange={(next) => updateSettings({ gitAutoFetch: next })}
-        />
-      </SettingRow>
-      <SettingRow
         label="Enable DeskMate Logs"
         description="Record DeskMate-internal events (sign-in, agent start/finish, browser/file open, etc.) into the Logs tab under the `atlas` source. Default ON so when something goes wrong you can open the Logs tab, filter by `atlas`, and share a timeline. Turn off if the noise bothers you."
       >

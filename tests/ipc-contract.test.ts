@@ -161,14 +161,7 @@ const INVOKE_DYNAMIC = new RegExp(
  * here), that each literal still appears in its file, and that each is
  * registered.
  */
-const DYNAMIC_INVOKE_SITES: Record<string, string[]> = {
-  // `runHunkOp(cmd, …)` → `invoke(cmd, …)`
-  "src/features/git/components/git-manager/changes-view.tsx": [
-    "git_stage_hunk",
-    "git_unstage_hunk",
-    "git_discard_hunk",
-  ],
-};
+const DYNAMIC_INVOKE_SITES: Record<string, string[]> = {};
 
 function frontendFiles(): Array<{ where: string; src: string }> {
   return walk(TS_SRC, [".ts", ".tsx"]).map((file) => ({

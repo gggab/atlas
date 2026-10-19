@@ -31,7 +31,7 @@ export function SkillsAndPacks() {
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* Header — DeskMate logo + title, then underline/bottom-border tab switchers
           (like the API Keys table) for Discover/My Skills and Global/Project.
-          Height matches the Source Control panel header (h-[29px]). */}
+          Compact panel header (h-[29px]). */}
       <div className="flex h-[29px] shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="flex items-center gap-1.5 px-1.5">
           <AtlasIcon size={13} />

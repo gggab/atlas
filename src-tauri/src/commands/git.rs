@@ -1,4 +1,3 @@
-use atlas_git::{GitCommand, GitErrorPayload};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -65,12 +64,6 @@ pub struct GitLogEntry {
     pub committed_at_ms: i64,
     pub parents: Vec<String>,
     pub refs: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct GitBranch {
-    pub name: String,
-    pub is_current: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -197,10 +190,7 @@ async fn git_status_compute(path: &str) -> Result<GitStatus, String> {
     })
 }
 
-/// Synchronous core of `git_log` — extracted as a `pub(crate)` helper
-/// so `git_graph_build` can call it directly inside a `tokio::join!`
-/// without going through the Tauri command boundary (which would be
-/// awkward + needlessly serialize the result twice).
+/// Synchronous core of the read-only history query.
 pub(crate) fn git_log_compute(
     path: &str,
     limit: u32,
@@ -263,22 +253,6 @@ pub(crate) fn git_log_compute(
     Ok(entries)
 }
 
-/// How many commits `git_log_compute` would walk with no limit — the same
-/// scope (`HEAD`, or every ref with `all`). `None` on any failure (empty
-/// repo, unborn HEAD); callers fall back to the rows they loaded.
-pub(crate) fn git_commit_count(path: &str, all: bool) -> Option<usize> {
-    let scope = if all { "--all" } else { "HEAD" };
-    let output = git_read()
-        .args(["rev-list", "--count", scope])
-        .current_dir(path)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&output.stdout).trim().parse().ok()
-}
-
 #[tauri::command]
 pub async fn git_log(
     path: String,
@@ -286,13 +260,7 @@ pub async fn git_log(
     all: Option<bool>,
 ) -> Result<Vec<GitLogEntry>, String> {
     let lim = limit.unwrap_or(50);
-    // Defaults to the checked-out branch, like `git log` itself. Every consumer
-    // of THIS command is branch-scoped: the Source-Control History list sits
-    // under a toolbar naming the current branch and offers reset/revert against
-    // what it shows, and the Review panel pre-selects its newest entry. Under
-    // `--all` both silently reach commits that are not on HEAD. The commit graph
-    // genuinely wants every ref, and asks for it explicitly via
-    // `git_graph_build(all: true)`.
+    // The chat diff commit picker defaults to the checked-out branch.
     let all_flag = all.unwrap_or(false);
     tokio::task::spawn_blocking(move || git_log_compute(&path, lim, all_flag))
         .await
@@ -369,38 +337,6 @@ pub(crate) fn git_refs_compute(path: &str) -> Result<GitRefs, String> {
     })
 }
 
-#[tauri::command]
-pub async fn git_graph_signature(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let head = git_read()
-            .args(["rev-parse", "HEAD"])
-            .current_dir(&path)
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .unwrap_or_default();
-        let refs_out = git_read()
-            .args(["for-each-ref", "--format=%(refname) %(objectname)"])
-            .current_dir(&path)
-            .output()
-            .map_err(|e| e.to_string())?;
-        let refs_text = String::from_utf8_lossy(&refs_out.stdout).to_string();
-        let mut lines: Vec<String> = refs_text
-            .lines()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        lines.sort();
-        let joined = lines.join("\n");
-        // Cheap stable signature — full sha is overkill; we just hash a small djb2.
-        let mut h: u64 = 5381;
-        for b in head.bytes().chain(joined.bytes()) {
-            h = h.wrapping_mul(33) ^ (b as u64);
-        }
-        Ok(format!("{head}-{h:016x}"))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
 /// Compact per-project git summary for the project sidebar: branch, latest
 /// commit subject, dirty flag (green/yellow dot), and working-tree +/- counts.
 /// One command (a few cheap git calls) so the sidebar doesn't fan out several
@@ -473,110 +409,6 @@ pub async fn git_workspace_summary(path: String) -> Result<GitProjectSummary, St
     })
     .await
     .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn git_diff_all(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let output = git_read()
-            .args(["diff", "HEAD"])
-            .current_dir(&path)
-            .output()
-            .map_err(|e| e.to_string())?;
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn git_diff_file(path: String, file: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let output = git_read()
-            .args(["diff", "HEAD", "--", &file])
-            .current_dir(&path)
-            .output()
-            .map_err(|e| e.to_string())?;
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// spawn_blocking join failure → internal payload (never a raw string).
-fn join_err(e: tokio::task::JoinError) -> GitErrorPayload {
-    GitErrorPayload::internal(e.to_string())
-}
-
-#[tauri::command]
-pub async fn git_stage(path: String, files: Vec<String>) -> Result<(), GitErrorPayload> {
-    tokio::task::spawn_blocking(move || {
-        let mut args: Vec<String> = vec!["add".into(), "--".into()];
-        args.extend(files);
-        GitCommand::new_owned(&path, args).run()?;
-        Ok(())
-    })
-    .await
-    .map_err(join_err)?
-}
-
-#[tauri::command]
-pub async fn git_unstage(path: String, files: Vec<String>) -> Result<(), GitErrorPayload> {
-    tokio::task::spawn_blocking(move || {
-        let mut args: Vec<String> = vec!["restore".into(), "--staged".into(), "--".into()];
-        args.extend(files);
-        GitCommand::new_owned(&path, args).run()?;
-        Ok(())
-    })
-    .await
-    .map_err(join_err)?
-}
-
-#[tauri::command]
-pub async fn git_list_branches(path: String) -> Result<Vec<GitBranch>, String> {
-    tokio::task::spawn_blocking(move || {
-        let output = git_read()
-            .args(["branch", "--format=%(refname:short)\x1f%(HEAD)"])
-            .current_dir(&path)
-            .output()
-            .map_err(|e| e.to_string())?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let branches = stdout
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|line| {
-                let parts: Vec<&str> = line.split('\x1f').collect();
-                GitBranch {
-                    name: parts.first().unwrap_or(&"").to_string(),
-                    is_current: parts.get(1).is_some_and(|h| h.trim() == "*"),
-                }
-            })
-            .collect();
-        Ok(branches)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn git_checkout(path: String, branch: String) -> Result<(), GitErrorPayload> {
-    tokio::task::spawn_blocking(move || {
-        GitCommand::new(&path, &["checkout", &branch]).run()?;
-        Ok(())
-    })
-    .await
-    .map_err(join_err)?
-}
-
-#[tauri::command]
-pub async fn git_create_branch(path: String, name: String) -> Result<(), GitErrorPayload> {
-    tokio::task::spawn_blocking(move || {
-        GitCommand::new(&path, &["checkout", "-b", &name]).run()?;
-        Ok(())
-    })
-    .await
-    .map_err(join_err)?
 }
 
 /// One line of blame output, in final-file order (`line` is 1-based).
@@ -694,10 +526,7 @@ mod tests {
         assert!(status.success(), "git {args:?} failed");
     }
 
-    /// `git_log` is branch-scoped unless a caller opts in. The Source-Control
-    /// History list and the Review panel both act on what this returns —
-    /// reset/revert/cherry-pick and the pre-selected review target — so a
-    /// commit that is not on HEAD must not appear by default.
+    /// The chat diff picker defaults to commits reachable from HEAD.
     #[tokio::test]
     async fn git_log_defaults_to_the_checked_out_branch() {
         let nanos = SystemTime::now()

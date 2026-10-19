@@ -65,12 +65,12 @@ describe("mock recording", () => {
     scenarios["recording-test"] = {
       name: "recording-test",
       description: "Recording test",
-      rawCommands: { custom_test: () => "raw", git_graph_signature: () => "raw" },
-      commands: { git_graph_signature: () => "typed" },
+      rawCommands: { custom_test: () => "raw", read_repo_readme: () => "raw" },
+      commands: { read_repo_readme: () => "typed" },
     };
     const backend = startMockBackend("recording-test");
     expect(backend.answer("custom_test", {})).toBe("raw");
-    expect(backend.answer("git_graph_signature", {})).toBe("typed");
+    expect(backend.answer("read_repo_readme", {})).toBe("typed");
     expect(mountBadge).toHaveBeenCalled();
   });
 });

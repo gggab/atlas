@@ -236,9 +236,7 @@ function maybeEnsureAtlasGitignore(path: string, settings: AppSettings): void {
  * switch + boot hydration. Each loader renders its own loading state, so this
  * runs on Tauri's runtime without blocking the JS main thread.
  *
- * `loadLog` is intentionally NOT fired — the git-store's `log` field is unused
- * (git-graph-panel has its own useQuery) and `git log --all` is the slowest
- * of the bunch.
+ * The recent commit picker loads its log only when a diff view opens.
  */
 export async function loadProjectStores(path: string): Promise<void> {
   // Panel-data loaders run UNAWAITED: each renders its own loading state, and

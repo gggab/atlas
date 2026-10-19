@@ -1,5 +1,4 @@
-// Unified-diff parser shared by the changes panel, the source-control
-// manager, and the history commit view. Extracted from changes-panel.tsx.
+// Unified-diff parser shared by chat code blocks and standalone diff views.
 
 export interface DiffFile {
   path: string;

@@ -1,6 +1,6 @@
 /**
  * Editor color theme model — the single source of truth for every code surface
- * in Atlas (the CodeMirror editor, the diff viewer, and the source-control diff
+ * in Atlas (the CodeMirror editor, the diff viewer, and the chat diff
  * views). One flat token object drives BOTH the CodeMirror runtime theme
  * (see build-cm-theme.ts) and the CSS custom properties consumed by the
  * `.cm-*` / `.diff-syntax .hljs-*` stylesheets (see apply-editor-theme.ts).

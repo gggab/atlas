@@ -55,9 +55,9 @@ interface LayoutState {
   rightPanel: {
     visible: boolean;
     width: number;
-    activeSection: "changes" | "github" | "git-graph" | "remote-execution";
-    /** Source control and remote execution share the resizable right slot. */
-    mode: "source-control" | "remote-execution";
+    activeSection: "remote-execution";
+    /** Remote execution owns the resizable right slot. */
+    mode: "remote-execution";
   };
   /** Per-app KB tab layout — survives tab switches (each KB tab gets the
    *  same panel layout, matching the global-left/right model). */
@@ -119,11 +119,10 @@ interface LayoutState {
 interface LayoutActions {
   actions: {
     toggleLeftPanel: () => void;
-    /** ⌘⇧B — toggle source control, or switch to it from remote execution. */
+    /** Toggle remote execution. */
     toggleRightPanel: () => void;
 
-    /** Shared implementation: a key that owns a mode either closes the slot
-     *  (it already holds that mode) or claims it. */
+    /** Compatibility action for callers that name the right-panel mode. */
     toggleRightPanelMode: (mode: LayoutState["rightPanel"]["mode"]) => void;
     toggleChatSidebar: () => void;
     toggleKnowledgeSidebar: () => void;
@@ -137,8 +136,7 @@ interface LayoutActions {
     setTimelineSidebarWidth: (width: number) => void;
     setLeftSection: (section: LayoutState["leftPanel"]["activeSection"]) => void;
     setRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
-    /** Make the right panel visible AND switch it to `section` (e.g. open the
-     *  Source Control pane from a notification). */
+    /** Reveal remote execution without toggling an already visible panel. */
     revealRightSection: (section: LayoutState["rightPanel"]["activeSection"]) => void;
     addTab: (tab: Tab, groupId?: string) => void;
     closeTab: (id: string) => void;
@@ -188,10 +186,10 @@ const initialState: LayoutState = {
     activeSection: "files",
   },
   rightPanel: {
-    visible: true,
+    visible: false,
     width: 280,
-    activeSection: "changes",
-    mode: "source-control",
+    activeSection: "remote-execution",
+    mode: "remote-execution",
   },
   knowledgePanel: {
     showSidebar: true,
@@ -412,31 +410,13 @@ export const useLayoutStore = createSelectors(
             set((s) => {
               s.leftPanel.visible = !s.leftPanel.visible;
             }),
-          toggleRightPanelMode: (mode) =>
+          toggleRightPanelMode: () =>
             set((s) => {
-              // Already showing this mode → the key that opened it closes it.
-              // Showing the other mode → swap the occupant, stay open. Closed →
-              // open on this mode.
-              if (s.rightPanel.visible && s.rightPanel.mode === mode) {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = mode;
-              if (mode === "remote-execution") s.rightPanel.activeSection = "remote-execution";
-              else if (s.rightPanel.activeSection === "remote-execution")
-                s.rightPanel.activeSection = "changes";
+              s.rightPanel.visible = !s.rightPanel.visible;
             }),
           toggleRightPanel: () =>
             set((s) => {
-              if (s.rightPanel.visible && s.rightPanel.mode === "source-control") {
-                s.rightPanel.visible = false;
-                return;
-              }
-              s.rightPanel.visible = true;
-              s.rightPanel.mode = "source-control";
-              if (s.rightPanel.activeSection === "remote-execution")
-                s.rightPanel.activeSection = "changes";
+              s.rightPanel.visible = !s.rightPanel.visible;
             }),
 
           toggleChatSidebar: () =>
@@ -486,14 +466,12 @@ export const useLayoutStore = createSelectors(
           setRightSection: (section) =>
             set((s) => {
               s.rightPanel.activeSection = section;
-              s.rightPanel.mode =
-                section === "remote-execution" ? "remote-execution" : "source-control";
+              s.rightPanel.mode = "remote-execution";
             }),
           revealRightSection: (section) =>
             set((s) => {
               s.rightPanel.visible = true;
-              s.rightPanel.mode =
-                section === "remote-execution" ? "remote-execution" : "source-control";
+              s.rightPanel.mode = "remote-execution";
               s.rightPanel.activeSection = section;
             }),
           addTab: (tab, groupId) =>
@@ -823,12 +801,6 @@ export const useLayoutStore = createSelectors(
               s.leftPanel.visible = !!template.panels.left;
               s.rightPanel.visible = !!template.panels.right;
               if (template.leftSection) s.leftPanel.activeSection = template.leftSection;
-              // A template naming a section means it wants source control in
-              // the slot; leaving chat there would silently ignore the request.
-              if (template.rightSection) {
-                s.rightPanel.activeSection = template.rightSection;
-                s.rightPanel.mode = "source-control";
-              }
             }),
           setTabDirty: (id, dirty) =>
             set((s) => {
@@ -992,15 +964,13 @@ export const useLayoutStore = createSelectors(
           const p = (persisted ?? {}) as Partial<LayoutState>;
           const leftPanel = { ...current.leftPanel, ...p.leftPanel };
           const rightPanel = { ...current.rightPanel, ...p.rightPanel };
-          // Coerce section ids that no longer belong to this panel (e.g. a
-          // pre-move `state.json` with "git-graph" on the left or "analysis"
-          // on the right) back to a valid default so the panel isn't blank.
-          const LEFT = ["files", "knowledge"];
-          const RIGHT = ["changes", "github", "git-graph", "remote-execution"];
-          if (!LEFT.includes(leftPanel.activeSection)) leftPanel.activeSection = "files";
-          if (!RIGHT.includes(rightPanel.activeSection)) rightPanel.activeSection = "changes";
-          rightPanel.mode =
-            rightPanel.activeSection === "remote-execution" ? "remote-execution" : "source-control";
+          // Old Source Control preferences must not open an unrelated SSH panel.
+          if (!["files", "knowledge"].includes(leftPanel.activeSection)) {
+            leftPanel.activeSection = "files";
+          }
+          if (rightPanel.activeSection !== "remote-execution") rightPanel.visible = false;
+          rightPanel.activeSection = "remote-execution";
+          rightPanel.mode = "remote-execution";
           // Tabs whose feature has since been removed (pomodoro, model-chat,
           // research…) still sit in persisted state.json; restoring them
           // yields a permanent placeholder tab. Drop them, and repoint

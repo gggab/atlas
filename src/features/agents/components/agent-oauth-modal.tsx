@@ -443,7 +443,7 @@ function AgentOAuthModal({
     phase.kind === "loading" ||
     phase.kind === "terminal" ||
     ((phase.kind === "running" || phase.kind === "done") && phase.docked);
-  // Centred on the content, not the window: with source control or the
+  // Centred on the content, not the window: with a side panel or the
   // project switcher open, `left-1/2` sat the dock half a panel off-centre.
   // `left-1/2` stays as the fallback for a window with no centre panel.
   const centerX = useCenterPanelCenterX();

@@ -48,9 +48,8 @@ const VSCODE: PresetBindings = {
   // terminal IS the bottom panel, so both land on it.
   "panels.terminal": ["ctrl+`", "cmd+j"],
   "tabs.newTerminal": ["ctrl+shift+`"],
-  // Atlas's right panel is Source Control: ⌥⌘B is VS Code's secondary side
-  // bar, ⌃⇧G its Source Control view.
-  "panels.right": ["cmd+alt+b", "ctrl+shift+g"],
+  // VS Code secondary side bar.
+  "panels.right": ["cmd+alt+b"],
   "panels.agentSidebar": ["cmd+ctrl+i"],
   "tabs.prev": ["cmd+alt+left", "cmd+shift+["],
   "tabs.next": ["cmd+alt+right", "cmd+shift+]"],
@@ -87,9 +86,8 @@ export const PRESETS: readonly Preset[] = [
       "nav.commandPalette": ["cmd+shift+p"],
       "panels.terminal": ["ctrl+`", "cmd+j"],
       "tabs.newTerminal": ["ctrl+shift+`"],
-      // Zed's right dock is ⌘R and its git panel ⌃⇧G; Atlas's right panel is
-      // Source Control, so it takes both.
-      "panels.right": ["ctrl+shift+g", "cmd+r"],
+      // Zed right dock.
+      "panels.right": ["cmd+r"],
       "panels.agentSidebar": ["cmd+shift+/"],
       // Zed's nearest to zen: hide all docks.
       "panels.zen": ["cmd+alt+y"],
@@ -107,11 +105,9 @@ export const PRESETS: readonly Preset[] = [
       "nav.filePicker": ["cmd+shift+o"],
       "panels.left": ["cmd+1"],
       "panels.terminal": ["alt+f12"],
-      // ⌘0 Commit, ⌘9 Git — both open Source Control in Atlas.
-      "panels.right": ["cmd+0", "cmd+9"],
       // Hide All Tool Windows.
       "panels.zen": ["cmd+shift+f12"],
-      // JetBrains zooms the whole IDE on ⌃⌥=/-/0, and ⌘0/⌘9 are taken above.
+      // JetBrains zooms the whole IDE on ⌃⌥=/-/0.
       "view.zoomIn": ["ctrl+alt+="],
       "view.zoomOut": ["ctrl+alt+-"],
       "view.zoomReset": ["ctrl+alt+0"],

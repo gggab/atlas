@@ -25,7 +25,7 @@ export type HunkAction = "stage" | "unstage" | "discard";
 /**
  * Virtualized unified-diff renderer. Takes raw `git diff`/`git show` text and
  * draws per-file collapsible cards with red/green hunks. Shared by the
- * source-control manager's Changes view and the History commit view.
+ * chat diff modal and standalone diff tab.
  *
  * With `filters`, it shows the changed-file filter header (search / sort /
  * language) + stats, matching the old Changes panel.
@@ -223,7 +223,7 @@ export function DiffView({
               const row = rows[vr.index];
               // No fixed `height` — rows are MEASURED (`measureElement` below),
               // so a file-header/content line that renders taller than its
-              // estimate never overlaps the next row (the source-control diff
+              // estimate never overlaps the next row (the chat diff
               // overlap bug). `estimateSize` is just the initial guess.
               const base = {
                 position: "absolute" as const,

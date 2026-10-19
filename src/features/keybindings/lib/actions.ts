@@ -165,7 +165,7 @@ export const ACTIONS = [
   },
   {
     id: "panels.right",
-    title: "Toggle right panel (Source Control)",
+    title: "Toggle right panel (Remote execution)",
     category: "Panels",
     when: "global",
     defaults: ["cmd+shift+b"],

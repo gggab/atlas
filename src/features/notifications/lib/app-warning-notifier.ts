@@ -1,15 +1,5 @@
-/**
- * App warnings on the shared pipeline: auto-fetch that keeps failing, a branch
- * that fell behind its remote, a `config.toml` that does not parse, and an
- * agent update that failed. `startAppWarnings()` (from App.tsx) subscribes to
- * the events; `notifyAgentUpdateFailed` is called by the update flow. The
- * state machines live in `app-warning-rules.ts`; this file holds their state
- * and performs. Nothing here throws.
- */
-import { onAutoFetch } from "@/features/git/lib/auto-fetch-events";
-import { useGitStore } from "@/features/git/stores/git-store";
+/** App warnings for config errors and Agent update failures. */
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
-import { useProjectStore } from "@/features/projects/stores/project-store";
 import {
   getConfigInfo,
   onConfigChanged,
@@ -20,20 +10,11 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { isWindowFocused, lastInteraction } from "@/lib/window-focus";
 import {
   decideAgentUpdateFailed,
-  decideAutoFetchFailing,
-  decideBehind,
   decideConfigError,
   configErrorDedupeKey,
-  evaluateAutoFetch,
-  evaluateBehind,
   evaluateConfigError,
-  INITIAL_AUTOFETCH_STATE,
-  INITIAL_BEHIND_STATE,
   INITIAL_CONFIG_STATE,
-  type AutoFetchWarnState,
-  type BehindWarnState,
   type ConfigWarnState,
-  type ProjectRef,
 } from "./app-warning-rules";
 import { computeAway, type NotificationEnv } from "./decide";
 import { deliverNotification } from "./deliver";
@@ -59,98 +40,6 @@ function settingsShows(section: string): boolean {
   const layout = useLayoutStore.getState();
   const shown = [layout.activeTabId, ...Object.values(layout.activeByGroup)];
   return shown.some((id) => id && layout.tabs.find((t) => t.id === id)?.type === "settings");
-}
-
-function projectFor(path: string): (ProjectRef & { path: string }) | null {
-  const ws = useProjectStore.getState();
-  const project = ws.projects.find((p) => p.path === path);
-  if (!project) return null;
-  return {
-    path,
-    projectId: project.id,
-    projectName: project.name,
-    projectActive: project.id === ws.activeProjectId,
-  };
-}
-
-function gitPanelShowing(p: ProjectRef): boolean {
-  const rp = useLayoutStore.getState().rightPanel;
-  return (
-    p.projectActive && rp.visible && rp.mode === "source-control" && rp.activeSection === "changes"
-  );
-}
-
-// --- Git ------------------------------------------------------------------
-
-const autoFetchState = new Map<string, AutoFetchWarnState>();
-const behindState = new Map<string, BehindWarnState>();
-
-function onAutoFetchStatus(status: {
-  project: string;
-  lastError: string | null;
-  behind?: number | null;
-  remoteHead?: string | null;
-}): void {
-  try {
-    const p = projectFor(status.project);
-    if (!p) return;
-
-    const fetched = evaluateAutoFetch(
-      autoFetchState.get(p.path) ?? INITIAL_AUTOFETCH_STATE,
-      status.lastError,
-    );
-    autoFetchState.set(p.path, fetched.state);
-    if (fetched.warning) {
-      const d = decideAutoFetchFailing(
-        p,
-        fetched.warning,
-        envFor(gitPanelShowing(p), p.projectActive),
-        prefs(),
-      );
-      if (d) deliverNotification(d);
-    }
-    if (fetched.resolved !== null) {
-      clearResolved({
-        kind: "git-autofetch-failing",
-        target: { type: "git-panel", projectId: p.projectId, projectName: p.projectName },
-        dedupeKey: `autofetch:${p.projectId}:${fetched.resolved}`,
-        markRead: [{ kind: "git-autofetch-failing" }],
-      });
-    }
-
-    // Only a successful automatic fetch carries a behind-count.
-    if (typeof status.behind === "number" && status.remoteHead) {
-      const behind = evaluateBehind(
-        behindState.get(p.path) ?? INITIAL_BEHIND_STATE,
-        status.behind,
-        status.remoteHead,
-      );
-      behindState.set(p.path, behind.state);
-      if (behind.warning) {
-        const git = useGitStore.getState();
-        const branch = git.repoPath === p.path ? git.branch : null;
-        const d = decideBehind(
-          p,
-          branch,
-          behind.warning,
-          envFor(gitPanelShowing(p), p.projectActive),
-          prefs(),
-        );
-        if (d) deliverNotification(d);
-      }
-      if (behind.resolved !== null) {
-        // Caught up: the "behind its remote" warning no longer applies.
-        clearResolved({
-          kind: "git-behind",
-          target: { type: "git-panel", projectId: p.projectId, projectName: p.projectName },
-          dedupeKey: `behind:${p.projectId}:${behind.resolved}`,
-          markRead: [{ kind: "git-behind", projectId: p.projectId }],
-        });
-      }
-    }
-  } catch (err) {
-    console.warn("auto-fetch warning failed:", err);
-  }
 }
 
 // --- config.toml ----------------------------------------------------------
@@ -209,7 +98,6 @@ export function startAppWarnings(): () => void {
   if (started) return () => {};
   started = true;
   const offs = [
-    onAutoFetch(onAutoFetchStatus),
     onConfigError(noteConfig),
     // A valid reload re-arms the config warning.
     onConfigChanged(() => noteConfig(null)),

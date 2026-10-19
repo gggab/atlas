@@ -16,7 +16,6 @@ import { chatMarkdown } from "./chat-markdown";
 import { chatTools } from "./chat-tools";
 
 import { designSystem } from "./design-system";
-import { gitConflict } from "./git-conflict";
 import { keymapFirstRun } from "./keymap-first-run";
 import { knowledge } from "./knowledge";
 import { memorySetup } from "./memory-setup";
@@ -52,7 +51,6 @@ const all: Scenario[] = [
 
   chatLongPrompt,
   chatMarkdown,
-  gitConflict,
   knowledge,
 
   memorySetup,

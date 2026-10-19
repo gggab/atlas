@@ -22,7 +22,6 @@ import {
   Trash2,
   Pencil,
   Copy,
-  GitBranch,
   TerminalSquare,
   Server,
   HelpCircle,
@@ -654,11 +653,7 @@ export function ProjectSidebar() {
   const sidebarPinned = useProjectStore.use.sidebarPinned();
   const { addProject, toggleSidebarPinned } = useProjectStore.use.actions();
   const { addTab, toggleRightPanelMode } = useLayoutStore.use.actions();
-  // Which occupant the right slot shows, or null when closed — drives the
-  // active state of the Remote execution / Source control items.
-  const rightMode = useLayoutStore((s) => (s.rightPanel.visible ? s.rightPanel.mode : null));
-  // Source control needs a project (app-layout hides the slot without one), so
-  // the item says so instead of toggling a panel that never appears.
+  const rightPanelVisible = useLayoutStore((s) => s.rightPanel.visible);
   const hasProject = useAppStore((s) => !!s.currentProject);
   const newTabHint = useActionShortcut("nav.newTabPalette")?.label;
   // Mirrors `panels.knowledge` in App.tsx: one Knowledge tab per split column,
@@ -1050,17 +1045,9 @@ export function ProjectSidebar() {
                   }
                 />
                 <NavItem
-                  icon={<GitBranch size={14} />}
-                  label="Source control"
-                  active={rightMode === "source-control"}
-                  disabled={!hasProject}
-                  title={hasProject ? undefined : "Open a project to see its source control"}
-                  onClick={() => toggleRightPanelMode("source-control")}
-                />
-                <NavItem
                   icon={<Server size={14} />}
                   label="Remote execution"
-                  active={rightMode === "remote-execution"}
+                  active={rightPanelVisible}
                   onClick={() => toggleRightPanelMode("remote-execution")}
                 />
                 <NavItem icon={<BrainCircuit size={14} />} label="Memory" onClick={openMemory} />

@@ -48,7 +48,7 @@ export function AddProjectMenu() {
         />
       </Hint>
       <DropdownMenu.Portal>
-        {/* Compact menu primitive — mirrors the source-control "filter files"
+        {/* Compact menu primitive — keeps the existing project menu
          *  dropdown: 26px rows, px-3 on both sides, border-b search header. */}
         <DropdownMenu.Positioner className="z-popover" align="end" sideOffset={4}>
           <DropdownMenu.Popup className="w-[280px] max-h-[360px] rounded-lg border border-[var(--border)] bg-popover shadow-xl text-[var(--secondary-foreground)] flex flex-col overflow-hidden">

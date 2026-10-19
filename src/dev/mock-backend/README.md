@@ -13,8 +13,8 @@ wiring point — every fixture file's handlers are spread into it.
 
 ```
 localhost:1420/                     # the rich default scenario
-localhost:1420/?scenario=git-conflict
-localhost:1420/?scenario=git-conflict&record=1
+localhost:1420/?scenario=ssh
+localhost:1420/?scenario=ssh&record=1
 ```
 
 `install.ts` also exports `installMockBackend(scenario?)` and

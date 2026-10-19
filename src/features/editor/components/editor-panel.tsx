@@ -165,7 +165,6 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
         const git = useGitStore.getState();
         if (git.repoPath) {
           void git.actions.refreshStatusNow(git.repoPath);
-          void git.actions.loadDiff();
         }
       });
       // Repaint this editor's diff gutter against the just-saved content.

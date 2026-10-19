@@ -53,15 +53,14 @@ Each command starts independently: combine `cd` and the command in one call when
 needed. Default timeout is 300 seconds, configurable from 1 to 86400 seconds. The
 remote execution view displays a continuous transcript in command start order,
 with a server prompt, streamed output and completion status for each command.
-Open **Remote execution** from the sidebar or the right panel's tabs. It shares
-the resizable right panel with Source Control, so the central Agent conversation
-stays visible. Approval opens this panel without changing the central tab. SSH
+Open **Remote execution** from the sidebar or the right-panel toggle. It owns
+the resizable right panel, so the central Agent conversation stays visible. Approval opens this panel without changing the central tab. SSH
 output remains accessible with no project open. Connection tabs separate each SSH
 handle and show its server and Agent session; **All output** combines them. New
 connections add tabs without switching the user's selection. Disconnected tabs
 remain available while they have history. Reconnecting creates a new tab if DeskMate
 creates a new SSH handle. The selected tab is remembered while the app stays open,
-including when switching to Source Control and back.
+including when hiding and reopening the right panel.
 It follows new output at the bottom and preserves the reading position when
 scrolling up; **Latest output** resumes following. Stopping, disconnecting and
 revoking access remain available. Output is capped at 1 MiB per job;

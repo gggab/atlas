@@ -134,7 +134,7 @@ export const baseHandlers: MockHandlers = {
 
   // ── git ─────────────────────────────────────────────────────────────────
   // A dirty working tree with a branch list, a stash stack, a commit graph and
-  // real per-file diffs. `git-conflict` overrides the status half of this.
+  // real per-file diffs for chat and editor previews.
   ...gitHandlers,
 
   // ── agents ──────────────────────────────────────────────────────────────

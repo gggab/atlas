@@ -28,29 +28,42 @@ it("reveals remote output without replacing the central agent tab, including rep
   expect(state.activeByGroup).toEqual(baseline.activeByGroup);
 });
 
-it("switches between source control and remote output and hides/reopens the current mode", () => {
-  const { toggleRightPanel, toggleRightPanelMode, setRightSection, revealRightSection } =
+it("toggles only remote output and reveals it without replacing agent tabs", () => {
+  const { toggleRightPanel, toggleRightPanelMode, revealRightSection } =
     useLayoutStore.getState().actions;
   openRemoteExecution();
-  toggleRightPanelMode("remote-execution");
+  toggleRightPanel();
   expect(useLayoutStore.getState().rightPanel.visible).toBe(false);
-  toggleRightPanelMode("remote-execution");
-  expect(useLayoutStore.getState().rightPanel.visible).toBe(true);
   toggleRightPanel();
   expect(useLayoutStore.getState().rightPanel).toMatchObject({
     visible: true,
-    mode: "source-control",
-    activeSection: "changes",
+    mode: "remote-execution",
+    activeSection: "remote-execution",
   });
-  setRightSection("remote-execution");
-  expect(useLayoutStore.getState().rightPanel.mode).toBe("remote-execution");
-  revealRightSection("git-graph");
-  expect(useLayoutStore.getState().rightPanel).toMatchObject({
-    visible: true,
-    mode: "source-control",
-    activeSection: "git-graph",
-  });
+  toggleRightPanelMode("remote-execution");
+  expect(useLayoutStore.getState().rightPanel.visible).toBe(false);
+  revealRightSection("remote-execution");
+  expect(useLayoutStore.getState().rightPanel.visible).toBe(true);
+  expect(useLayoutStore.getState().tabs).toEqual(baseline.tabs);
 });
+
+it.each(["changes", "git-graph", "github"])(
+  "closes the removed %s panel on hydration and preserves its width and tabs",
+  (activeSection) => {
+    const merge = useLayoutStore.persist.getOptions().merge!;
+    const state = merge(
+      { rightPanel: { visible: true, width: 410, activeSection, mode: "source-control" } },
+      baseline,
+    );
+    expect(state.rightPanel).toEqual({
+      visible: false,
+      width: 410,
+      activeSection: "remote-execution",
+      mode: "remote-execution",
+    });
+    expect(state.tabs).toEqual(baseline.tabs);
+  },
+);
 
 it("keeps the right-panel selection and drops obsolete remote terminal tabs on hydration", () => {
   const merge = useLayoutStore.persist.getOptions().merge!;
@@ -73,6 +86,16 @@ it("keeps the right-panel selection and drops obsolete remote terminal tabs on h
   expect(state.tabs).toEqual(baseline.tabs);
   expect(state.activeTabId).toBe(baseline.tabs[0].id);
   expect(state.rightPanel.mode).toBe("remote-execution");
+});
+
+it.each([true, false])("preserves saved remote-output visibility (%s)", (visible) => {
+  const merge = useLayoutStore.persist.getOptions().merge!;
+  const state = merge({ rightPanel: { ...baseline.rightPanel, visible, width: 360 } }, baseline);
+  expect(state.rightPanel).toMatchObject({
+    visible,
+    width: 360,
+    activeSection: "remote-execution",
+  });
 });
 
 it("does not restore obsolete remote tabs as local terminals from a project's saved view", async () => {

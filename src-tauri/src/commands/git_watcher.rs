@@ -1,8 +1,7 @@
 //! Filesystem watcher for the project's `.git/` metadata. Emits
 //! `atlas:git-changed` whenever a commit, checkout, branch
 //! create/delete, fetch, or HEAD move happens. The frontend git-store
-//! and git-graph-panel listen for it and refresh — no more 3-second
-//! polling.
+//! listens for it to refresh explorer decorations and chat diff history.
 //!
 //! We watch four things specifically (NOT all of `.git/`):
 //!   - `.git/HEAD`          — checkout / commit moves the symbolic ref
@@ -12,7 +11,7 @@
 //!                            here as a loose ref file
 //!   - `.git/index`         — `git add` / `git reset` (stage / unstage)
 //!                            — changes the working-tree status the
-//!                            Changes panel renders
+//!                            file explorer renders
 //!
 //! Watching all of `.git/` would surface every blob write inside
 //! `.git/objects/…` during `git add` / `git commit` — huge noise for

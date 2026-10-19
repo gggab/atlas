@@ -61,7 +61,7 @@ export function kindsInTier(
   tier: NotificationTier,
 ): { kind: NotificationKind; entry: CatalogEntry }[] {
   return (Object.entries(NOTIFICATION_CATALOG) as [NotificationKind, CatalogEntry][])
-    .filter(([, entry]) => entry.tier === tier)
+    .filter(([, entry]) => entry.tier === tier && !entry.retired)
     .map(([kind, entry]) => ({ kind, entry }));
 }
 

@@ -2,7 +2,7 @@
  * The Timeline's left nav — the session list drawn as a commit graph.
  *
  * This is deliberately the *same* renderer idea as the Git commit graph
- * (`features/git/components/commit-node.tsx`), down to the path maths: lanes at
+ * down to the path maths: lanes at
  * fixed x, one `<svg>` per row, every segment terminating at `y = 0`,
  * a row's dot or its full height so adjacent rows butt together seamlessly, and a lane
  * change drawn as a cubic whose two control points sit on the segment's
@@ -51,7 +51,7 @@ interface Props {
 /** Fold a run of identical imported titles at this length or above. */
 const FOLD_AT = 3;
 
-// ── Graph geometry (mirrors `lib/git-graph.ts`) ──────────────────────────────
+// ── Graph geometry ──────────────────────────────
 
 /**
  * Row heights. Fixed per row *kind*, which is what lets the list virtualize

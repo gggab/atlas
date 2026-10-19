@@ -13,6 +13,9 @@ empty profile) to customise. Only one profile is active at a time.
 The welcome screen's **Open Folder** hint follows the active `workspace.add`
 binding and disappears when that action is unbound.
 
+The `panels.right` action now toggles Remote execution. Git view shortcuts in
+built-in presets are removed; explicit user overrides remain intact.
+
 ## Presets and the first-run question
 
 A profile can be **based on** another editor's keys: `vscode`, `cursor`,
