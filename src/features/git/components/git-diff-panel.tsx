@@ -68,15 +68,13 @@ function sideLen(side: DiffSide | null): number {
 const TREE_LAYOUT_ID = "git-diff-tree";
 
 interface GitDiffPanelProps {
-  /** Falls back to the active repo when opened as a standalone module. */
+  /** Falls back to the active project repository. */
   repoPath?: string;
-  /** Empty when opened as a module — the tree is shown and the pane prompts. */
+  /** Selected file in the host viewer. */
   file?: string;
   staged?: boolean;
   /** When set, the diff for this file at a specific commit (via `git show`). */
   commit?: string | null;
-  /** Hide the tree's commit/branch picker — see `ChangedFilesTree.hidePicker`. */
-  hidePicker?: boolean;
   /** Restrict the tree to these repo-relative paths — see
    *  `ChangedFilesTree.only`. */
   only?: string[];
@@ -90,9 +88,8 @@ interface GitDiffPanelProps {
    * computed from these strings instead of from the repository.
    */
   textSources?: Record<string, { old: string; new: string }>;
-  /** Handle tree clicks instead of opening the Git Diff module tab — see
-   *  `ChangedFilesTree.onSelect`. */
-  onSelectFile?: (path: string) => void;
+  /** Select a file in the host viewer. */
+  onSelectFile: (path: string) => void;
   /** Fired after "Open in editor" — a modal host closes itself here, or the
    *  editor tab lands invisibly behind it. */
   onOpenInEditor?: () => void;
@@ -298,7 +295,6 @@ export function GitDiffPanel({
   file = "",
   staged = false,
   commit = null,
-  hidePicker = false,
   only,
   textSources,
   onSelectFile,
@@ -312,7 +308,7 @@ export function GitDiffPanel({
   const blockCursorRef = useRef(0);
   const lang = getLanguage(file);
 
-  // Collapsible left tree (changed files + commit picker).
+  // Collapsible changed-files tree.
   const treePanelRef = usePanelRef();
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   // v4 replaced `autoSaveId`; same storage id, so saved tree widths carry over.
@@ -472,7 +468,6 @@ export function GitDiffPanel({
           staged={staged}
           currentFile={file}
           commit={commit}
-          hidePicker={hidePicker}
           only={only}
           onSelect={onSelectFile}
         />
@@ -495,7 +490,7 @@ export function GitDiffPanel({
               </HintItem>
               <FileCode2 size={12} className="shrink-0 text-[var(--muted-foreground)]" />
               <span className="truncate font-mono text-xs text-[var(--secondary-foreground)]">
-                {file || "Git Diff"}
+                {file || "Changes"}
               </span>
               {staged && (
                 <span className="shrink-0 rounded bg-[var(--card)] px-1.5 py-px text-3xs uppercase tracking-wide text-[var(--muted-foreground)]">

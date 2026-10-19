@@ -10,14 +10,6 @@ export interface GitFileStatus {
   staged: boolean;
 }
 
-export interface GitLogEntry {
-  hash: string;
-  short_hash: string;
-  message: string;
-  author: string;
-  date: string;
-}
-
 /** Wire shape of the coalesced read-only repository status. */
 export interface GitSnapshotWire {
   isRepo: boolean;
@@ -60,13 +52,12 @@ function ensureGitStatusFreshListener(): void {
     });
   });
 
-  // External Git tools still update decorations and the diff commit picker.
+  // External Git tools still update file decorations.
   void listen<{ project: string }>("atlas:git-changed", (e) => {
     const current = useGitStore.getState().repoPath;
     if (!current || current !== e.payload.project) return;
     const actions = useGitStore.getState().actions;
     void actions.refresh(current).catch(() => {});
-    void actions.loadLog(current).catch(() => {});
   });
 
   let projectDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -86,7 +77,6 @@ function ensureGitStatusFreshListener(): void {
 }
 
 interface GitState {
-  log: GitLogEntry[];
   isRepo: boolean;
   branch: string;
   files: GitFileStatus[];
@@ -98,7 +88,6 @@ interface GitState {
 
 interface GitActions {
   actions: {
-    loadLog: (path: string) => Promise<void>;
     loadStatus: (path: string) => Promise<void>;
     refresh: (path?: string) => Promise<void>;
     refreshStatusNow: (path?: string) => Promise<void>;
@@ -108,7 +97,6 @@ interface GitActions {
 export const useGitStore = createSelectors(
   create<GitState & GitActions>()(
     immer((set, get) => ({
-      log: [],
       isRepo: false,
       branch: "",
       files: [],
@@ -117,16 +105,6 @@ export const useGitStore = createSelectors(
       loading: false,
       repoPath: null,
       actions: {
-        loadLog: async (path) => {
-          try {
-            const entries = await invoke<GitLogEntry[]>("git_log", { path, limit: 100 });
-            set((s) => {
-              s.log = entries;
-            });
-          } catch {
-            /* not a repo */
-          }
-        },
         loadStatus: async (path) => {
           ensureGitStatusFreshListener();
           set((s) => {

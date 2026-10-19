@@ -487,13 +487,12 @@ export const useLayoutStore = createSelectors(
                 }
               }
               // chat: each session is its own tab. File-backed viewers (editor /
-              // diff / media / svg / pdf / notebook / unsupported) are one-per-FILE (deduped
+              // media / svg / pdf / notebook / unsupported) are one-per-FILE (deduped
               // by id, which is `${type}:${path}`) so opening a different file
               // always gets its own tab. Everything else is a singleton PER COLUMN
               // (focus the existing instance in the target column, else open one).
               const allowMultiple =
                 tab.type === "editor" ||
-                tab.type === "diff" ||
                 tab.type === "chat" ||
                 tab.type === "media" ||
                 tab.type === "svg" ||

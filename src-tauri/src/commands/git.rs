@@ -51,21 +51,6 @@ pub struct GitFileStatus {
     pub staged: bool,
 }
 
-#[derive(Debug, Serialize)]
-pub struct GitLogEntry {
-    pub hash: String,
-    pub short_hash: String,
-    pub message: String,
-    pub author: String,
-    pub email: String,
-    pub date: String,
-    /// Committer time as unix milliseconds (0 if unparsable). Added for the
-    /// memory timeline; `date` stays the relative string the git-graph uses.
-    pub committed_at_ms: i64,
-    pub parents: Vec<String>,
-    pub refs: Vec<String>,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct GitRef {
     pub name: String, // short ref name, e.g. "main", "feature/x", "v1.2"
@@ -188,83 +173,6 @@ async fn git_status_compute(path: &str) -> Result<GitStatus, String> {
         ahead,
         behind,
     })
-}
-
-/// Synchronous core of the read-only history query.
-pub(crate) fn git_log_compute(
-    path: &str,
-    limit: u32,
-    all: bool,
-) -> Result<Vec<GitLogEntry>, String> {
-    let n = limit.to_string();
-    let mut args: Vec<String> = vec![
-        "log".into(),
-        format!("-{}", n),
-        "--topo-order".into(),
-        "--decorate=short".into(),
-        "--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%cr%x1f%P%x1f%D%x1f%ct%x1e".into(),
-    ];
-    if all {
-        args.push("--all".into());
-    }
-    let output = git_read()
-        .args(&args)
-        .current_dir(path)
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    let log_str = String::from_utf8_lossy(&output.stdout);
-    let entries = log_str
-        .split('\x1e')
-        .map(|s| s.trim_start_matches('\n'))
-        .filter(|s| !s.is_empty())
-        .filter_map(|line| {
-            let parts: Vec<&str> = line.split('\x1f').collect();
-            if parts.len() < 8 {
-                return None;
-            }
-            let parents: Vec<String> = parts[6]
-                .split_whitespace()
-                .map(std::string::ToString::to_string)
-                .collect();
-            let refs: Vec<String> = parts[7]
-                .split(',')
-                .map(|r| r.trim().to_string())
-                .filter(|r| !r.is_empty())
-                .collect();
-            let committed_at_ms = parts
-                .get(8)
-                .and_then(|s| s.trim().parse::<i64>().ok())
-                .map(|secs| secs * 1000)
-                .unwrap_or(0);
-            Some(GitLogEntry {
-                hash: parts[0].to_string(),
-                short_hash: parts[1].to_string(),
-                message: parts[2].to_string(),
-                author: parts[3].to_string(),
-                email: parts[4].to_string(),
-                date: parts[5].to_string(),
-                committed_at_ms,
-                parents,
-                refs,
-            })
-        })
-        .collect();
-    Ok(entries)
-}
-
-#[tauri::command]
-pub async fn git_log(
-    path: String,
-    limit: Option<u32>,
-    all: Option<bool>,
-) -> Result<Vec<GitLogEntry>, String> {
-    let lim = limit.unwrap_or(50);
-    // The chat diff commit picker defaults to the checked-out branch.
-    let all_flag = all.unwrap_or(false);
-    tokio::task::spawn_blocking(move || git_log_compute(&path, lim, all_flag))
-        .await
-        .map_err(|e| e.to_string())?
 }
 
 pub(crate) fn git_refs_compute(path: &str) -> Result<GitRefs, String> {
@@ -504,63 +412,4 @@ fn parse_line_porcelain(out: &str) -> Vec<BlameLine> {
         }
     }
     result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::path::Path;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn git(repo: &Path, args: &[&str]) {
-        let status = atlas_process::command("git")
-            .args(args)
-            .current_dir(repo)
-            .env("GIT_AUTHOR_NAME", "t")
-            .env("GIT_AUTHOR_EMAIL", "t@example.com")
-            .env("GIT_COMMITTER_NAME", "t")
-            .env("GIT_COMMITTER_EMAIL", "t@example.com")
-            .status()
-            .expect("git is on PATH");
-        assert!(status.success(), "git {args:?} failed");
-    }
-
-    /// The chat diff picker defaults to commits reachable from HEAD.
-    #[tokio::test]
-    async fn git_log_defaults_to_the_checked_out_branch() {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!("atlas-gitlog-{nanos}"));
-        fs::create_dir_all(&root).unwrap();
-
-        git(&root, &["init", "-q", "-b", "main"]);
-        fs::write(root.join("f"), "a").unwrap();
-        git(&root, &["add", "-A"]);
-        git(&root, &["commit", "-qm", "on main"]);
-        git(&root, &["checkout", "-qb", "feature"]);
-        fs::write(root.join("f"), "b").unwrap();
-        git(&root, &["commit", "-qam", "only on feature"]);
-        git(&root, &["checkout", "-q", "main"]);
-
-        let path = root.to_string_lossy().into_owned();
-
-        let default = git_log(path.clone(), Some(50), None).await.unwrap();
-        assert!(
-            !default.iter().any(|c| c.message == "only on feature"),
-            "default log leaked a commit that is not on HEAD: {:?}",
-            default.iter().map(|c| &c.message).collect::<Vec<_>>()
-        );
-        assert!(default.iter().any(|c| c.message == "on main"));
-
-        let all = git_log(path, Some(50), Some(true)).await.unwrap();
-        assert!(
-            all.iter().any(|c| c.message == "only on feature"),
-            "all: true must still reach every ref"
-        );
-
-        let _ = fs::remove_dir_all(&root);
-    }
 }

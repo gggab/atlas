@@ -1,158 +1,26 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, ChevronDown, GitCommit, GitBranch, Search } from "lucide-react";
+import { memo, useMemo, useRef, useState } from "react";
+import { ChevronRight, ChevronDown, GitCommit } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { useGitStore } from "../stores/git-store";
-import { openGitDiff, gitCommitChangedFiles } from "../lib/git-diff-api";
+import { gitCommitChangedFiles } from "../lib/git-diff-api";
 
 const TREE_ROW_H = 22;
 
-interface CommitLite {
-  hash: string;
-  short_hash: string;
-  message: string;
-  author?: string;
-}
-
-/** Searchable commit combobox with the current branch shown as a pill. Replaces
- *  the plain <select>; "Working tree" is the default (null commit). */
-function CommitPicker({
-  commit,
-  branch,
-  log,
-  onPick,
-}: {
-  commit: string | null;
-  branch: string;
-  log: CommitLite[];
-  onPick: (sha: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const selected = commit ? (log.find((c) => c.hash === commit) ?? null) : null;
-  const label = commit
-    ? selected
-      ? `${selected.short_hash} · ${selected.message}`
-      : commit.slice(0, 7)
-    : "Working tree";
-
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return log;
-    return log.filter(
-      (c) =>
-        c.short_hash.toLowerCase().includes(s) ||
-        c.message.toLowerCase().includes(s) ||
-        (c.author ?? "").toLowerCase().includes(s),
-    );
-  }, [log, q]);
-
-  const pick = (sha: string) => {
-    onPick(sha);
-    setOpen(false);
-    setQ("");
-  };
-
-  return (
-    <div className="relative min-w-0 flex-1">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        title="Inspect a commit's changes"
-        className="flex h-6 w-full min-w-0 items-center gap-1 rounded border border-[var(--border)] bg-[var(--card)] px-1.5 text-2xs text-[var(--foreground)] outline-none hover:bg-[var(--atlas-element-hover)]"
-      >
-        {branch && (
-          <span className="flex shrink-0 items-center gap-0.5 rounded bg-[var(--card)] px-1 py-px text-3xs text-[var(--muted-foreground)]">
-            <GitBranch size={8} />
-            <span className="max-w-[70px] truncate">{branch}</span>
-          </span>
-        )}
-        <span className="min-w-0 flex-1 truncate text-left font-mono">{label}</span>
-        <ChevronDown size={11} className="shrink-0 text-[var(--muted-foreground)]" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-overlay" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute left-0 right-0 top-full z-popover mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--card)] shadow-md">
-            <div className="flex h-7 items-center gap-1.5 border-b border-[var(--atlas-border-subtle)] px-2">
-              <Search size={11} className="shrink-0 text-[var(--muted-foreground)]" />
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search commits…"
-                spellCheck={false}
-                className="min-w-0 flex-1 bg-transparent text-2xs text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]"
-              />
-            </div>
-            <div className="max-h-[280px] overflow-y-auto hide-scrollbar py-1">
-              <button
-                type="button"
-                onClick={() => pick("")}
-                className={cn(
-                  "flex w-full items-center px-2 py-1.5 text-left text-2xs hover:bg-[var(--atlas-element-hover)]",
-                  !commit ? "text-[var(--foreground)]" : "text-[var(--secondary-foreground)]",
-                )}
-              >
-                Working tree
-              </button>
-              {filtered.map((c) => (
-                <button
-                  key={c.hash}
-                  type="button"
-                  onClick={() => pick(c.hash)}
-                  className={cn(
-                    "flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-2xs hover:bg-[var(--atlas-element-hover)]",
-                    c.hash === commit
-                      ? "text-[var(--foreground)]"
-                      : "text-[var(--secondary-foreground)]",
-                  )}
-                >
-                  <span className="shrink-0 font-mono text-[var(--muted-foreground)]">
-                    {c.short_hash}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{c.message}</span>
-                </button>
-              ))}
-              {filtered.length === 0 && (
-                <div className="px-2 py-2 text-2xs text-[var(--muted-foreground)]">No commits</div>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 interface ChangedFilesTreeProps {
   repoPath: string;
-  /** Staged-ness of the diff tab — the tree lists files of the same kind and
-   *  opens them with the same flag so a click always lands on a real diff. */
+  /** Filter repository status rows by staged-ness. */
   staged: boolean;
   /** Path of the file currently shown in the diff pane (highlighted). */
   currentFile: string;
-  /** When set, the tree lists the files changed by this commit (commit-browse
-   *  mode) instead of the working tree; the picker at the top switches it. */
+  /** Optional fixed commit supplied by the host viewer. */
   commit?: string | null;
-  /** Hide the commit/branch picker. The agent-chat diff modal shows the changes
-   *  a TURN made — browsing to another commit from there would be answering a
-   *  question nobody asked, and would silently retarget the diff. */
-  hidePicker?: boolean;
   /** When set, list ONLY these (repo-relative) paths. The chat's modal scopes
    *  the tree to what a single turn touched; without it the tree answers a
    *  different question — everything dirty in the repo. */
   only?: string[];
-  /**
-   * Take over what a click does.
-   *
-   * Without it a click calls `openGitDiff`, which opens the standalone Git Diff
-   * MODULE TAB — correct when the tree IS that tab, wrong everywhere else. The
-   * chat's modal passes this so a click retargets the modal in place instead of
-   * spawning a workbench tab behind it.
-   */
-  onSelect?: (path: string) => void;
+  /** Select a file in the host viewer without creating a workbench tab. */
+  onSelect: (path: string) => void;
 }
 
 interface DirNode {
@@ -267,21 +135,12 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
   staged,
   currentFile,
   commit = null,
-  hidePicker = false,
   only,
   onSelect,
 }: ChangedFilesTreeProps) {
   const onlySet = useMemo(() => (only ? new Set(only) : null), [only]);
   const files = useGitStore.use.files();
-  const log = useGitStore.use.log();
-  const branch = useGitStore.use.branch();
-  const gitActions = useGitStore.use.actions();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-
-  // Populate the commit picker (recent history) on first mount.
-  useEffect(() => {
-    if (repoPath && log.length === 0) void gitActions.loadLog(repoPath).catch(() => {});
-  }, [repoPath, log.length, gitActions]);
 
   // In commit-browse mode, list the files that commit changed.
   const commitFilesQuery = useQuery({
@@ -290,13 +149,6 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
     enabled: !!repoPath && !!commit,
     staleTime: 30_000,
   });
-
-  const openFile = (path: string) =>
-    onSelect ? onSelect(path) : openGitDiff(repoPath, path, staged, commit);
-
-  // Switch the whole diff tab to a different commit (or the working tree) for
-  // the currently-open file.
-  const onPickCommit = (sha: string) => openGitDiff(repoPath, currentFile, staged, sha || null);
 
   const tree = useMemo(() => {
     const seen = new Set<string>();
@@ -351,9 +203,6 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
     <div className="flex h-full w-full flex-col border-r border-[var(--border)] bg-[var(--card)]">
       <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-[var(--border)] px-2">
         <GitCommit size={12} className="shrink-0 text-[var(--muted-foreground)]" />
-        {!hidePicker && (
-          <CommitPicker commit={commit} branch={branch} log={log} onPick={onPickCommit} />
-        )}
         <span className="shrink-0 text-2xs tabular-nums text-[var(--muted-foreground)]">
           {rows.filter((r) => !r.node.isDir).length}
         </span>
@@ -386,7 +235,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree({
             return (
               <button
                 key={`f:${node.path}`}
-                onClick={() => openFile(node.path)}
+                onClick={() => onSelect(node.path)}
                 title={node.path}
                 className={`${common.className} gap-1.5 text-xs ${
                   active

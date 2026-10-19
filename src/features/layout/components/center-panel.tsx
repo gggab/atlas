@@ -59,9 +59,6 @@ const NotebookViewer = lazy(() =>
     default: m.NotebookViewer,
   })),
 );
-const GitDiffPanel = lazy(() =>
-  import("@/features/git/components/git-diff-panel").then((m) => ({ default: m.GitDiffPanel })),
-);
 const KnowledgePanel = lazy(() =>
   import("@/features/knowledge/components/knowledge-panel").then((m) => ({
     default: m.KnowledgePanel,
@@ -109,7 +106,6 @@ import {
   BrainCircuit,
   Network,
   Terminal,
-  GitCompare,
   Settings,
   Plus,
   X,
@@ -140,7 +136,6 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   "knowledge-graph": Network,
   memory: BrainCircuit,
   terminal: Terminal,
-  diff: GitCompare,
   settings: Settings,
   log: ScrollText,
   media: Code,
@@ -976,15 +971,6 @@ function TabContent({ tab }: { tab: Tab }) {
       return <PdfViewer filePath={tab.data.filePath as string} tabId={tab.id} />;
     case "notebook":
       return <NotebookViewer filePath={tab.data.filePath as string} />;
-    case "diff":
-      return (
-        <GitDiffPanel
-          repoPath={tab.data.repoPath as string}
-          file={tab.data.file as string}
-          staged={!!tab.data.staged}
-          commit={(tab.data.commit as string | null | undefined) ?? null}
-        />
-      );
     case "unsupported":
       return <UnsupportedView filePath={tab.data.filePath as string} />;
     default:
@@ -1013,7 +999,6 @@ const NEW_TAB_OPTIONS: Array<{ type: TabType; label: string; icon: React.Element
   { type: "chat", label: "Agents", icon: AtlasIcon },
   { type: "canvas", label: "Canvas", icon: Map },
   { type: "terminal", label: "Terminal", icon: Terminal },
-  { type: "diff", label: "Git Diff", icon: GitCompare },
   { type: "browser", label: "Browser", icon: Globe },
   { type: "knowledge", label: "Knowledge", icon: Brain },
   { type: "memory", label: "Memory", icon: BrainCircuit },

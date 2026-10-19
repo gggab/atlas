@@ -482,7 +482,6 @@ pub fn run() {
                 commands::fs::fs_open_in_terminal,
                 commands::fs::fs_add_to_gitignore,
                 commands::git::git_status_fresh,
-                commands::git::git_log,
                 commands::git::git_workspace_summary,
                 commands::usage_dashboard::usage_dashboard,
                 commands::capture::capture_session_summary,

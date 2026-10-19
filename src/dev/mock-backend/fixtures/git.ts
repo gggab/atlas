@@ -1,7 +1,7 @@
 // Read-only repository fixtures for the explorer, editor, terminal and chat diffs.
 import type { BlameLine } from "@/features/git/lib/git-blame-api";
 import type { CommitFile, DiffLineStatus, FileDiff } from "@/features/git/lib/git-diff-api";
-import type { GitLogEntry, GitSnapshotWire } from "@/features/git/stores/git-store";
+import type { GitSnapshotWire } from "@/features/git/stores/git-store";
 import type { RawGitStatus } from "@/features/terminal/components/block-terminal";
 import type { GitSummary } from "@/features/projects/stores/project-git-store";
 import type { TypedHandlers, Unread } from "../types";
@@ -490,7 +490,6 @@ export interface GitResponses {
   git_workspace_summary: GitSummary;
   git_snapshot: GitSnapshotWire;
   git_status_fresh: RawGitStatus;
-  git_log: GitLogEntry[];
   git_commit_changed_files: CommitFile[];
   git_diff_structured: FileDiff;
   diff_structured_text: FileDiff;
@@ -547,14 +546,6 @@ export const gitHandlers: TypedHandlers<GitResponses> = {
     ahead: currentBranch().ahead,
     behind: currentBranch().behind,
   }),
-  git_log: () =>
-    COMMITS.map((commit) => ({
-      hash: commit.sha,
-      short_hash: shortSha(commit.sha),
-      message: commit.message,
-      author: commit.author,
-      date: commit.date,
-    })),
   git_commit_changed_files: ({ sha }): CommitFile[] =>
     COMMITS.find((commit) => commit.sha.startsWith(String(sha)))?.files ?? [],
 

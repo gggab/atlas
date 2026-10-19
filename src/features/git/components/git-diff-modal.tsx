@@ -45,9 +45,7 @@ export function GitDiffModal({
   title?: string;
 }) {
   const first = initialFile || files[0] || "";
-  // The modal owns which file is shown. The tree cannot use its default click
-  // behaviour here — that opens the standalone Git Diff module tab, which both
-  // left this modal stuck on one file and dropped a workbench tab behind it.
+  // File selection stays inside this modal.
   const [active, setActive] = useState(first);
   // Reopening on a different file (or a different turn) must retarget.
   useEffect(() => setActive(first), [first]);
@@ -75,14 +73,10 @@ export function GitDiffModal({
             </Dialog.Close>
           </div>
           <div className="min-h-0 flex-1">
-            {/* `hidePicker`: this modal shows what a TURN changed. Browsing to
-                another commit from here would silently retarget the diff to
-                something the reader never asked about. */}
             <GitDiffPanel
               repoPath={repoPath}
               file={active}
               staged={false}
-              hidePicker
               only={files}
               textSources={textSources}
               onSelectFile={setActive}

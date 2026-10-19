@@ -143,10 +143,13 @@ Keep the retired Source Control entry points out of the sidebar, command palette
 layout templates and right-panel renderer. Preserve shared read-only Git consumers
 (explorer/editor/chat diffs, project summaries and checkpoints), and do not reactivate
 background fetch. Saved Source Control layouts must close the slot without changing
-central tabs or widths; saved SSH layouts must still reopen.
+central tabs or widths; saved SSH layouts must still reopen. The standalone Git
+Diff tab is also removed: keep it out of both tab menus and the tab registry.
+Existing `diff` tabs must be dropped on restore while chat diff file selection
+stays inside its modal.
 
 ```sh
-bun run test -- src/features/ssh/components/ssh-host.test.ts src/features/notifications/lib/prefs.test.ts tests/ipc-contract.test.ts
+bun run test -- src/features/layout/stores/org-tabs.test.ts src/features/ssh/components/ssh-host.test.ts src/features/notifications/lib/prefs.test.ts tests/ipc-contract.test.ts
 bun run typecheck
 bun run lint
 bun run build

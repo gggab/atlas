@@ -3,7 +3,6 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { QueryClient } from "@tanstack/react-query";
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
 
 export type DiffLineKind = "context" | "added" | "removed" | "changed";
 
@@ -134,29 +133,4 @@ export function gitDiffLineStatus(
   staged: boolean,
 ): Promise<DiffLineStatus> {
   return invoke<DiffLineStatus>("git_diff_line_status", { path: repoPath, file, staged });
-}
-
-/**
- * Open (or focus) the dedicated side-by-side diff tab for a file. Tabs are keyed
- * by file + staged-ness so the staged and worktree diffs of the same file are
- * distinct tabs and re-opening focuses the existing one.
- */
-export function openGitDiff(
-  repoPath: string,
-  file: string,
-  staged: boolean,
-  commit?: string | null,
-): void {
-  const base = file.split("/").pop() ?? file;
-  const id = `diff:${file}:${staged ? "s" : "w"}${commit ? `:${commit}` : ""}`;
-  const { addTab, setActiveTab } = useLayoutStore.getState().actions;
-  addTab({
-    id,
-    type: "diff",
-    title: base,
-    closable: true,
-    dirty: false,
-    data: { repoPath, file, staged, commit: commit ?? null },
-  });
-  setActiveTab(id);
 }

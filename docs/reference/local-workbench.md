@@ -26,8 +26,14 @@ The right panel now hosts Remote execution only and starts hidden. Existing
 Source Control layouts close that slot on restore, preserving its width and
 central tabs; saved Remote execution layouts retain their visibility.
 
-Shared Git plumbing remains for explorer decorations, editor blame, chat/standalone
-diffs, project summaries, recorded branch metadata and checkpoints. GitHub search
+The standalone **Git Diff** module is removed from the new-tab palette, split
+menus and tab registry. Saved `diff` tabs are dropped during app/project layout
+restoration while other tabs remain. File selection in the chat diff modal stays
+inside that modal and cannot create a standalone tab. The standalone commit picker
+and its unused history IPC/store loader are removed.
+
+Shared Git plumbing remains for explorer decorations, editor blame, chat diffs,
+project summaries, recorded branch metadata and checkpoints. GitHub search
 and cloning from chat remain available. Legacy notification history and config
 keys stay readable; old Git notification targets explain that the panel was removed.
 Panel-only Git IPC commands, their mocks and the automatic fetch scheduler are

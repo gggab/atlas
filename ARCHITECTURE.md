@@ -138,9 +138,10 @@ src/features/<feature>/
 
 This is a deliberate performance boundary, not an oversight to fix by moving more state into the store. Lifting chat messages, document text, or terminal bytes into Zustand degrades streaming, typing, and PTY throughput — every keystroke would touch Immer.
 
-Other stores: `project/stores/project-store.ts` (current project, recents), `git/stores/git-store.ts` (read-only branch, status and diff-picker history), `log/stores/log-store.ts` (ring-buffered event log, 500 in memory, + on-disk pinned rows), `knowledge/stores/knowledge-store.ts`, `canvas/stores/canvas-store.ts` (ReactFlow nodes/edges), `monitor/stores/usage-store.ts` (token usage per provider/model).
+Other stores: `project/stores/project-store.ts` (current project, recents), `git/stores/git-store.ts` (read-only branch and status), `log/stores/log-store.ts` (ring-buffered event log, 500 in memory, + on-disk pinned rows), `knowledge/stores/knowledge-store.ts`, `canvas/stores/canvas-store.ts` (ReactFlow nodes/edges), `monitor/stores/usage-store.ts` (token usage per provider/model).
 
-The Source Control UI and its write-operation store actions have been removed.
+The Source Control UI, standalone Git Diff tab and write-operation store actions
+have been removed. Chat diffs remain modal views, not tab modules.
 The right panel hosts Remote execution only. Shared Git read APIs, diff rendering,
 repository watchers and checkpoints remain; no project is activated for automatic
 fetch. See [current scope](docs/reference/local-workbench.md#source-control-removal).

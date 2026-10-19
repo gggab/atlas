@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 import {
   LEGACY_TAB_TYPES,
   GLOBAL_TAB_TYPES,
@@ -132,5 +135,54 @@ describe("migrateTabType", () => {
 
   it("every legacy target is a current type", () => {
     for (const target of Object.values(LEGACY_TAB_TYPES)) expect(TAB_TYPES).toContain(target);
+  });
+});
+
+describe("retired standalone Git Diff tabs", () => {
+  it("drops the old module type while retaining editor and chat types", () => {
+    expect(migrateTabType("diff")).toBeNull();
+    expect(restorable(["diff", "editor", "chat"])).toEqual(["editor", "chat"]);
+  });
+
+  it("drops a saved diff tab from app preferences and keeps the other tabs", () => {
+    const baseline = useLayoutStore.getState();
+    const oldDiff = {
+      id: "diff:old",
+      type: "diff",
+      title: "Git Diff",
+      data: {},
+      closable: true,
+      dirty: false,
+    };
+    const restored = useLayoutStore.persist.getOptions().merge!(
+      { tabs: [...baseline.tabs, oldDiff], activeTabId: oldDiff.id },
+      baseline,
+    );
+    expect(restored.tabs).toEqual(baseline.tabs);
+    expect(restored.activeTabId).toBe(baseline.tabs[0].id);
+  });
+
+  it("restores other project tabs when its previously active diff module was saved", async () => {
+    const baseline = useLayoutStore.getState();
+    vi.mocked(invoke).mockResolvedValue(
+      JSON.stringify({
+        tabs: [
+          { id: "old-diff", type: "diff", title: "Git Diff", data: {} },
+          { id: "kept-editor", type: "editor", title: "Notes", data: {} },
+        ],
+        activeByGroup: { main: "old-diff" },
+      }),
+    );
+    try {
+      await useLayoutStore.getState().actions.loadEditorState("C:/test-project");
+      const state = useLayoutStore.getState();
+      expect(state.tabs.some((t) => t.id === "old-diff")).toBe(false);
+      expect(state.tabs.some((t) => t.id === "kept-editor")).toBe(true);
+      expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);
+      expect(state.activeTabId).not.toBe("old-diff");
+    } finally {
+      useLayoutStore.setState(baseline, true);
+      vi.clearAllMocks();
+    }
   });
 });
