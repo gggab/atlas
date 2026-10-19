@@ -196,7 +196,7 @@ release debugging control and clear the REPL. Agent-created pages close by defau
 explicitly kept, deliverable and handoff pages remain in their original task group.
 Existing user pages/windows stay open regardless of markers.
 Taking over retains task pages, labels their group as waiting, and releases
-debugging. The original ACP session can reconnect with a fresh
+debugging. Extension 0.4.6 lets the original ACP session reconnect with a fresh
 browser_start without a required chat phrase or return-control button. Target IDs
 are revalidated before resuming. Resumed pages return to temporary task state;
 Agents must mark them again to retain them after the resumed task finishes.

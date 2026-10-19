@@ -13,7 +13,7 @@ store installation still needs verification with the updated desktop build.
 
 1. Run `bun run browser:icons` after editing the SVG, then `bun run browser:test`.
 2. Run `bun run browser:package`. Upload
-   `artifacts/browser-extension/deskmate-browser-0.4.5-chrome.zip` as a new package
+   `artifacts/browser-extension/deskmate-browser-0.4.6-chrome.zip` as a new package
    on the **existing Chrome draft item**, not a new item. The ZIP puts
    `manifest.json` at its root, retains the assigned Chrome public key,
    excludes tests, SDK/Node binaries and runtime secrets, and targets released DeskMate.
@@ -28,7 +28,7 @@ store installation still needs verification with the updated desktop build.
    under the Microsoft Edge program (currently no registration fee), then open the
    existing DeskMate Browser item to upload a package update. Its supplied CRX ID is integrated in
    the desktop native host; the Store ID is not a native extension origin.
-   Use `artifacts/browser-extension/deskmate-browser-0.4.5-edge.zip` produced by
+   Use `artifacts/browser-extension/deskmate-browser-0.4.6-edge.zip` produced by
    `browser:package`. The Edge ZIP omits the manifest `key` field, which Partner
    Center rejects. Do not rename or copy the Chrome ZIP for Edge. The Chrome ZIP
    and source/unpacked manifest retain the assigned Chrome key; Edge's store
@@ -50,7 +50,7 @@ later turns and reuses the original group without a duplicate blank page. Keep
 and result markers persist; new unmarked tabs still close. Other sessions must
 neither discover nor close those pages. Verify identity changes, extension-worker
 recovery, website reauthorization and handoff continuation in the same group.
-Browser handoff no longer requires chat-phrase authorization. The original ACP session
+Version 0.4.6 removes the chat-phrase authorization gate. The original ACP session
 can reconnect to handoff pages without sending "continue" or clicking a return
 button. Takeover still detaches current control; website authorization, session
 ownership and global pause remain enforced. Test legacy ready=false records,
