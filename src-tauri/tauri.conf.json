@@ -7,7 +7,8 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "bun run dev",
-    "beforeBuildCommand": "node scripts/build-frontend.mjs"
+    "beforeBuildCommand": "node scripts/build-frontend.mjs",
+    "beforeBundleCommand": "node scripts/background-service/package.mjs"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -61,6 +62,9 @@
       "icons/icon.ico"
     ],
     "macOS": {
+      "files": {
+        "Library/LoginItems/DeskMate Background.app": "../output/background-package/DeskMate Background.app"
+      },
       "minimumSystemVersion": "11.0",
       "entitlements": "entitlements.plist",
       "exceptionDomain": null,

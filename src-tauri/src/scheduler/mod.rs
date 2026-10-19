@@ -7,7 +7,7 @@ pub mod model;
 #[cfg(test)]
 mod reminder_smoke;
 mod runner;
-mod store;
+pub(crate) mod store;
 #[cfg(test)]
 mod tests;
 

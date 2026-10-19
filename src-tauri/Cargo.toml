@@ -118,6 +118,8 @@ atlas-bus = { path = "../crates/atlas-bus" }
 # `aws-lc-rs` are already in the graph via the vendored engine tree, which is
 # exactly why rustls cannot pick one on its own.
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
+tokio-rustls = "0.26.4"
+rcgen = { version = "=0.14.9", default-features = false, features = ["crypto", "aws_lc_rs"] }
 agent-client-protocol = { version = "=2.0.0", features = ["unstable"] }
 atlas-terminal = { path = "../crates/atlas-terminal" }
 atlas-ssh = { path = "../crates/atlas-ssh" }
@@ -210,7 +212,7 @@ rig-core = "0.38.1"
 # The memory tool server (`commands::memory_server`): MCP over streamable HTTP
 # on loopback. Independent of any agent execution engine.
 rmcp = { workspace = true, features = ["server", "transport-streamable-http-server"] }
-axum = { workspace = true, features = ["http1", "tokio"] }
+axum = { workspace = true, features = ["http1", "tokio", "json", "query"] }
 
 [dev-dependencies]
 # An in-process MCP client for the memory tool server's loopback tests.
@@ -219,6 +221,7 @@ rmcp = { workspace = true, features = ["client", "transport-streamable-http-clie
 tempfile = "3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+windows-core = "=0.61.2"
 # Native toasts (`crate::notifier::toast`). 0.61 is the version
 # `tauri-winrt-notification` already resolves, so no second `windows` major.
 windows = { version = "0.61", features = [
@@ -226,6 +229,10 @@ windows = { version = "0.61", features = [
   "Foundation",
   "Foundation_Collections",
   "UI_Notifications",
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Registry",
+  "Win32_UI_Notifications",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

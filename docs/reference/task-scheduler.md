@@ -56,9 +56,11 @@ remain usable. No temporary database or alternate execution path hides the error
   mirrors durable IDs; reading or dismissing a notification does not complete a
   task. Delivery errors and retry exhaustion remain visible in task details.
 
-The application must stay open and the computer awake. Startup and bounded
-wall-clock checks reconcile missed work. There is no independent daemon, device
-wake, mobile delivery or new access to email/chat/contact services. Gregorian
+By default the application must stay open and the computer awake. Windows/macOS
+can explicitly enable [independent background execution](background-service.md)
+for reminders and Agent checks after GUI exit. Startup and bounded wall-clock
+checks reconcile missed work. There is no device wake, mobile delivery or new
+access to email/chat/contact services. Gregorian
 daily/weekly/monthly/yearly fixed reminders are described in
 [calendar schedules](calendar-schedules.md). General cron, lunar/holiday rules,
 automatic after-human-turn planning and extra notification channels are not

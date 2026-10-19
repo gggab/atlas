@@ -8,13 +8,9 @@
 //! (`target\debug|release`) has no such shortcut, so `new` returns `None` and
 //! the plugin fallback is used, as on macOS outside a bundle.
 //!
-//! Activation is in-process only: the `Activated` handler lives on the
-//! `ToastNotification` object we keep, so a click while Atlas is running
-//! routes through the shared response sink. A click on a toast that outlived
-//! the process (left in the Action Center) just launches the app: routing it
-//! needs a registered COM `INotificationActivationCallback` server and a
-//! matching `ToastActivatorCLSID` on the shortcut, which the bundler does not
-//! set. Not implemented; no response is emitted in that case.
+//! Background mode also registers a current-user COM activation server.
+//! Encoded activation arguments retain the target after the service restarts;
+//! ordinary local mode retains its existing in-process handler.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
@@ -60,6 +56,7 @@ pub struct ToastBackend {
     app_id: HSTRING,
     sink: ResponseSink,
     state: Arc<Mutex<State>>,
+    _activation: Option<super::toast_activation::Registration>,
 }
 
 impl ToastBackend {
@@ -70,10 +67,22 @@ impl ToastBackend {
             return None;
         }
         let identifier = app.config().identifier.clone();
+        let activation = if crate::background::requested() {
+            match super::toast_activation::Registration::new(sink.clone()) {
+                Ok(registration) => Some(registration),
+                Err(error) => {
+                    tracing::error!("notification COM activation unavailable: {error}");
+                    return None;
+                }
+            }
+        } else {
+            None
+        };
         Some(Self {
             app_id: HSTRING::from(identifier),
             sink,
             state: Arc::new(Mutex::new(State::default())),
+            _activation: activation,
         })
     }
 
@@ -236,7 +245,9 @@ fn activated_action(args: Option<&IInspectable>) -> Option<String> {
 
 /// Body clicks carry no `a:` prefix; buttons carry `a:<action id>`.
 fn parse_action(arguments: &str) -> Option<String> {
-    arguments.strip_prefix(ACTION_PREFIX).map(str::to_owned)
+    super::toast_activation::decode(&arguments)
+        .and_then(|response| response.action_id)
+        .or_else(|| arguments.strip_prefix(ACTION_PREFIX).map(str::to_owned))
 }
 
 fn xml_escape(text: &str) -> String {
@@ -280,7 +291,7 @@ fn toast_xml(n: &Notification) -> String {
             format!(
                 r#"<action content="{}" arguments="{}" activationType="foreground"/>"#,
                 xml_escape(&a.label),
-                xml_escape(&format!("{ACTION_PREFIX}{}", a.id)),
+                xml_escape(&super::toast_activation::encode(n, Some(&a.id))),
             )
         })
         .collect();
@@ -303,8 +314,9 @@ fn toast_xml(n: &Notification) -> String {
         r#"<audio silent="true"/>"#
     };
 
+    let launch = super::toast_activation::encode(n, None);
     format!(
-        r#"<toast launch="open" activationType="foreground"{scenario}><visual><binding template="ToastGeneric">{visual}</binding></visual>{actions}{audio}</toast>"#
+        r#"<toast launch="{launch}" activationType="foreground"{scenario}><visual><binding template="ToastGeneric">{visual}</binding></visual>{actions}{audio}</toast>"#
     )
 }
 
@@ -341,7 +353,15 @@ mod tests {
         let xml = toast_xml(&n);
         assert!(xml.contains("a&lt;b &amp; &quot;c&quot;"));
         assert!(xml.contains("content=\"&lt;Go&gt;\""));
-        assert!(xml.contains("arguments=\"a:i&apos;d\""));
+        let encoded = super::super::toast_activation::encode(&n, Some("i'd"));
+        assert!(xml.contains(&format!("arguments=\"{encoded}\"")));
+        assert_eq!(
+            super::super::toast_activation::decode(&encoded)
+                .unwrap()
+                .action_id
+                .as_deref(),
+            Some("i'd")
+        );
     }
 
     #[test]

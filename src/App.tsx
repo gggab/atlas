@@ -116,6 +116,14 @@ const zoomReset = () =>
   useSettingsStore.getState().actions.updateSettings({ uiScale: DEFAULT_SCALE });
 
 export function App() {
+  useEffect(() => {
+    const subscription = listen<string>("atlas:background-error", (event) => {
+      toast.error(event.payload, { duration: Infinity });
+    });
+    return () => {
+      void subscription.then((off) => off());
+    };
+  }, []);
   // Own model download listeners at app scope so completion notifications are
   // delivered even when Settings is closed.
   useEffect(() => {
@@ -893,7 +901,12 @@ export function App() {
       }
     }).then((un) => {
       if (cancelled) un();
-      else unlisten = un;
+      else {
+        unlisten = un;
+        void invoke("background_attach").catch((error) =>
+          console.warn("Background approval sync failed:", error),
+        );
+      }
     });
 
     // Agent spawn is deferred until the user first focuses the message input

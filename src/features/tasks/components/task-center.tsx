@@ -9,6 +9,7 @@ import { useSettingsStore } from "@/features/settings/stores/settings-store";
 import { useNotificationsStore } from "@/features/notifications/stores/notifications-store";
 import { useTaskCenter } from "../stores/task-center-store";
 import { CalendarFields, newCalendar } from "./calendar-fields";
+import { BackgroundControl } from "./background-control";
 import {
   controlTask,
   reopenTask,
@@ -380,11 +381,12 @@ export function TaskCenter() {
         >
           <DialogTitle>任务中心</DialogTitle>
           <DialogDescription>
-            任务独立于会话归档。应用运行且电脑唤醒时执行，提醒不会自动完成事项。
+            任务独立于会话归档。主程序或独立后台运行、电脑唤醒时执行；提醒不会自动完成事项。
           </DialogDescription>
           <p className="text-xs text-muted-foreground">
             支持单次、按分钟间隔与公历日、周、月、年重复提醒。周期规则有歧义时保存为待确认；农历和节假日顺延暂不支持。
           </p>
+          <BackgroundControl />
           {error && (
             <p role="alert" className="break-words text-sm text-destructive">
               {error}

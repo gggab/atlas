@@ -52,6 +52,14 @@ src/features/<feature>/components  →  stores (Zustand)  →  lib/*-api.ts (inv
 
 ### Durable task scheduler
 
+Windows/macOS can opt into a single independent backend owning AgentHost,
+TurnAdmissions, scheduler/personal stores, MCP and approvals. The GUI forwards
+allowlisted native commands over certificate-pinned local TLS and never creates
+a second AgentHost on connection failure. A profile owner lock precedes store
+initialization; the hidden static Tauri webview reuses the existing command
+decoder. See [background execution](docs/reference/background-service.md) and
+[ADR-0019](docs/adr/0019-independent-background-backend.md).
+
 The global, projectless `personal` tab reuses the chat store, transcript renderer
 and approval UI with a text composer. `personal/` owns profile-local
 `personal.sqlite`, immutable personal session bindings, human provenance, explicit

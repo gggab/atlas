@@ -87,6 +87,21 @@ export const GLOBAL_INPUTS = [
  */
 export const EXTRA_INPUTS = [
   {
+    path: "Cargo.lock",
+    packages: ["atlas"],
+    why: "src-tauri/build.rs includes the dependency lockfile in the backend build identity",
+  },
+  {
+    path: "crates/",
+    packages: ["atlas"],
+    why: "src-tauri/build.rs fingerprints workspace Rust sources and manifests",
+  },
+  {
+    path: "scripts/background-service/",
+    packages: ["atlas"],
+    why: "the Tauri prebundle hook packages and signs the macOS background helper",
+  },
+  {
     path: "docs/reference/configuration.md",
     packages: ["atlas"],
     testOnly: true,

@@ -219,6 +219,10 @@ impl Store {
         let rows = q.query_map([id], |r| r.get::<_, String>(0))?;
         rows.map(|r| decode(r?)).collect()
     }
+
+    pub fn task_for_run(&self, id: &str) -> Result<Task> {
+        self.get(&load_run(&self.db, id)?.task_id)
+    }
     pub fn notifications(&self) -> Result<Vec<TaskNotification>> {
         let mut q=self.db.prepare("SELECT data FROM notification_outbox WHERE native_state!='suppressed' AND COALESCE(json_extract(data,'$.dismissed'),0)=0 ORDER BY created_at DESC,rowid DESC LIMIT 200")?;
         let rows = q.query_map([], |r| r.get::<_, String>(0))?;

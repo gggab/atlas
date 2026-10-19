@@ -85,8 +85,14 @@ Local file pages and website file uploads require **Allow access to file URLs** 
 选择“按分钟间隔”并填写 5，即可保存后每隔 5 分钟提醒，直到暂停或结束；无需选择 Agent 或执行会话。
 周期规则不完整时保存为待确认，每期可独立完成、跳过或稍后提醒；会话归档不影响任务。
 已完成、已取消的任务可在任务中心重新启用或确认删除。重新启用保留原任务与历史，不补发过去提醒；删除清除任务、执行记录、周期记录和应用内通知，聊天与个人记忆独立保留。
-应用需要保持运行，Agent 任务工具需要明确开启。详见
+By default scheduling runs while the desktop app is open. Windows/macOS can opt
+into independent background execution from Task Center, then restart the UI.
+Reminders and authorized Agent checks continue after GUI exit, while the computer
+is awake and the user is logged in. Agent task tools require explicit opt-in. See
 [任务调度](docs/reference/task-scheduler.md)和[周期日历](docs/reference/calendar-schedules.md)。
+
+For background ownership, login startup, reconnect limits and update/uninstall
+cleanup, see [independent background execution](docs/reference/background-service.md).
 
 | 数据 | 存储方式 |
 |---|---|

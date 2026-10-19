@@ -115,6 +115,16 @@ export const personalAssistant: Scenario = {
     Reflect.set(window, "isTauri", true);
   },
   rawCommands: {
+    background_status: () => ({
+      supported: true,
+      enabled: false,
+      role: "local",
+      login: false,
+      error: null,
+      needsRestart: false,
+      connected: false,
+    }),
+    background_attach: () => null,
     personal_snapshot: () => personal,
     tasks_snapshot: () => tasks,
     tasks_runs: () => [],

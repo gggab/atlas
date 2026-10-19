@@ -166,7 +166,10 @@ the first message before it could be sent. This lookup neither sends a message n
 changes the normal draft lifecycle.
 
 No generated handoff summary, automatic cross-vendor history sharing, historical
-batch extraction, daemon, mobile delivery or new data source integration is included.
+batch extraction, mobile delivery or new data source integration is included.
+Windows/macOS can explicitly enable [independent background execution](background-service.md)
+for existing authorized tasks and live Agent sessions; the personal chat UI stays
+the same and the backend never automatically approves permission requests.
 Deleting saved memory does not delete historical messages, existing model context,
 independent tasks or vendor records.
 

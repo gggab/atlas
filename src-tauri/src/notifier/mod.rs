@@ -24,6 +24,8 @@ mod freedesktop;
 mod macos;
 #[cfg(windows)]
 mod toast;
+#[cfg(windows)]
+pub(crate) mod toast_activation;
 
 use std::sync::Arc;
 
@@ -98,7 +100,7 @@ pub struct Notification {
 }
 
 /// The user's reaction to a banner. `action_id` is `None` for a plain click.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationResponse {
     pub tag: String,
@@ -175,11 +177,16 @@ impl Notifier {
             let queue = queue.clone();
             let app = app.clone();
             Arc::new(move |response| {
+                let detached = crate::background::detached(&app);
                 let mut queue = queue.lock();
-                if queue.ready {
+                if queue.ready && !detached {
                     emit_response(&app, &response);
                 } else {
                     queue.pending.push(response);
+                }
+                drop(queue);
+                if detached {
+                    crate::background::notification_clicked(&app);
                 }
             })
         };

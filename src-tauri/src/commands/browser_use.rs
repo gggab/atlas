@@ -296,12 +296,7 @@ impl BrowserUseState {
             .map_err(|_| "Browser runtime stopped; inspect the page before retrying".to_string())?
     }
     fn runtime_dir(&self) -> Result<std::path::PathBuf, String> {
-        let path = self
-            .app
-            .path()
-            .resource_dir()
-            .map_err(|e| e.to_string())?
-            .join("resources/browser-use");
+        let path = crate::background::resource_dir(&self.app)?.join("resources/browser-use");
         #[cfg(debug_assertions)]
         let path = if path.join("worker.mjs").exists() {
             path

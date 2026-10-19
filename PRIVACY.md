@@ -172,6 +172,16 @@ Fixed reminders do not invoke a model. OS desktop notifications may display the
 registered title and content. This feature adds no DeskMate cloud account,
 telemetry service, new communication-source access or mobile delivery channel.
 
+Independent background execution is an explicit Windows/macOS opt-in. It keeps
+Agent sessions and authorized checks running after the main UI exits and may
+continue using vendor services and permissions. Login startup and notification
+activation are registered for the current user. Profile-private local IPC uses
+per-start certificate pinning and a random capability; its TLS private key is
+memory-only. Disabling removes startup/activation and stops the backend without
+deleting task, chat or personal memory data. See
+[background execution](docs/reference/background-service.md) for maintenance and
+platform verification limits.
+
 Recurring reminders additionally retain local calendar rules, named timezones,
 clarification drafts, per-period completion and reminder-slot records. Pausing
 notifications or archiving a conversation does not erase unpaid period history.

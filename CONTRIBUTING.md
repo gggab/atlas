@@ -60,6 +60,13 @@ cargo test --locked -p atlas-profile -p atlas-agent-manager -p atlas-checkpoint 
 
 Run checks appropriate to the change. Report Windows/platform failures separately from passing checks. Real vendor login, CLI turns, installed browser extensions and native desktop behavior require their own verification.
 
+For [independent background execution](docs/reference/background-service.md), run
+the focused UI/native suites and isolated debug-process fixture. Do not enable
+login startup or exercise maintenance commands against a developer's real profile
+as a test. macOS helper signing/notarization and Windows installed cold activation
+need their own OS checks. Stop/remove the current-user backend before updating
+or uninstalling an enabled installation; automatic installer cleanup is pending.
+
 ## Branding and releases
 
 Use **同桌 DeskMate** for desktop product names, **同桌 DeskMate Dev** for the source-build profile, and **DeskMate Browser** for the companion extension. English UI copy uses DeskMate. Follow [Branding](docs/reference/branding.md) when changing names; keep storage, wire and application identifiers compatible, and preserve upstream/license attribution.

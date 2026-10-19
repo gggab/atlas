@@ -436,7 +436,9 @@ describe("independent task center", () => {
     fireEvent.click(screen.getByRole("button", { name: "任务中心" }));
     await screen.findByRole("button", { name: "还房租" });
     expect(
-      screen.getByText("任务独立于会话归档。应用运行且电脑唤醒时执行，提醒不会自动完成事项。"),
+      screen.getByText(
+        "任务独立于会话归档。主程序或独立后台运行、电脑唤醒时执行；提醒不会自动完成事项。",
+      ),
     ).toBeTruthy();
     expect(backend.invoke.mock.calls.some(([name]) => name === "threads_resume")).toBe(false);
   });

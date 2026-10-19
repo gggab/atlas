@@ -50,6 +50,15 @@ and an official distribution with its LICENSE file.
 
 ## Version changes
 
+For builds with [independent background execution](background-service.md), close
+the desktop UI and stop/remove an enabled current-user backend before upgrade or
+uninstall. Use Task Center or the documented maintenance arguments and verify
+ownership release; this implementation has no automatic MSI/Finder cleanup hook.
+Before release, separately verify installed Windows COM notification activation,
+interactive Task Scheduler startup, and macOS nested-helper signing/notarization,
+LaunchAgent startup, native delivery and reconnect. Temporary process fixtures
+are not a substitute for those installed-platform checks.
+
 Keep `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, the
 `atlas` entry in `Cargo.lock` in sync. About reads the bundled version at runtime
 and needs no separate version edit. `scripts/bump.sh`

@@ -30,6 +30,11 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 
 ## Adjacent subsystems
 
+- **Independent backend** — an opt-in Windows/macOS user-session process owning
+  live Agent sessions, scheduler/personal storage, MCP and approvals after GUI
+  exit. Closing its client does not cancel work; explicit disable stops it.
+  Sleep, logout and power-off do not execute work. See
+  [background execution](docs/reference/background-service.md).
 - **Scheduled task** — a durable reminder or bounded Agent check, independent of
   conversation visibility. Source references trace the request; an execution
   binding selects the authorized conversation/Agent/cwd. Archive does not pause

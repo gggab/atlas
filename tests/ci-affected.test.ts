@@ -174,6 +174,15 @@ describe("the CI plan", () => {
     expect(p.crates).toEqual([]);
   });
 
+  it("runs the app for backend identity and helper packaging inputs", () => {
+    for (const file of [
+      "crates/atlas-theme/src/lib.rs",
+      "scripts/background-service/package.mjs",
+    ]) {
+      expect(run([file]).app, file).toBe(true);
+    }
+  });
+
   it("runs a crate's dependents, and the app, when the crate changes", () => {
     const hit = crateNames(["crates/atlas-process/src/lib.rs"]);
     expect(hit).toEqual(expect.arrayContaining(["atlas-process", "atlas-terminal", "atlas-git"]));
