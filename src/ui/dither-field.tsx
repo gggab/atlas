@@ -129,11 +129,29 @@ export function DitherField({
       }
     };
 
+    // Whether this canvas is actually being shown.
+    //
+    // `IntersectionObserver` is not enough on its own. A background chat tab is
+    // hidden with `visibility: hidden` + `opacity: 0` (see `center-panel`,
+    // which explains why it cannot use `display: none` while chats stay warm),
+    // and neither property affects intersection geometry — so the IO gate below
+    // reports a hidden tab as on-screen and this field kept painting a full
+    // glyph grid, 12.5 times a second, forever, behind a tab nobody was
+    // looking at. That is pure idle CPU and WebKit tile traffic.
+    //
+    // Checked at the step gate rather than per frame: the rAF callback itself
+    // is a timestamp compare, and `draw` is the cost worth gating.
+    const shown = () =>
+      typeof canvas.checkVisibility === "function"
+        ? canvas.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+        : true;
+
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       // Step gate: repaint only when a frame's worth of drift has accrued.
       if (now - last < FRAME_MS) return;
       last = now;
+      if (!shown()) return;
       draw(now);
     };
     const start = () => {

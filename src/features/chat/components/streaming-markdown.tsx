@@ -6,7 +6,9 @@ import {
 } from "@/lib/markdown-cache";
 import { parseMarkdown } from "@/lib/markdown-render";
 import {
-  splitTopLevelBlocks,
+  type BlockSplit,
+  EMPTY_SPLIT,
+  splitIncremental,
   hasReferenceDefinitions,
   isIncompleteCodeFence,
 } from "@/lib/markdown-blocks";
@@ -198,14 +200,27 @@ const MarkdownBlock = memo(function MarkdownBlock({
 });
 
 /** rAF-coalesced block split: at most one split per frame while streaming; a
- *  synchronous, memoized split when settled. */
+ *  synchronous split when settled.
+ *
+ *  The split is incremental (`splitIncremental`): the carry holds the settled
+ *  blocks so a frame parses only the growing tail instead of the whole reply.
+ *  Without it each frame re-parsed every byte received so far, which made the
+ *  split alone quadratic in the length of the answer. */
 function useBlocks(source: string, streaming: boolean, whole: boolean): string[] {
-  const [blocks, setBlocks] = useState<string[]>(() =>
-    whole ? [source] : splitTopLevelBlocks(source),
-  );
+  const carry = useRef<BlockSplit>(EMPTY_SPLIT);
+  const [blocks, setBlocks] = useState<string[]>(() => {
+    if (whole) return [source];
+    carry.current = splitIncremental(source, EMPTY_SPLIT);
+    return carry.current.blocks;
+  });
   const rafRef = useRef<number | null>(null);
   const latest = useRef(source);
   latest.current = source;
+
+  const split = (text: string) => {
+    carry.current = splitIncremental(text, carry.current);
+    setBlocks(carry.current.blocks);
+  };
 
   useEffect(() => {
     if (whole) return;
@@ -215,15 +230,17 @@ function useBlocks(source: string, streaming: boolean, whole: boolean): string[]
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
       }
-      setBlocks(splitTopLevelBlocks(source));
+      split(source);
       return;
     }
     // Streaming: coalesce to one split per frame.
     if (rafRef.current != null) return;
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = null;
-      setBlocks(splitTopLevelBlocks(latest.current));
+      split(latest.current);
     });
+    // `split` closes over refs only; re-creating it per render is not a dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [source, streaming, whole]);
 
   useEffect(

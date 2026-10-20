@@ -2327,6 +2327,13 @@ impl AcpThread {
         self.terminals.get(id)?.output_appended(from)
     }
 
+    /// Where a terminal's output ends in the command's total output; the
+    /// `from` for the next [`Self::terminal_output_appended`]. See
+    /// [`AcpTerminal::output_end`].
+    pub fn terminal_output_end(&self, id: &acp::TerminalId) -> Option<usize> {
+        self.terminals.get(id).map(AcpTerminal::output_end)
+    }
+
     pub fn terminal_output(&self, id: &acp::TerminalId) -> Option<String> {
         self.terminals.get(id).map(|terminal| {
             let response = terminal.current_output();

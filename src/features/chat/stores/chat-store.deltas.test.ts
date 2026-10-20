@@ -237,6 +237,22 @@ describe("applyAgentDelta: one delta kind at a time", () => {
       expect: () => expect(last().toolCalls[0].result).toBe("a\nb\n"),
     },
     {
+      name: "a bounded terminal snapshot replaces old output before subsequent chunks",
+      deltas: () => [
+        d("tool_call_upserted", {
+          message_id: "t",
+          tool_call: wireTool("tc1", { result: "old output" }),
+        }),
+        d("tool_call_output_chunk", { message_id: "t", tool_call_id: "tc1", delta: " more" }),
+        d("tool_call_upserted", {
+          message_id: "t",
+          tool_call: wireTool("tc1", { result: "[earlier output dropped]\ntail" }),
+        }),
+        d("tool_call_output_chunk", { message_id: "t", tool_call_id: "tc1", delta: "新" }),
+      ],
+      expect: () => expect(last().toolCalls[0].result).toBe("[earlier output dropped]\ntail新"),
+    },
+    {
       name: "tool_call_output_chunk for an unknown call is dropped",
       deltas: () => [
         d("tool_call_output_chunk", { message_id: "t", tool_call_id: "nope", delta: "x" }),

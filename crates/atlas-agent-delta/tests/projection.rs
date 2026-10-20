@@ -1120,6 +1120,59 @@ fn display_only_terminal(harness: &Harness, terminal_id: &str) {
     );
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn terminal_projection_stays_bounded_and_continues_after_replacement() {
+    let harness = Harness::start();
+    lock(&harness.thread).on_terminal_provider_event(
+        atlas_acp_thread::TerminalProviderEvent::Created {
+            terminal_id: acp::TerminalId::new("bounded"),
+            label: "agent-run".into(),
+            cwd: None,
+            output_byte_limit: Some(8),
+            terminal: None,
+        },
+    );
+    push_output(&harness, "bounded", b"12345678");
+    harness.update(terminal_tool_call("bounded-call", "bounded"));
+    harness.pump();
+    let mut visible = "12345678".to_string();
+    let mut replacements = 0;
+    for i in 0..100 {
+        let before = harness.recorder.len();
+        push_output(&harness, "bounded", format!("{i:03}中").as_bytes());
+        for delta in since(&harness, before) {
+            match delta {
+                SessionDelta::ToolCallUpserted { tool_call, .. } => {
+                    visible = tool_call.result.unwrap_or_default();
+                    replacements += 1;
+                    assert!(visible.starts_with("[earlier output dropped]"));
+                }
+                SessionDelta::ToolCallOutputChunk { delta, .. } => visible.push_str(&delta),
+                _ => {}
+            }
+        }
+        assert!(
+            visible.len() <= 64,
+            "projected text grew beyond its budget: {}",
+            visible.len()
+        );
+        let thread = lock(&harness.thread);
+        let window = thread
+            .terminal(&acp::TerminalId::new("bounded"))
+            .unwrap()
+            .current_output();
+        assert!(
+            visible.ends_with(&window.output),
+            "visible output lost its current tail"
+        );
+        assert!(!visible.contains('\u{fffd}'));
+    }
+    assert!(
+        replacements > 1,
+        "long output needs periodic bounded replacements"
+    );
+}
+
 fn push_output(harness: &Harness, terminal_id: &str, data: &[u8]) {
     lock(&harness.thread).on_terminal_provider_event(
         atlas_acp_thread::TerminalProviderEvent::Output {
@@ -1170,13 +1223,14 @@ async fn a_growing_display_only_terminal_streams_only_its_tail() {
     }
 }
 
-/// The guard on the cheap path. Once the buffer starts dropping its front, a
-/// byte offset from an earlier read names different bytes than it did — and
-/// `terminal_output` prefixes a truncation marker, which moves everything
-/// again. Streaming a tail against that offset would ship garbage, so the
-/// projection has to fall back to announcing the whole tool call.
+/// Past the byte limit the buffer drops its front — and the tail must keep
+/// streaming. Offsets are in the command's total output, so a window that has
+/// moved on still serves "what came after what you last saw"; before this, a
+/// terminal that truncated once re-announced its whole megabyte window on every
+/// later chunk — the ATL-219 cost, back, for exactly the long builds that
+/// motivated the cheap path. The user's pane keeps the complete output.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_truncating_terminal_falls_back_to_a_whole_snapshot() {
+async fn a_truncating_terminal_keeps_streaming_its_tail() {
     let harness = Harness::start();
 
     lock(&harness.thread).on_terminal_provider_event(
@@ -1194,23 +1248,97 @@ async fn a_truncating_terminal_falls_back_to_a_whole_snapshot() {
     let before = harness.recorder.len();
 
     push_output(&harness, "term-trunc", b"ABCD");
+    push_output(&harness, "term-trunc", b"EF");
 
     let new = since(&harness, before);
-    let result = match new.last() {
+    let tails: Vec<String> = new
+        .iter()
+        .map(|d| match d {
+            SessionDelta::ToolCallOutputChunk { delta, .. } => delta.clone(),
+            other => panic!("a truncated buffer must still stream its tail, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(tails, ["ABCD", "EF"], "each chunk is exactly the new bytes");
+}
+
+/// The honesty the old fallback existed for is kept where it matters: a
+/// projection that has to be REBUILT (here, the first look at a terminal that
+/// already dropped its front) says so, and shows the window it has.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_rebuilt_result_admits_what_the_buffer_dropped() {
+    let harness = Harness::start();
+
+    lock(&harness.thread).on_terminal_provider_event(
+        atlas_acp_thread::TerminalProviderEvent::Created {
+            terminal_id: acp::TerminalId::new("term-late"),
+            label: "agent-run".into(),
+            cwd: None,
+            output_byte_limit: Some(8),
+            terminal: None,
+        },
+    );
+    push_output(&harness, "term-late", b"12345678ABCD");
+    harness.update(terminal_tool_call("call-late", "term-late"));
+    harness.expect(1);
+
+    let result = match harness.recorder.deltas().last() {
         Some(SessionDelta::ToolCallUpserted { tool_call, .. }) => tool_call
             .result
             .clone()
             .expect("the tool call carries its output"),
-        other => panic!("a truncated buffer must re-announce the whole call, got {other:?}"),
+        other => panic!("expected the first snapshot, got {other:?}"),
     };
     assert!(
         result.starts_with("[earlier output dropped]"),
-        "the wire has to admit the buffer dropped its front: {result:?}"
+        "a rebuilt result has to admit the buffer dropped its front: {result:?}"
     );
     assert!(
         result.ends_with("5678ABCD"),
         "the retained window is the most recent bytes: {result:?}"
     );
+
+    // And from there the tail streams, in the same coordinates.
+    let before = harness.recorder.len();
+    push_output(&harness, "term-late", b"EF");
+    match since(&harness, before).as_slice() {
+        [SessionDelta::ToolCallOutputChunk { delta, .. }] => assert_eq!(delta, "EF"),
+        other => panic!("the tail after a rebuilt result still streams, got {other:?}"),
+    }
+}
+
+/// A status change on a command past the byte limit must not swap the output
+/// the user has been reading for the window plus a marker.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_status_change_past_the_limit_keeps_the_streamed_output() {
+    let harness = Harness::start();
+
+    lock(&harness.thread).on_terminal_provider_event(
+        atlas_acp_thread::TerminalProviderEvent::Created {
+            terminal_id: acp::TerminalId::new("term-done"),
+            label: "agent-run".into(),
+            cwd: None,
+            output_byte_limit: Some(8),
+            terminal: None,
+        },
+    );
+    push_output(&harness, "term-done", b"12345678");
+    harness.update(terminal_tool_call("call-done", "term-done"));
+    harness.expect(1);
+    push_output(&harness, "term-done", b"ABCD");
+    let before = harness.recorder.len();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "call-done",
+        "status": "completed",
+    }));
+    harness.pump();
+
+    let result = match since(&harness, before).last() {
+        Some(SessionDelta::ToolCallUpserted { tool_call, .. }) => tool_call.result.clone(),
+        other => panic!("a status change re-announces the call, got {other:?}"),
+    };
+    assert_eq!(result.as_deref(), Some("12345678ABCD"));
 }
 
 /// Output arrives as bytes, and a chunk boundary can land in the middle of a
@@ -1642,6 +1770,25 @@ async fn a_growing_terminal_costs_the_tail() {
     assert!(
         ratio < 10.0,
         "five times the output cost {ratio:.1}x the time; the projection is still superlinear"
+    );
+}
+
+/// The same bound past the default byte limit. 16 000 chunks of 200 bytes is
+/// 3.2 MB against a 1 MiB window, so two thirds of the chunks arrive after the
+/// buffer has started dropping its front — where every chunk used to rebuild
+/// and re-ship the whole window.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "timing, not correctness"]
+async fn a_terminal_past_its_byte_limit_still_costs_the_tail() {
+    let under = time_terminal_projection(4_000, 200).await;
+    let over = time_terminal_projection(16_000, 200).await;
+    let ratio = over.as_secs_f64() / under.as_secs_f64();
+    println!(
+        "terminal past limit: 4000 chunks {under:?}, 16000 chunks {over:?}, ratio {ratio:.2} (linear is 4)"
+    );
+    assert!(
+        ratio < 8.0,
+        "four times the output, across the byte limit, cost {ratio:.1}x the time"
     );
 }
 

@@ -10,6 +10,20 @@ export interface GitFileStatus {
   staged: boolean;
 }
 
+/** Keep the current array when watcher/status refreshes describe the same files,
+ *  so explorer decorations and read-only Git views avoid redundant renders. */
+export function sameFiles(prev: GitFileStatus[], next: GitFileStatus[]): GitFileStatus[] {
+  // Keep this comparison aligned with every field retained in GitFileStatus.
+  if (prev === next) return prev;
+  if (prev.length !== next.length) return next;
+  for (let i = 0; i < prev.length; i++) {
+    const a = prev[i];
+    const b = next[i];
+    if (a.path !== b.path || a.status !== b.status || a.staged !== b.staged) return next;
+  }
+  return prev;
+}
+
 /** Wire shape of the coalesced read-only repository status. */
 export interface GitSnapshotWire {
   isRepo: boolean;
@@ -46,7 +60,7 @@ function ensureGitStatusFreshListener(): void {
     useGitStore.setState((s) => {
       s.isRepo = e.payload.status.is_repo;
       s.branch = e.payload.status.branch;
-      s.files = e.payload.status.files;
+      s.files = sameFiles(s.files, e.payload.status.files);
       s.ahead = e.payload.status.ahead;
       s.behind = e.payload.status.behind;
     });
@@ -129,11 +143,14 @@ export const useGitStore = createSelectors(
             set((s) => {
               s.isRepo = snap.isRepo;
               s.branch = snap.branch;
-              s.files = snap.files.map((f) => ({
-                path: f.path,
-                status: f.status,
-                staged: f.staged,
-              }));
+              s.files = sameFiles(
+                s.files,
+                snap.files.map((f) => ({
+                  path: f.path,
+                  status: f.status,
+                  staged: f.staged,
+                })),
+              );
               s.ahead = snap.ahead;
               s.behind = snap.behind;
             });

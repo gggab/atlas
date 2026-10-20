@@ -32,9 +32,18 @@ fn true_binary() -> &'static str {
 /// A real PTY-backed command, so the registry is exercised against the same
 /// type production uses rather than a stand-in.
 fn spawn_true() -> Arc<CommandTerminal> {
+    let program = if cfg!(windows) {
+        "cmd.exe"
+    } else {
+        true_binary()
+    };
+    let args: Vec<String> = if cfg!(windows) {
+        vec!["/d".into(), "/c".into(), "exit 0".into()]
+    } else {
+        Vec::new()
+    };
     Arc::new(
-        CommandTerminal::spawn(true_binary(), &[], &[], None, 1024)
-            .expect("failed to spawn true(1)"),
+        CommandTerminal::spawn(program, &args, &[], None, 1024).expect("failed to spawn true(1)"),
     )
 }
 
@@ -512,9 +521,16 @@ fn bounding_the_side_tables_does_not_break_ordinary_out_of_order_replay() {
 async fn dropping_the_registry_kills_a_running_command() {
     let mut registry = TerminalRegistry::new();
     let id = terminal_id("t1");
+    let (program, args) = if cfg!(windows) {
+        (
+            "ping.exe",
+            vec!["-n".into(), "31".into(), "127.0.0.1".into()],
+        )
+    } else {
+        ("sleep", vec!["30".into()])
+    };
     let terminal = Arc::new(
-        CommandTerminal::spawn("sleep", &["30".into()], &[], None, 1024)
-            .expect("failed to spawn sleep"),
+        CommandTerminal::spawn(program, &args, &[], None, 1024).expect("failed to spawn sleep"),
     );
     registry.handle_event(TerminalProviderEvent::Created {
         terminal_id: id.clone(),
@@ -536,4 +552,106 @@ async fn dropping_the_registry_kills_a_running_command() {
         exit.signal.is_some() || exit.exit_code != Some(0),
         "sleep(1) should have died by signal, got {exit:?}"
     );
+}
+
+/// Parked output the budget evicts is a real loss of bytes, and the terminal
+/// built afterwards is the only thing that can admit it.
+///
+/// Without the mark, that terminal reports a gapped capture as the whole
+/// command — and a reader streaming a tail against it splices straight across
+/// the hole, so the output on screen is missing a stretch in the middle with
+/// nothing to say so.
+#[test]
+fn output_evicted_before_creation_marks_the_terminal_truncated() {
+    let mut registry = TerminalRegistry::new();
+    let victim = terminal_id("evicted");
+
+    registry.handle_event(TerminalProviderEvent::Output {
+        terminal_id: victim.clone(),
+        data: b"the bytes that are about to be lost".to_vec(),
+    });
+
+    // Push the id count past its ceiling, which evicts oldest-first — the
+    // victim above, parked before any of these.
+    for i in 0..70 {
+        registry.handle_event(TerminalProviderEvent::Output {
+            terminal_id: terminal_id(&format!("other-{i}")),
+            data: b"x".to_vec(),
+        });
+    }
+    assert_eq!(
+        registry.pending_output_len(&victim),
+        0,
+        "the ceiling should have evicted the oldest id's parked output"
+    );
+
+    registry.handle_event(created(&victim));
+    registry.handle_event(TerminalProviderEvent::Output {
+        terminal_id: victim.clone(),
+        data: b"what arrived after".to_vec(),
+    });
+
+    let output = registry
+        .get(&victim)
+        .expect("terminal missing")
+        .current_output();
+    assert!(
+        output.truncated,
+        "a terminal whose parked bytes were evicted must not claim a complete capture"
+    );
+    assert_eq!(output.output, "what arrived after");
+}
+
+/// An id that never lost anything is unaffected — the mark is not sticky
+/// across ids, and a later terminal reusing an evicted id's slot does not
+/// inherit its loss.
+#[test]
+fn an_unevicted_terminal_still_reports_a_complete_capture() {
+    let mut registry = TerminalRegistry::new();
+    let id = terminal_id("clean");
+
+    registry.handle_event(TerminalProviderEvent::Output {
+        terminal_id: id.clone(),
+        data: b"all of it".to_vec(),
+    });
+    registry.handle_event(created(&id));
+
+    let output = registry
+        .get(&id)
+        .expect("terminal missing")
+        .current_output();
+    assert!(!output.truncated);
+    assert_eq!(output.output, "all of it");
+}
+
+#[test]
+fn pending_byte_budget_loss_is_reported_and_terminal_ids_do_not_cross_sessions() {
+    let id = terminal_id("same-id");
+    let mut a = TerminalRegistry::new();
+    let mut b = TerminalRegistry::new();
+    a.handle_event(TerminalProviderEvent::Output {
+        terminal_id: id.clone(),
+        data: vec![b'x'; atlas_terminal::command::DEFAULT_OUTPUT_BYTE_LIMIT as usize + 1],
+    });
+    for registry in [&mut a, &mut b] {
+        registry.handle_event(TerminalProviderEvent::Created {
+            terminal_id: id.clone(),
+            label: "display".into(),
+            cwd: None,
+            output_byte_limit: Some(8),
+            terminal: None,
+        });
+    }
+    a.handle_event(TerminalProviderEvent::Output {
+        terminal_id: id.clone(),
+        data: b"a".to_vec(),
+    });
+    b.handle_event(TerminalProviderEvent::Output {
+        terminal_id: id.clone(),
+        data: b"b".to_vec(),
+    });
+    assert!(a.get(&id).unwrap().current_output().truncated);
+    assert!(!b.get(&id).unwrap().current_output().truncated);
+    assert_eq!(a.get(&id).unwrap().current_output().output, "a");
+    assert_eq!(b.get(&id).unwrap().current_output().output, "b");
 }

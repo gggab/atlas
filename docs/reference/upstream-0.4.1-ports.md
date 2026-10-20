@@ -27,8 +27,8 @@ CLI scope. They do not merge the upstream branch or restore removed modules.
   asynchronous and separately reported children can have different amounts of
   observable work. Unknown payloads remain ordinary tool calls. This observes
   delegation and does not create a local multi-agent execution engine. The
-  overview shows delegated work and file changes; shared memory retains its
-  existing panel, without importing the upstream M4 review/health system.
+  overview shows delegated work and file changes. Selected memory review/health
+  behavior is documented separately in [shared memory](shared-memory.md).
 - All local MCP services reach external ACP Agents through the credential-free
   stdio bridge described in [ADR-0020](../adr/0020-local-mcp-credentials-stay-out-of-adapter-config.md).
 - Windows library-test executables receive Common Controls v6 through the linker;
@@ -36,6 +36,12 @@ CLI scope. They do not merge the upstream branch or restore removed modules.
   and its coreutils. Usage chart dates and editor blame are more legible.
 
 ## Development checks
+
+Independent performance fixes from `142395a8` are selectively adapted; the code
+index removal in `d466cf5c` and the native-engine changes are excluded. See
+[code search](code-search.md#selected-performance-ports) for the bounds and
+[ADR-0023](../adr/0023-retain-code-index-freshness-fallback.md) for why eager
+opening and the turn-end freshness fallback remain.
 
 Use the repository-pinned Bun and Rust versions. `ATLAS_TEST_PYTHON` may name an
 existing Python interpreter for scripted ACP subprocess tests, especially on

@@ -549,6 +549,15 @@ enum Projected {
     ToolCall {
         message_id: String,
         snapshot: Box<ToolCall>,
+        /// Where `snapshot.result` ends in its terminal's TOTAL output (every
+        /// byte the command printed, kept or dropped), when the result is one
+        /// terminal's. This, not `result.len()`, is what the next chunk is
+        /// asked for: once the terminal's buffer starts dropping its front, a
+        /// window-relative length names different bytes than it did, and the
+        /// only safe move was to rebuild and re-ship the whole window per
+        /// chunk — the ATL-219 cost, back, for every command past the byte
+        /// limit. Equal to `result.len()` until then.
+        result_end: usize,
     },
     /// Plans, compactions and elicitations: emitted, but nothing about them is
     /// diffed against a previous value.
@@ -898,6 +907,7 @@ impl SessionProjection {
             AgentThreadEntry::ToolCall(call) => {
                 let message_id = new_message_id();
                 let snapshot = project::tool_call(call, thread);
+                let result_end = result_end_of(&call.content, thread, snapshot.result.as_deref());
                 let delta = SessionDelta::ToolCallUpserted {
                     message_id: message_id.clone(),
                     tool_call: snapshot.clone(),
@@ -906,6 +916,7 @@ impl SessionProjection {
                     Projected::ToolCall {
                         message_id,
                         snapshot: Box::new(snapshot),
+                        result_end,
                     },
                     vec![delta],
                 )
@@ -1052,6 +1063,7 @@ impl SessionProjection {
                 Projected::ToolCall {
                     message_id,
                     snapshot,
+                    result_end,
                 },
                 AgentThreadEntry::ToolCall(call),
             ) => {
@@ -1061,34 +1073,75 @@ impl SessionProjection {
                 // printed so far — on every chunk it prints, with the session's
                 // lock held — which is what let a chatty command stall the
                 // whole session (ATL-219).
+                //
+                // The terminal is asked from `result_end`, an offset into its
+                // total output, so the tail keeps streaming after the buffer
+                // drops its front. A first result stays a full snapshot: a
+                // consumer that ignores chunks must still see the tool call's
+                // content announced at least once.
                 let meta = project::tool_call_meta(call);
-                if tool_call_meta_eq(snapshot, &meta) {
-                    if let Some(terminal_id) = project::sole_terminal(&call.content) {
-                        let emitted = snapshot.result.as_deref().unwrap_or_default().len();
-                        match thread.terminal_output_appended(terminal_id, emitted) {
-                            Some(TerminalAppend::Unchanged) => return Vec::new(),
-                            // A first result stays a full snapshot, as on the
-                            // slow path below: a consumer that ignores chunks
-                            // must still see the tool call's content announced
-                            // at least once.
-                            Some(TerminalAppend::Grew(suffix)) if emitted > 0 => {
-                                let delta = SessionDelta::ToolCallOutputChunk {
-                                    message_id: message_id.clone(),
-                                    tool_call_id: snapshot.id.clone(),
-                                    delta: suffix.clone(),
-                                };
-                                snapshot
-                                    .result
-                                    .get_or_insert_with(String::new)
-                                    .push_str(&suffix);
-                                return vec![delta];
+                let terminal = project::sole_terminal(&call.content);
+                let extension = terminal.and_then(|id| {
+                    let emitted = snapshot.result.as_deref().unwrap_or_default().len();
+                    let limit = thread.terminal(id)?.retained_output_limit();
+                    let budget = usize::try_from(limit)
+                        .unwrap_or(usize::MAX)
+                        .saturating_mul(2)
+                        .max(64);
+                    (emitted > 0)
+                        .then(|| thread.terminal_output_appended(id, *result_end))
+                        .flatten()
+                        // Periodic authoritative snapshots bound the projector and UI;
+                        // only their absolute stream cursor survives compaction.
+                        .filter(|extension| match extension {
+                            TerminalAppend::Grew(suffix) => {
+                                emitted.saturating_add(suffix.len()) <= budget
                             }
-                            _ => {}
+                            TerminalAppend::Unchanged => true,
+                        })
+                });
+                if tool_call_meta_eq(snapshot, &meta) {
+                    match &extension {
+                        Some(TerminalAppend::Unchanged) => return Vec::new(),
+                        Some(TerminalAppend::Grew(suffix)) => {
+                            let delta = SessionDelta::ToolCallOutputChunk {
+                                message_id: message_id.clone(),
+                                tool_call_id: snapshot.id.clone(),
+                                delta: suffix.clone(),
+                            };
+                            snapshot
+                                .result
+                                .get_or_insert_with(String::new)
+                                .push_str(suffix);
+                            *result_end += suffix.len();
+                            return vec![delta];
                         }
+                        None => {}
                     }
                 }
+                // Something besides the result moved (a status, a title). The
+                // result is still carried forward as an extension when the
+                // terminal can serve one — so a status change on a command past
+                // the byte limit does not swap the output the user has been
+                // reading for the window plus a "dropped" marker. Only when no
+                // extension exists (a first result; an offset the buffer has
+                // dropped past, or the projection budget is full) is the result rebuilt from the terminal, and
+                // THAT rendering says honestly what was dropped.
                 let mut current = meta;
-                current.result = project::tool_result(&call.content, &thread);
+                match extension {
+                    Some(TerminalAppend::Grew(suffix)) => {
+                        let mut result = snapshot.result.clone().unwrap_or_default();
+                        result.push_str(&suffix);
+                        current.result = Some(result);
+                        *result_end += suffix.len();
+                    }
+                    Some(TerminalAppend::Unchanged) => current.result = snapshot.result.clone(),
+                    None => {
+                        current.result = project::tool_result(&call.content, &thread);
+                        *result_end =
+                            result_end_of(&call.content, &thread, current.result.as_deref());
+                    }
+                }
                 let delta = tool_call_delta(message_id, snapshot, &current);
                 **snapshot = current;
                 delta.into_iter().collect()
@@ -1353,6 +1406,19 @@ fn tool_call_delta(
         message_id: message_id.to_string(),
         tool_call: current.clone(),
     })
+}
+
+/// Where `result` ends in its terminal's total output — see
+/// `Projected::ToolCall::result_end`. For a result that is not one terminal's,
+/// its own length: nothing drops its front, so the two never diverge.
+fn result_end_of(
+    content: &[atlas_acp_thread::ToolCallContent],
+    thread: &atlas_acp_thread::AcpThread,
+    result: Option<&str>,
+) -> usize {
+    project::sole_terminal(content)
+        .and_then(|id| thread.terminal_output_end(id))
+        .unwrap_or_else(|| result.map_or(0, str::len))
 }
 
 /// Whether two projections of a tool call agree on everything but the result.

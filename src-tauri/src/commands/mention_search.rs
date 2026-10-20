@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{State, WebviewWindow};
 
 use super::code_index::CodeIndexRegistry;
-use super::fileindex::FileIndexState;
+use super::fileindex::{FileIndexState, IndexedFile};
 use super::git::{GitRef, GitRefs};
 use super::git_watcher::GitWatcherState;
 use super::github::{list_cloned_repos, ClonedRepo};
@@ -282,16 +282,18 @@ pub async fn mention_search(
     let want_symbol = matches_scope(scope_ref, "symbol");
     let want_knowledge = matches_scope(scope_ref, "knowledge");
 
-    // Pull file/folder snapshots ONCE (no redundant clone) directly
-    // from the lock-protected state. snapshot_folders uses the
-    // watcher-invalidated cache so the O(files × depth) derivation
-    // only runs after a real file-set change — not per keystroke.
-    let files_snapshot: Option<Vec<(String, PathBuf)>> = if want_file {
-        fileindex.snapshot_files(&label).map(|(files, _)| files)
+    // Take POINTERS to the file and folder lists, not copies of them. Both
+    // rankers keep `PER_KIND_LIMIT` (30) results, and deep-cloning a whole
+    // project's index on each keystroke to choose thirty of it was the
+    // picker's remaining per-keystroke cost. `snapshot_folders` uses the
+    // watcher-invalidated cache, so the O(files × depth) derivation still only
+    // runs after a real file-set change.
+    let files_snapshot = if want_file {
+        fileindex.files_arc(&label).map(|(files, _)| files)
     } else {
         None
     };
-    let folders_snapshot: Option<Vec<(String, PathBuf)>> = if want_folder {
+    let folders_snapshot = if want_folder {
         fileindex.snapshot_folders(&label)
     } else {
         None
@@ -311,14 +313,17 @@ pub async fn mention_search(
         let Some(files) = files_snapshot else {
             return Vec::new();
         };
-        rank_files(&trimmed_for_file, files)
+        // Matching is pure CPU with no `.await`, so holding the read lock
+        // across it is fine — and is what keeps the list from being copied.
+        let guard = files.read();
+        rank_files(&trimmed_for_file, &guard)
     };
 
     let folder_fut = async move {
         let Some(folders) = folders_snapshot else {
             return Vec::new();
         };
-        rank_folders(&trimmed_for_folder, folders)
+        rank_folders(&trimmed_for_folder, &folders)
     };
 
     let repo_fut = async move {
@@ -487,30 +492,31 @@ fn kind_key(m: &MentionResult) -> &'static str {
 /// Skipping nucleo for the empty case avoids the previous behavior
 /// of allocating an N-entry scored vec + sort_by every keystroke
 /// when no query has been typed yet.
-fn rank_files(query: &str, files: Vec<(String, PathBuf)>) -> Vec<(u32, MentionResult)> {
-    let to_result = |(rel, abs): (String, PathBuf)| {
-        let abs_str = abs.to_string_lossy().into_owned();
+/// Borrows the index and allocates only for the results it keeps.
+fn rank_files(query: &str, files: &[IndexedFile]) -> Vec<(u32, MentionResult)> {
+    let to_result = |f: &IndexedFile| {
+        let abs_str = f.path.to_string_lossy().into_owned();
         MentionResult::File {
             id: abs_str.clone(),
-            display_name: rel,
+            display_name: f.rel.clone(),
             abs_path: abs_str,
         }
     };
     if query.is_empty() {
         return files
-            .into_iter()
+            .iter()
             .take(PER_KIND_LIMIT)
             .map(|f| (0, to_result(f)))
             .collect();
     }
     let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let mut matcher = Matcher::default();
-    let mut scored: Vec<(u32, (String, PathBuf))> = files
-        .into_iter()
-        .filter_map(|(rel, abs)| {
-            let mut buf = Vec::new();
-            let utf = Utf32Str::new(&rel, &mut buf);
-            pattern.score(utf, &mut matcher).map(|s| (s, (rel, abs)))
+    let mut buf = Vec::new();
+    let mut scored: Vec<(u32, &IndexedFile)> = files
+        .iter()
+        .filter_map(|f| {
+            let utf = Utf32Str::new(&f.rel, &mut buf);
+            pattern.score(utf, &mut matcher).map(|s| (s, f))
         })
         .collect();
     scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -521,30 +527,31 @@ fn rank_files(query: &str, files: Vec<(String, PathBuf)>) -> Vec<(u32, MentionRe
         .collect()
 }
 
-fn rank_folders(query: &str, folders: Vec<(String, PathBuf)>) -> Vec<(u32, MentionResult)> {
-    let to_result = |(rel, abs): (String, PathBuf)| {
+/// Borrows the cached folder list and allocates only for the results it keeps.
+fn rank_folders(query: &str, folders: &[(String, PathBuf)]) -> Vec<(u32, MentionResult)> {
+    let to_result = |(rel, abs): &(String, PathBuf)| {
         let abs_str = abs.to_string_lossy().into_owned();
         MentionResult::Folder {
             id: abs_str.clone(),
-            display_name: rel,
+            display_name: rel.clone(),
             abs_path: abs_str,
         }
     };
     if query.is_empty() {
         return folders
-            .into_iter()
+            .iter()
             .take(PER_KIND_LIMIT)
             .map(|f| (0, to_result(f)))
             .collect();
     }
     let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
     let mut matcher = Matcher::default();
-    let mut scored: Vec<(u32, (String, PathBuf))> = folders
-        .into_iter()
-        .filter_map(|(rel, abs)| {
-            let mut buf = Vec::new();
-            let utf = Utf32Str::new(&rel, &mut buf);
-            pattern.score(utf, &mut matcher).map(|s| (s, (rel, abs)))
+    let mut buf = Vec::new();
+    let mut scored: Vec<(u32, &(String, PathBuf))> = folders
+        .iter()
+        .filter_map(|f| {
+            let utf = Utf32Str::new(&f.0, &mut buf);
+            pattern.score(utf, &mut matcher).map(|s| (s, f))
         })
         .collect();
     scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
@@ -763,4 +770,148 @@ fn rank_knowledge(query: &str, entries: Vec<KnowledgeInput>) -> Vec<(u32, Mentio
             )
         })
         .collect()
+}
+
+/// Per-keystroke cost of ranking the file index, borrowed vs copied. Not a
+/// correctness test — run it by hand after touching that path:
+///
+/// ```text
+/// cargo test -p atlas --lib mention_search::perf -- --ignored --nocapture
+/// ```
+#[cfg(test)]
+mod perf {
+    use super::*;
+    use std::time::Instant;
+
+    /// The old path, reproduced exactly: `snapshot_files` deep-copied every
+    /// entry, `rank_files` consumed that copy, and the match buffer was
+    /// allocated per candidate rather than once.
+    fn rank_files_old(query: &str, files: Vec<(String, PathBuf)>) -> Vec<(u32, MentionResult)> {
+        let to_result = |(rel, abs): (String, PathBuf)| {
+            let abs_str = abs.to_string_lossy().into_owned();
+            MentionResult::File {
+                id: abs_str.clone(),
+                display_name: rel,
+                abs_path: abs_str,
+            }
+        };
+        if query.is_empty() {
+            return files
+                .into_iter()
+                .take(PER_KIND_LIMIT)
+                .map(|f| (0, to_result(f)))
+                .collect();
+        }
+        let pattern = Pattern::parse(query, CaseMatching::Smart, Normalization::Smart);
+        let mut matcher = Matcher::default();
+        let mut scored: Vec<(u32, (String, PathBuf))> = files
+            .into_iter()
+            .filter_map(|(rel, abs)| {
+                let mut buf = Vec::new();
+                let utf = Utf32Str::new(&rel, &mut buf);
+                pattern.score(utf, &mut matcher).map(|s| (s, (rel, abs)))
+            })
+            .collect();
+        scored.sort_by_key(|entry| std::cmp::Reverse(entry.0));
+        scored
+            .into_iter()
+            .take(PER_KIND_LIMIT)
+            .map(|(s, f)| (s, to_result(f)))
+            .collect()
+    }
+
+    fn index(count: usize) -> Vec<IndexedFile> {
+        (0..count)
+            .map(|i| {
+                // Every fifth path is non-ASCII: `Utf32Str::new` only touches
+                // the shared match buffer for non-ASCII input, so an all-ASCII
+                // fixture never exercises the buffer reuse this module hoists.
+                let dir = if i % 5 == 0 { "café" } else { "area" };
+                IndexedFile {
+                    rel: format!("src/features/{dir}{}/components/widget-{i}.tsx", i % 40),
+                    path: PathBuf::from(format!(
+                        "/Users/dev/project/src/features/{dir}{}/components/widget-{i}.tsx",
+                        i % 40
+                    )),
+                }
+            })
+            .collect()
+    }
+
+    /// The borrowed ranker must answer exactly what the owned one did —
+    /// including the reused match buffer, which `fileindex_search` hoists the
+    /// same way.
+    #[test]
+    fn borrowing_the_index_ranks_identically() {
+        let files = index(400);
+        for query in [
+            "",
+            "widget",
+            "area3",
+            "wdgt",
+            "WIDGET",
+            "components/widget-7",
+            "zzz",
+            "café",
+            "caf",
+        ] {
+            let owned: Vec<(String, PathBuf)> = files
+                .iter()
+                .map(|f| (f.rel.clone(), f.path.clone()))
+                .collect();
+            // `MentionResult` is a wire type without `PartialEq`; compare the
+            // fields the picker actually shows, in order, with their scores.
+            let shown = |v: Vec<(u32, MentionResult)>| {
+                v.into_iter()
+                    .map(|(score, m)| match m {
+                        MentionResult::File {
+                            id,
+                            display_name,
+                            abs_path,
+                        } => (score, id, display_name, abs_path),
+                        other => panic!("rank_files yielded a non-file: {other:?}"),
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                shown(rank_files(query, &files)),
+                shown(rank_files_old(query, owned)),
+                "query {query:?}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "measurement, not a gate"]
+    fn ranking_the_index_does_not_copy_it() {
+        const KEYSTROKES: usize = 200;
+        println!();
+        for count in [5_000usize, 20_000, 50_000] {
+            let files = index(count);
+
+            // Before: snapshot_files' deep copy, then rank consumes it.
+            let t = Instant::now();
+            for _ in 0..KEYSTROKES {
+                let copied: Vec<(String, PathBuf)> = files
+                    .iter()
+                    .map(|f| (f.rel.clone(), f.path.clone()))
+                    .collect();
+                std::hint::black_box(rank_files_old("widget", copied));
+            }
+            let before = t.elapsed().as_micros() as f64 / KEYSTROKES as f64;
+
+            // After: rank borrows the index under its read lock.
+            let t = Instant::now();
+            for _ in 0..KEYSTROKES {
+                std::hint::black_box(rank_files("widget", &files));
+            }
+            let after = t.elapsed().as_micros() as f64 / KEYSTROKES as f64;
+
+            println!(
+                "  {count:>6} files   before: {before:>8.0} µs/keystroke   after: {after:>7.0} µs   {:.1}x",
+                before / after
+            );
+        }
+        println!();
+    }
 }

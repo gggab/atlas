@@ -52,6 +52,7 @@ import { stripInjectedContext } from "@/features/chat/lib/atlas-context";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
 import { requestCloseTab } from "@/features/chat/lib/close-tab";
 import { pruneContextUsageCache } from "@/features/chat/lib/context-usage-cache";
+import { createRecentChatQueue } from "@/features/chat/lib/recent-chat-queue";
 import {
   createTurnIndexScheduler,
   sessionProjectPath,
@@ -416,6 +417,7 @@ export function App() {
       }
       if (pendingDeltas.length === 0) {
         oldestBufferedAt = null;
+        recentChats.drain();
         return;
       }
       // Mid-fling, hold the batch: applying it re-renders ChatPanel →
@@ -448,6 +450,7 @@ export function App() {
         // thread freezing mid-turn.
         console.error("applyAgentBatch failed; dropped", deltas.length, "deltas:", e);
       }
+      recentChats.drain();
     };
     // Coalesce a streaming text/thinking chunk into the trailing pendingDeltas
     // entry when it's the same kind + session; otherwise append in order. Keeps
@@ -600,6 +603,8 @@ export function App() {
       }
     };
 
+    const recentChats = createRecentChatQueue(recordRecentChat, schedule);
+
     listenAgents((env) => {
       if (cancelled) return;
       const actions = useChatStore.getState().actions;
@@ -643,7 +648,7 @@ export function App() {
         env.kind === "message_appended" ||
         env.kind === "turn_finished"
       ) {
-        recordRecentChat(env.session_id);
+        recentChats.note(env.session_id);
       }
       switch (env.kind) {
         case "text_chunk":
@@ -782,6 +787,7 @@ export function App() {
 
     return () => {
       cancelled = true;
+      flush(true);
       if (rafId !== null) cancelAnimationFrame(rafId);
       if (backstopId !== null) clearTimeout(backstopId);
       window.removeEventListener("atlas:window-active", flushOnWake);

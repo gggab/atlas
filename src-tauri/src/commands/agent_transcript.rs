@@ -287,6 +287,11 @@ impl TranscriptState {
         self.open.lock().get(session_id).cloned()
     }
 
+    /// Test membership without cloning every message in a growing transcript.
+    pub fn is_recording(&self, session_id: &str) -> bool {
+        self.open.lock().contains_key(session_id)
+    }
+
     pub fn note_scheduled_prompt(
         &self,
         session: &str,
@@ -476,6 +481,16 @@ pub fn recorded_projects(config_dir: &Path) -> Vec<(String, PathBuf)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn recording_membership_is_session_scoped_and_matches_snapshot_presence() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = super::TranscriptState::new(dir.path().to_path_buf());
+        assert!(!state.is_recording("a"));
+        state.note_prompt("a", "/project", "codex", "hello", "now".into());
+        assert!(state.is_recording("a"));
+        assert!(!state.is_recording("b"));
+        assert_eq!(state.is_recording("a"), state.snapshot("a").is_some());
+    }
     use super::*;
 
     /// A directory unique to each call. Tests run in parallel, so a shared

@@ -193,7 +193,7 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for TranscriptMiddleware {
             SessionDelta::MessageAppended { message } => {
                 // Cheap guard first: no buffer means no prompt was recorded for
                 // this session, so it isn't one we're recording.
-                if state.snapshot(&envelope.session_id).is_none() {
+                if !state.is_recording(&envelope.session_id) {
                     return;
                 }
                 // `agents_send` records the user's own prompts, so a user

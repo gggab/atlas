@@ -40,6 +40,9 @@ validated here; a Windows regression checks direct scanning after file edits.
 Completed, uncanceled agent turns also schedule a debounced refresh. The composer
 shows index status and offers a manual rebuild. The new index replaces the old
 code-summary corpus path; shared-memory entries and their databases are preserved.
+The turn-end refresh remains a freshness fallback: the explorer's watcher does
+not cover every Agent worktree or re-included ignored subtree. Removing it and
+lazy activation are deferred; see [ADR-0023](../adr/0023-retain-code-index-freshness-fallback.md).
 Status read failures show "Index unavailable" with the original cause; a
 successful retry clears the error rather than presenting the failure as an
 unbuilt index.
@@ -64,3 +67,28 @@ bun run test -- src/components/code-search-api.test.ts src/components/search-ove
 Loopback MCP and temporary-project tests exercise search, tokens, disabled tools,
 index refresh and path restrictions. They do not establish a vendor-authenticated
 CLI session, a real downloaded embedding model or desktop rendering.
+
+## Selected performance ports
+
+Independent fixes from upstream `142395a8` retain all ten tools and `@symbol`:
+file/folder ranking borrows shared lists and publishes derived folders only when
+the file-set generation is unchanged; equal Git statuses keep their array
+identity. Editor disk reconciliation coalesces watcher bursts for 150 ms, with
+a one-second maximum wait and immediate reconciliation on focus.
+
+Streaming Markdown reuses settled blocks, restarting at a line-aligned tail so
+indentation keeps its meaning. Changed settled prefixes or shrinking sources
+trigger a full split. Prefix/chunk equivalence tests include indented lists,
+fences, HTML, references, CRLF and Unicode. Long conversations use a membership
+lookup to test recording, and recent-chat persistence runs once per session per
+delta drain, after applying the session state. Hidden dither canvases skip drawing.
+
+Terminal tails use absolute decoded-byte cursors after front truncation and
+amortized buffer compaction. Projected/UI text grows only to
+`max(64 bytes, 2 × terminal output-byte limit)` (the default limit is 1 MiB),
+then an authoritative tool-call snapshot replaces it with the retained window
+and a dropped-output marker. The replayed and PTY halves each have their own
+window, so a full snapshot can include two windows plus the marker. Subsequent
+chunks resume from the absolute cursor. ACP `terminal/output` still returns its
+bounded capture and truncation status. This does not keep an unlimited command
+log or change Agent authentication, memory or native-engine behavior.
