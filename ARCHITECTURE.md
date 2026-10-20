@@ -178,8 +178,9 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 | Other | app_state, canvas, cli, clipboard, compose_prompt, feedback, fileindex, log, mention_search, mission_control, pdf_annotations, plans, project_session, recent_files, skills, telemetry, updater, window |
 
 The code server shares the memory listener and session token middleware; its
-setting is independent of memory sharing. The metadata-only `session_watcher`
-feeds recent session activity, while ACP remains responsible for transcript
+setting is independent of memory sharing. The `session_watcher` uses file metadata
+for discovery and bounded local tail metadata for liveness. It feeds recent
+session activity, while ACP remains responsible for transcript
 replay. See `docs/reference/code-search.md` and `docs/reference/session-discovery.md`
 for their permission, storage and compatibility boundaries.
 

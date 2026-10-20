@@ -126,7 +126,8 @@ refresh remain outside these selective ports.
 
 The approved ports of `a335ec9c` and `bb8eb6ac` add
 [terminal session discovery](session-discovery.md) and [local code search](code-search.md).
-History discovery reads file metadata only; ACP still owns replay and capability
+History discovery uses file metadata, with bounded local conversation-time probes
+for liveness as described in [session discovery](session-discovery.md). ACP owns replay and capability
 negotiation. The code service joins the existing session token and preserves
 SSH / Browser Use permissions. New history tables are additive named migrations
 at epoch 5. Code embeddings are downloaded explicitly and remain separate from

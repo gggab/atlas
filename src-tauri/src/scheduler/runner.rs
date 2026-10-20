@@ -124,19 +124,17 @@ impl Scheduler {
             .as_deref()
             .ok_or("missing execution directory")?
             .to_string();
-        let modified = tauri::async_runtime::spawn_blocking(move || {
-            use atlas_agent_transcript::discovery::{claude_sessions_dir, scan_sessions};
-            claude_sessions_dir(std::path::Path::new(&cwd))
-                .map(|dir| scan_sessions(&dir))
-                .unwrap_or_default()
-        })
-        .await
-        .map_err(|e| e.to_string())?;
         if let Some(session) = thread.session_id.as_ref() {
-            let last = modified
-                .iter()
-                .find(|m| m.session_id == session.to_string())
-                .map(|m| m.modified);
+            let session_id = session.to_string();
+            let last = tauri::async_runtime::spawn_blocking(move || {
+                let cwd = crate::commands::agents::canonical_project_dir(&cwd);
+                let dir = atlas_agent_transcript::discovery::claude_sessions_dir(
+                    std::path::Path::new(&cwd),
+                )?;
+                session_activity_in(&dir, &session_id, chrono::Utc::now())
+            })
+            .await
+            .map_err(|e| e.to_string())?;
             if crate::commands::agent_host::live_elsewhere(
                 last,
                 host.atlas_activity().get(&session.to_string()),
@@ -338,5 +336,56 @@ impl Scheduler {
             self.changed();
         }
         Ok(())
+    }
+}
+
+fn session_activity_in(
+    dir: &std::path::Path,
+    session_id: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    use atlas_agent_transcript::discovery::{activity_time, find_session};
+    let session = find_session(dir, session_id)?;
+    Some(activity_time(&session, now))
+}
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+    use crate::commands::agent_host::{live_elsewhere, AtlasActivity};
+    use atlas_agent_transcript::discovery::{activity_time, scan_sessions};
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn foreground_and_background_agree_on_bookkeeping_and_unowned_sdk_activity() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = dir.path().join(format!("{id}.jsonl"));
+        let now = Utc::now();
+        for (entrypoint, age, live) in [
+            ("cli", 130, false),
+            ("sdk-cli", 10, true),
+            ("sdk-ts", 10, true),
+        ] {
+            let at = now - Duration::seconds(age);
+            std::fs::write(&path, format!("{{\"type\":\"assistant\",\"entrypoint\":\"{entrypoint}\",\"timestamp\":\"{}\"}}\n{{\"type\":\"cost-state\"}}\n", at.to_rfc3339())).unwrap();
+            let file = scan_sessions(dir.path()).pop().unwrap();
+            let foreground = activity_time(&file, now);
+            let background = session_activity_in(dir.path(), &id, now).unwrap();
+            assert_eq!(foreground, background);
+            assert_eq!(live_elsewhere(Some(background), None, now), live);
+            let own = AtlasActivity {
+                last_turn_end: Some(at),
+                ..Default::default()
+            };
+            assert!(!live_elsewhere(Some(background), Some(&own), now));
+        }
+        std::fs::write(&path, "{partial").unwrap();
+        assert!(live_elsewhere(
+            session_activity_in(dir.path(), &id, now),
+            None,
+            now
+        ));
+        assert!(session_activity_in(dir.path(), "../outside", now).is_none());
     }
 }

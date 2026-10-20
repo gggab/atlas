@@ -2,9 +2,9 @@
 //! in a terminal reaches the sidebar without anything being clicked.
 //!
 //! ADR-0001 amendment ("discovery is not replay", ATL-423). This module only
-//! lists a directory and reads file times (`atlas_agent_transcript::discovery`);
-//! it never opens a transcript. It names no agent: a session id that appears on
-//! disk is handed to [`AgentHost::sync_project`], and whichever agent lists it
+//! lists a directory and reads file metadata; bounded tails distinguish
+//! conversation activity from bookkeeping for liveness only. It names no agent:
+//! a session id on disk is handed to [`AgentHost::sync_project`], and whichever agent lists it
 //! over `session/list` owns the row (ADR-0002, Rule 3).
 //!
 //! On each debounced batch the directory is rescanned and the sessions split:
@@ -29,7 +29,7 @@
 //!   and persisted.
 //!
 //! Liveness (ATL-424): the sidebar's "running in a terminal" dot is a pure
-//! function of the file times kept here, what Atlas's own turns have been
+//! function of the conversation activity times kept here, what Atlas's own turns have been
 //! doing (`AgentHost::atlas_activity`), and the clock — so it also has to be
 //! re-announced when the clock alone moves it. While any session is live one
 //! ticker re-checks every [`TICK`] and emits `atlas:threads-changed` whenever
@@ -48,7 +48,9 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use agent_client_protocol::schema::v1 as acp;
-use atlas_agent_transcript::discovery::{claude_sessions_dir, scan_sessions};
+use atlas_agent_transcript::discovery::{
+    activity_time, claude_sessions_dir, scan_sessions, DiscoveredSession,
+};
 use chrono::{DateTime, Utc};
 use notify::RecursiveMode;
 use notify_debouncer_full::new_debouncer;
@@ -101,6 +103,65 @@ struct Armed {
     generation: u64,
     /// Keeping the debouncer alive keeps the OS-level watch active.
     debouncer: Option<Debouncer>,
+    observed: HashMap<String, ObservedSession>,
+}
+
+#[derive(Clone)]
+struct ObservedSession {
+    file: DiscoveredSession,
+    activity: DateTime<Utc>,
+}
+
+fn unchanged(a: &DiscoveredSession, b: &DiscoveredSession) -> bool {
+    a.modified == b.modified && a.len == b.len
+}
+
+fn has_new_activity(current: &DiscoveredSession, previous: &DiscoveredSession) -> bool {
+    current.modified > previous.modified
+        || (current.modified == previous.modified && current.len != previous.len)
+}
+
+fn observe_sessions(
+    sessions: &[DiscoveredSession],
+    previous: &HashMap<String, ObservedSession>,
+    now: DateTime<Utc>,
+) -> HashMap<String, ObservedSession> {
+    sessions
+        .iter()
+        .map(|session| {
+            let activity = previous
+                .get(&session.session_id)
+                .filter(|seen| unchanged(&seen.file, session))
+                .map_or_else(|| activity_time(session, now), |seen| seen.activity);
+            (
+                session.session_id.clone(),
+                ObservedSession {
+                    file: session.clone(),
+                    activity,
+                },
+            )
+        })
+        .collect()
+}
+
+fn refresh(
+    armed: &Mutex<Armed>,
+    scan_gate: &Mutex<()>,
+    generation: u64,
+    dir: &Path,
+) -> Option<(Vec<DiscoveredSession>, HashMap<String, ObservedSession>)> {
+    let _scan = scan_gate.lock();
+    let cached = {
+        let armed = armed.lock();
+        if !armed.is_current(generation) {
+            return None;
+        }
+        armed.observed.clone()
+    };
+    let sessions = scan_sessions(dir);
+    let observed = observe_sessions(&sessions, &cached, Utc::now());
+    let previous = armed.lock().publish(generation, observed)?;
+    Some((sessions, previous))
 }
 
 impl Armed {
@@ -111,11 +172,21 @@ impl Armed {
         }
         self.cwd = Some(cwd.to_owned());
         self.generation += 1;
+        self.observed.clear();
         Some(self.generation)
     }
 
     fn is_current(&self, generation: u64) -> bool {
         self.cwd.is_some() && self.generation == generation
+    }
+
+    fn publish(
+        &mut self,
+        generation: u64,
+        observed: HashMap<String, ObservedSession>,
+    ) -> Option<HashMap<String, ObservedSession>> {
+        self.is_current(generation)
+            .then(|| std::mem::replace(&mut self.observed, observed))
     }
 
     /// Keep `debouncer` if `generation` is still current; otherwise hand it
@@ -146,7 +217,8 @@ pub struct SessionWatcher {
     ticking: AtomicBool,
     /// What the watcher is armed for, and the watch itself, under one lock.
     armed: Mutex<Armed>,
-    modified: Mutex<HashMap<String, DateTime<Utc>>>,
+    /// Acquire before `armed`, never while holding it. I/O holds only this gate.
+    scan_gate: Mutex<()>,
     tried: Mutex<UnknownBackoff>,
 }
 
@@ -158,7 +230,7 @@ impl SessionWatcher {
             announced_live: Mutex::new(HashSet::new()),
             ticking: AtomicBool::new(false),
             armed: Mutex::new(Armed::default()),
-            modified: Mutex::new(HashMap::new()),
+            scan_gate: Mutex::new(()),
             tried: Mutex::new(UnknownBackoff::default()),
         })
     }
@@ -168,11 +240,7 @@ impl SessionWatcher {
     pub fn arm(self: &Arc<Self>, cwd: &str) {
         let Some(generation) = ({
             let mut armed = self.armed.lock();
-            let generation = armed.arm(cwd);
-            if generation.is_some() {
-                self.modified.lock().clear();
-            }
-            generation
+            armed.arm(cwd)
         }) else {
             return;
         };
@@ -184,10 +252,14 @@ impl SessionWatcher {
         tauri::async_runtime::spawn_blocking(move || this.install(generation, &cwd, true));
     }
 
-    /// Last-seen modified time per session id for the armed project; the
-    /// history commands read it to decide which rows are live elsewhere.
-    pub fn last_modified(&self) -> HashMap<String, DateTime<Utc>> {
-        self.modified.lock().clone()
+    /// Liveness-only times; discovery and alias settlement still use raw mtimes.
+    pub fn activity_times(&self) -> HashMap<String, DateTime<Utc>> {
+        self.armed
+            .lock()
+            .observed
+            .iter()
+            .map(|(id, seen)| (id.clone(), seen.activity))
+            .collect()
     }
 
     /// Start watching for `cwd`, dropping whatever was watched before.
@@ -217,22 +289,8 @@ impl SessionWatcher {
             return;
         };
 
-        if seed && !in_parent {
-            let seen: HashMap<_, _> = scan_sessions(&dir)
-                .into_iter()
-                .map(|s| (s.session_id, s.modified))
-                .collect();
-            let current = {
-                let armed = self.armed.lock();
-                let current = armed.is_current(generation);
-                if current {
-                    *self.modified.lock() = seen;
-                }
-                current
-            };
-            if current {
-                self.reconcile_liveness();
-            }
+        if seed && !in_parent && refresh(&self.armed, &self.scan_gate, generation, &dir).is_some() {
+            self.reconcile_liveness();
         }
 
         let weak = Arc::downgrade(self);
@@ -285,8 +343,7 @@ impl SessionWatcher {
     fn live_ids(&self) -> HashSet<String> {
         let now = Utc::now();
         let activity = self.host.atlas_activity();
-        self.modified
-            .lock()
+        self.activity_times()
             .iter()
             .filter(|(id, at)| live_elsewhere(Some(**at), activity.get(*id), now))
             .map(|(id, _)| id.clone())
@@ -294,7 +351,7 @@ impl SessionWatcher {
     }
 
     /// Announce a change in the live set, and keep exactly one ticker running
-    /// while anything is live. Called after every change to `modified` and by
+    /// while anything is live. Called after every observation change and by
     /// the ticker itself.
     fn reconcile_liveness(self: &Arc<Self>) {
         if !self.announce_live().is_empty() {
@@ -355,24 +412,16 @@ impl SessionWatcher {
 
     /// Rescan, refresh the last-seen map, and act on what moved.
     fn handle_batch(self: &Arc<Self>, generation: u64, cwd: &str, dir: &Path) {
-        let sessions = scan_sessions(dir);
-        let previous = {
-            let armed = self.armed.lock();
-            if !armed.is_current(generation) {
-                return;
-            }
-            let fresh = sessions
-                .iter()
-                .map(|s| (s.session_id.clone(), s.modified))
-                .collect();
-            std::mem::replace(&mut *self.modified.lock(), fresh)
+        let Some((sessions, previous)) = refresh(&self.armed, &self.scan_gate, generation, dir)
+        else {
+            return;
         };
         let written: HashMap<String, DateTime<Utc>> = sessions
             .iter()
             .filter(|s| {
                 previous
                     .get(&s.session_id)
-                    .is_none_or(|seen| s.modified > *seen)
+                    .is_none_or(|seen| has_new_activity(s, &seen.file))
             })
             .map(|s| (s.session_id.clone(), s.modified))
             .collect();
@@ -408,7 +457,7 @@ impl SessionWatcher {
         for session in sessions {
             let moved = previous
                 .get(&session.session_id)
-                .is_none_or(|seen| session.modified > *seen);
+                .is_none_or(|seen| has_new_activity(&session, &seen.file));
             if !moved {
                 continue;
             }
@@ -530,6 +579,136 @@ fn on_batch(weak: &Weak<SessionWatcher>, generation: u64, cwd: &str, dir: &Path,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn regressed_file_times_invalidate_cache_without_touching_history_or_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(format!("{}.jsonl", uuid::Uuid::new_v4())),
+            "{}\n",
+        )
+        .unwrap();
+        let previous = scan_sessions(dir.path()).pop().unwrap();
+        assert!(!has_new_activity(&previous, &previous));
+        let mut current = previous.clone();
+        current.len += 1;
+        assert!(
+            has_new_activity(&current, &previous),
+            "same-time size changes are new discovery evidence"
+        );
+        for len in [previous.len, previous.len + 1] {
+            current.len = len;
+            current.modified = previous.modified - chrono::Duration::seconds(1);
+            assert!(
+                !unchanged(&current, &previous),
+                "recompute liveness even when time regresses"
+            );
+            assert!(
+                !has_new_activity(&current, &previous),
+                "regressed times must not settle aliases or touch history"
+            );
+        }
+        current.modified = previous.modified + chrono::Duration::seconds(1);
+        assert!(has_new_activity(&current, &previous));
+    }
+
+    #[test]
+    fn a_superseded_scan_cannot_publish_activity_into_the_new_project() {
+        let mut armed = Armed::default();
+        let a = armed.arm("/a").unwrap();
+        let b = armed.arm("/b").unwrap();
+        assert!(armed.publish(b, HashMap::new()).is_some());
+        assert!(armed.publish(a, HashMap::new()).is_none());
+        assert!(armed.is_current(b));
+    }
+
+    #[test]
+    fn activity_cache_reuses_unchanged_files_and_drops_removed_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.jsonl", uuid::Uuid::new_v4()));
+        let at = Utc::now() - chrono::Duration::seconds(20);
+        let text = format!(
+            "{{\"entrypoint\":\"sdk-cli\",\"timestamp\":\"{}\"}}\n",
+            at.to_rfc3339()
+        );
+        std::fs::write(&path, text).unwrap();
+        let scanned = scan_sessions(dir.path());
+        let first = observe_sessions(&scanned, &HashMap::new(), Utc::now());
+        let id = &scanned[0].session_id;
+        assert_eq!(first[id].activity, at);
+        // An unchanged snapshot must not re-open the file.
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            observe_sessions(&scanned, &first, Utc::now())[id].activity,
+            at
+        );
+        assert!(observe_sessions(&[], &first, Utc::now()).is_empty());
+        std::fs::write(&path, "{partial").unwrap();
+        let changed = scan_sessions(dir.path());
+        assert_eq!(
+            observe_sessions(&changed, &first, Utc::now())[id].activity,
+            changed[0].modified
+        );
+    }
+
+    #[test]
+    fn scans_publish_in_serial_order_without_holding_the_generation_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let path = dir.path().join(format!("{id}.jsonl"));
+        let old = Utc::now() - chrono::Duration::seconds(20);
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"entrypoint\":\"cli\",\"timestamp\":\"{}\"}}\n",
+                old.to_rfc3339()
+            ),
+        )
+        .unwrap();
+        let armed = Arc::new(Mutex::new(Armed::default()));
+        let scan = Arc::new(Mutex::new(()));
+        let generation = armed.lock().arm("/a").unwrap();
+        refresh(&armed, &scan, generation, dir.path()).unwrap();
+        let first_scan = scan.lock();
+        let next_scan = scan.clone();
+        let next_armed = armed.clone();
+        let directory = dir.path().to_owned();
+        let (started, ready) = std::sync::mpsc::channel();
+        let (finished, done) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            started.send(()).unwrap();
+            let (_, previous) = refresh(&next_armed, &next_scan, generation, &directory).unwrap();
+            finished.send(previous).unwrap();
+        });
+        ready.recv().unwrap();
+        assert!(
+            done.recv_timeout(Duration::from_millis(50)).is_err(),
+            "the production scan must wait behind an earlier scan"
+        );
+        assert!(
+            armed.try_lock().is_some(),
+            "reads and project switches stay available during a scan"
+        );
+        assert_eq!(armed.lock().observed[&id].activity, old);
+        let newer = old + chrono::Duration::seconds(10);
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"entrypoint\":\"sdk-cli\",\"timestamp\":\"{}\"}}\n",
+                newer.to_rfc3339()
+            ),
+        )
+        .unwrap();
+        drop(first_scan);
+        let previous = done.recv_timeout(Duration::from_secs(5)).unwrap();
+        worker.join().unwrap();
+        assert_eq!(previous[&id].activity, old);
+        assert_eq!(armed.lock().observed[&id].activity, newer);
+        let new_generation = armed.lock().arm("/b").unwrap();
+        assert!(refresh(&armed, &scan, generation, dir.path()).is_none());
+        assert!(armed.lock().is_current(new_generation));
+        assert!(armed.lock().observed.is_empty());
+    }
 
     /// The review finding: an install for project A that finished after
     /// `arm(B)` stored A's watch over B's. Every arming has its own

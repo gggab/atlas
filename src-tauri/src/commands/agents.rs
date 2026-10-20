@@ -1255,9 +1255,9 @@ pub async fn threads_delete(
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<(), CmdError> {
-    // The watcher's file times decide "live elsewhere", which refuses the
+    // The watcher's activity times decide "live elsewhere", which refuses the
     // delete — the same input the sidebar's dot reads.
-    let modified = watcher.last_modified();
+    let modified = watcher.activity_times();
     host.delete_thread(parse_thread_id(&thread_id)?, &modified)
         .await
         .map_err(CmdError::from)
@@ -1272,7 +1272,7 @@ pub fn threads_projects(
     app: AppHandle,
 ) -> Result<Vec<super::agent_host::ThreadProjectWire>, CmdError> {
     let mut projects = host
-        .thread_projects(cwd.as_deref(), &watcher.last_modified())
+        .thread_projects(cwd.as_deref(), &watcher.activity_times())
         .map_err(CmdError::from)?;
     if let Some(personal) = app.try_state::<crate::personal::PersonalState>() {
         projects.retain(|p| !p.paths.iter().any(|path| personal.is_directory(path)));
@@ -1287,7 +1287,7 @@ pub fn threads_history(
     host: State<'_, Arc<AgentHost>>,
     watcher: State<'_, Arc<super::session_watcher::SessionWatcher>>,
 ) -> Result<Vec<super::agent_host::ThreadRow>, CmdError> {
-    host.thread_history(archived_only, &watcher.last_modified())
+    host.thread_history(archived_only, &watcher.activity_times())
         .map_err(CmdError::from)
 }
 
@@ -1346,21 +1346,33 @@ pub async fn threads_sync_project(
 
 /// The physical path of a project directory as the UI named it: resolved
 /// through symlinks when it exists, else the raw path with surrounding
-/// whitespace and any trailing slash removed (the root stays `/`). Empty in,
+/// whitespace and trailing separators removed (drive/UNC roots stay intact). Empty in,
 /// empty out.
-fn canonical_project_dir(raw: &str) -> String {
+pub(crate) fn canonical_project_dir(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return String::new();
     }
-    if let Ok(canonical) = std::fs::canonicalize(trimmed) {
+    // Upstream 16d69e1d: Claude slugs its plain cwd, not Windows' verbatim path.
+    if let Ok(canonical) = dunce::canonicalize(trimmed) {
         return canonical.to_string_lossy().into_owned();
     }
-    let without_slash = trimmed.trim_end_matches('/');
-    if without_slash.is_empty() {
-        "/".to_owned()
+    trim_project_separators(trimmed).to_owned()
+}
+
+fn trim_project_separators(path: &str) -> &str {
+    // A drive/UNC/root alone must not become a drive-relative or empty path.
+    if std::path::Path::new(path).components().any(|part| {
+        matches!(
+            part,
+            std::path::Component::Normal(_)
+                | std::path::Component::CurDir
+                | std::path::Component::ParentDir
+        )
+    }) {
+        path.trim_end_matches(|c| c == '/' || (cfg!(windows) && c == '\\'))
     } else {
-        without_slash.to_owned()
+        path
     }
 }
 
@@ -2237,6 +2249,45 @@ impl PendingUpdates {
 #[cfg(test)]
 mod project_dir_tests {
     use super::canonical_project_dir;
+
+    #[test]
+    fn an_existing_directory_uses_its_plain_physical_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let canonical = canonical_project_dir(&tmp.path().to_string_lossy());
+        assert_eq!(
+            canonical,
+            dunce::canonicalize(tmp.path()).unwrap().to_string_lossy()
+        );
+        #[cfg(windows)]
+        {
+            assert!(!canonical.starts_with(r"\\?\"));
+            assert!(!atlas_agent_transcript::encode_cwd(&canonical).starts_with("--"));
+        }
+    }
+
+    #[test]
+    fn missing_directories_trim_separators_without_changing_roots() {
+        assert_eq!(
+            canonical_project_dir(" /no/such/atlas-project/// "),
+            "/no/such/atlas-project"
+        );
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                canonical_project_dir(r" Z:\no-such-atlas-project\\ "),
+                r"Z:\no-such-atlas-project"
+            );
+            for root in [r"Z:\", "Z:/", r"\", r"\\atlas-unavailable\share\"] {
+                assert_eq!(super::trim_project_separators(root), root);
+            }
+        }
+        assert_eq!(
+            canonical_project_dir("/"),
+            dunce::canonicalize("/")
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "/".into())
+        );
+    }
 
     /// The review finding: the UI's raw cwd keyed the watcher's slug directory,
     /// the `session/list` filter and the debounce, so a symlinked checkout (or

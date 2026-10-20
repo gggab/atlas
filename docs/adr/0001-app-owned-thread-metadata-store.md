@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 
-**History:** 2026-08-22: accepted; scrape readers replaced by an app-owned store. 2026-10-05: discovery split from replay; ongoing, project-scoped discovery and live-elsewhere guard (ATL-421–424).
+**History:** 2026-08-22: accepted; scrape readers replaced by an app-owned store. 2026-10-05: discovery split from replay; ongoing, project-scoped discovery and live-elsewhere guard (ATL-421–424). 2026-10-20: bounded conversation metadata reads refine liveness; replay remains ACP.
 
 ## Context
 
@@ -27,7 +27,7 @@ Port Zed's `ThreadMetadataStore` mechanism same-to-same, rendered in Atlas's des
 
 ### Rules
 
-- **Rule 1 — discovery metadata only.** Atlas may read an agent's on-disk storage for discovery: session id, cwd, last activity (file mtime), liveness. The on-disk provider lists a directory and reads file times; it never opens a transcript.
+- **Rule 1 — discovery metadata only.** Atlas may read an agent's on-disk storage for discovery: session id, cwd, file time/size and liveness. Directory discovery uses file metadata. For liveness only, recent top-level UUID transcripts may be opened for bounded tail reads that extract record type, timestamp and an entrypoint marker. Message fields are discarded; the bytes remain transient and local, never persisted, logged or rendered. See [session discovery](../reference/session-discovery.md) for read limits and unknown-evidence fallback.
 - **Rule 2 — replay goes through the agent.** Replay and resume always use `session/load` / `session/resume`. Atlas never renders a transcript it read from disk for this purpose.
 - **Rule 3 — attribution by `session/list`.** A discovered session belongs to whichever agent lists it over `session/list`, never to a hardcoded agent id. A session id seen on disk is only a reason to ask.
 - **Rule 4 — `session/list` is the floor.** Every agent that advertises `sessionCapabilities.list` gets import and project sync. An on-disk provider is an optional upgrade, keyed by storage format, not agent identity. The one provider today watches Claude Code's transcript directory.
@@ -38,7 +38,7 @@ Port Zed's `ThreadMetadataStore` mechanism same-to-same, rendered in Atlas's des
 ### Discovery
 
 - **Sources.** The live feed of in-app conversations; the user-initiated import and the one-time first-run backfill (both land everything archived); and the **project sync**, which runs when the sidebar is shown for a project, on window focus, and when the watcher sees an unknown session. The sync asks only agents the store already has rows for, so an automatic action never spawns an agent the user has not used. Each agent is bounded by a short timeout, and the sync is debounced per project.
-- **One spelling of the project.** The UI's cwd is canonicalised once (`canonicalize`, falling back to the trimmed raw path) before it keys the watcher's directory, the `session/list` cwd filter and the sync debounce. Claude Code names its directory after its physical `getcwd`. The slug is the SDK's exactly: every UTF-16 unit outside `[A-Za-z0-9]` becomes `-`, and a slug over 200 units is cut and suffixed with a base-36 hash of the path.
+- **One spelling of the project.** The UI's cwd is canonicalised once (`dunce::canonicalize`, falling back to the trimmed raw path with drive/UNC roots preserved) before it keys the watcher's directory, the `session/list` cwd filter and the sync debounce. The scheduler uses the same canonicalizer. Claude Code names its directory after its physical `getcwd`. The slug is the SDK's exactly: every UTF-16 unit outside `[A-Za-z0-9]` becomes `-`, and a slug over 200 units is cut and suffixed with a base-36 hash of the path.
 - **Watcher.** The open project's transcript directory is watched (its parent until it exists), debounced. A known session that moved has its `updated_at` bumped forward. An unknown one forces a sync. The watcher is re-armed per project; a generation counter ensures a superseded arming can never install its watch over a newer one.
 - **Recency, not archiving, keeps the sidebar small.** Rows whose activity falls in the last **7 days** land unarchived; older ones land archived. **New activity on an archived row brings it back**: observed activity inside the window and more than 10s past the row's stored `updated_at` unarchives it. That applies to the watcher's file times and to the agent-reported `updated_at` on a sync. An archived row's `updated_at` moves only when it is unarchived, so it stands in for an archived-at time. The slack is what stops the agent's own trailing write from reviving a thread the user archived right after an Atlas turn.
 - **Unknown ids back off.** An id on disk that no agent lists is retried per id after 60s, doubling to a 30-minute cap. It is forgotten once the store knows it. The rule never asks which agent should list it.
@@ -47,7 +47,7 @@ Port Zed's `ThreadMetadataStore` mechanism same-to-same, rendered in Atlas's des
 
 ### Liveness
 
-A session is **live elsewhere** when its transcript was written within **~90s** (`LIVE_WINDOW`) **and** the write is not explained by Atlas's own turn. A write is explained when an Atlas turn is in flight in that session, or when it lands no more than **5s** after Atlas's last turn there ended. Atlas counts each send in and out (`AgentHost::atlas_activity`).
+A session is **live elsewhere** when its latest readable conversation metadata records activity within **~90s** (`LIVE_WINDOW`) **and** the write is not explained by Atlas's own turn. Unknown evidence explicitly falls back to file mtime. Later bookkeeping alone does not renew a known conversation time. SDK entrypoints are not process identity and never suppress activity by themselves. A write is explained when an Atlas turn is in flight in that session, or when it lands no more than **5s** after Atlas's last turn there ended. Atlas counts each send in and out (`AgentHost::atlas_activity`); confirmed and provisional aliases inherit owner activity. Raw file times still drive discovery and alias settlement.
 
 Having the session open in Atlas does not count. Opening a sidebar row binds the session while a terminal may still be writing it, and that is exactly the fork this guards against.
 
@@ -81,7 +81,7 @@ The proper fix is a wire signal from the agent that a session's storage identity
 
 - Any agent gets history, import, resume and delete purely from its advertised capabilities — zero Atlas code per agent.
 - Sessions run outside Atlas reach the sidebar for any agent that advertises `session/list`, on the next sync; for an agent with an on-disk provider, within seconds and with liveness.
-- Cost/usage coverage stays limited to sessions run through Atlas — accepted. Discovery reads no content, so it cannot widen it.
+- Cost/usage coverage stays limited to sessions run through Atlas — accepted. Discovery does not extract message content or usage; bounded metadata reads only refine liveness.
 - Archive is a first-class state, but it is overruled by new activity. A user who wants a session gone for good deletes it.
 - Cross-project sidebar grouping is possible because the store is app-level with path-indexed queries.
 - Transcript aliases are inferred, provisional until the agent's own writes confirm them, and only confirmed ones are persisted. The inference is a stopgap until the wire signal exists.

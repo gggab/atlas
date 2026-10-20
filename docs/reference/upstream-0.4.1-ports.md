@@ -37,6 +37,14 @@ CLI scope. They do not merge the upstream branch or restore removed modules.
 
 ## Development checks
 
+The external-session activity fix in `16d69e1d` is selectively adapted: Windows
+plain-path canonicalization and bounded conversation-time probes are retained;
+blanket SDK-writer suppression is excluded. Watcher snapshots are generation
+checked and serialized, and background tasks use the same liveness reader.
+See [session discovery](session-discovery.md) for metadata boundaries and limits.
+The mixed commit is not cherry-picked wholesale because its SDK assumption does
+not identify this application's process.
+
 Independent performance fixes from `142395a8` are selectively adapted; the code
 index removal in `d466cf5c` and the native-engine changes are excluded. See
 [code search](code-search.md#selected-performance-ports) for the bounds and
@@ -97,7 +105,7 @@ ACP-thread integration suite; they were not rewritten by these ports.
 ## Deferred decisions
 
 Memory schema, revisions, evidence and selected review/handoff behavior are now selectively ported; see [shared memory](shared-memory.md). Model-driven consolidation, Dream, exports/mirrors, automatic expiry, default
-`atlasOnlyMemory`, code-index removal and transcript-tail liveness inference are
+`atlasOnlyMemory`, code-index removal and blanket SDK-writer suppression are
 not included. Git write UI, embedded Browser, native engine, account, organization
 and cloud infrastructure remain removed. Existing profiles, sessions,
 checkpoints, personal facts, tasks, local memory and CLI authentication remain
