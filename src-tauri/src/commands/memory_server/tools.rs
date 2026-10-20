@@ -181,7 +181,8 @@ pub(super) fn tools() -> Vec<Tool> {
             "memory_changes",
             "What other sessions recorded since this session last looked (its briefing or its last \
              call here): new or edited entries of every kind, newest first. Call it when resuming \
-             after a pause or a long task. Empty when nothing changed.",
+             after a pause or a long task. Empty when nothing changed. When the result says \
+             \"more\": true, call it again for the next page.",
             json!({ "type": "object", "properties": {} }),
         ),
         tool(
@@ -516,8 +517,12 @@ impl MemoryTools {
             Err(refused) => return refused,
         };
         let id = args.id;
-        let (memory, cwd) = (self.memory.clone(), grant.cwd.clone());
-        let gone = match run_blocking(move || memory.forget(&cwd, id)).await {
+        let (memory, cwd, session) = (
+            self.memory.clone(),
+            grant.cwd.clone(),
+            grant.session_id.clone(),
+        );
+        let gone = match run_blocking(move || memory.forget(&cwd, id, &session)).await {
             Ok(Ok(gone)) => gone,
             Ok(Err(e)) => return tool_error(format!("not forgotten: {e}")),
             Err(e) => return tool_error(format!("memory unavailable: {e}")),

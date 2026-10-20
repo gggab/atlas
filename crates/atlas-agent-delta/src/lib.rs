@@ -56,5 +56,6 @@ pub use projector::{
 
 pub use atlas_agent_wire::{
     AgentId, DeltaSink, Message, MessageMode, MessageRole, PlanEntry, SessionDelta,
-    SessionDeltaEnvelope, SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
+    SessionDeltaEnvelope, SessionStatus, Subagent, SubagentStatus, ToolCall, ToolCallStatus,
+    ToolContentBlock, Usage,
 };

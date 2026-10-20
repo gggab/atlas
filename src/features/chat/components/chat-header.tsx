@@ -16,6 +16,7 @@
 // a row carries a lot of resume edge-cases — a second implementation would drift
 // from the first within a release.
 
+import { useThreadOverviewStore } from "../stores/thread-overview-store";
 import { forwardRef, memo, useState, type ReactNode } from "react";
 import { MenuGlyph } from "@/ui/animated-icon";
 import { useActionShortcut } from "@/features/keybindings/lib/use-action-shortcut";
@@ -122,6 +123,8 @@ function ChatHeaderImpl({
 
   onNewSession,
 }: ChatHeaderProps) {
+  const overviewOpen = useThreadOverviewStore((s) => !!s.open[tabId]);
+  const toggleOverview = useThreadOverviewStore.use.actions().toggle;
   const findHint = useActionShortcut("chat.find")?.label;
   const [pickerOpen, setPickerOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -199,6 +202,13 @@ function ChatHeaderImpl({
           <div className="flex-1" />
           {actions}
           <BrowserUseControls sessionId={acpSessionId} />
+          <HeaderCircleButton
+            title="Thread overview"
+            aria-pressed={overviewOpen}
+            onClick={() => toggleOverview(tabId)}
+          >
+            <ListFilter size={13} />
+          </HeaderCircleButton>
 
           {/* Left of Find, so the two "go back to something" controls sit
             together at the right end of the bar. Pill-shaped rather than a

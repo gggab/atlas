@@ -1,4 +1,4 @@
-import type { ToolContentBlock } from "@/types/agent";
+import type { Subagent, ToolContentBlock } from "@/types/agent";
 
 // Wire shapes for the `atlas-agents` Rust surface. These mirror
 // `crates/atlas-agents/src/{session,events,plugin,manager}.rs` — keep in sync
@@ -41,6 +41,9 @@ export interface ToolCall {
   locations: unknown[];
   /** Structural content blocks (P1.4). Omitted by Rust when empty. */
   content_blocks?: ToolContentBlock[];
+  /** The subagent launch this call belongs to, when the agent attributed it.
+   *  Omitted by Rust for the parent's own work, which is almost every call. */
+  parent_tool_call_id?: string;
 }
 
 export interface PlanEntry {
@@ -144,6 +147,7 @@ export interface SessionSnapshot {
   prompt_image_supported: boolean;
   /** This live ACP connection advertised `_meta.steering.supported`. */
   steering_supported?: boolean;
+  subagents?: Subagent[];
   plan: PlanEntry[];
   messages: SessionMessage[];
   usage: Usage;
@@ -234,6 +238,14 @@ export type AgentDelta = { task_run_id?: string } & (
       message_id: string;
       tool_call_id: string;
       delta: string;
+    }
+  | {
+      // A subagent was launched, made progress, or ended. The full snapshot
+      // travels, like `tool_call_upserted`, so nothing has to merge fields.
+      kind: "subagent_upserted";
+      agent_id: AgentId;
+      session_id: AcpSessionId;
+      subagent: Subagent;
     }
   | {
       kind: "plan_updated";

@@ -251,7 +251,7 @@ The `SessionDelta` shapes those consumers pattern-match live in **`crates/atlas-
 
 ### Browser Use MCP
 
-`commands/browser_use.rs` offers `atlas_browser` to HTTP-MCP-capable ACP
+`commands/browser_use.rs` offers `atlas_browser` through the stdio bridge to ACP
 sessions independently of shared memory. Rust owns live grants, worker lifecycle
 and native setup UI. Settings > Browser control owns browser choice, store installation
 actions, connection/version status and persistent pause. Developer-mode loading
@@ -295,7 +295,7 @@ The built-in Browser module is removed; CLI vendor authentication remains separa
 
 ### Local memory MCP
 
-`commands/memory_server/` serves `/mcp` over a loopback listener. `MemorySessionOffers` offers it to sessions advertising HTTP MCP and whose project enables memory sharing. Ephemeral bearer tokens bind calls to session id, agent and cwd. They are local authorization, not DeskMate account tokens. Tokens are revoked on session shutdown. Memory tools, sharing gates, scope resolution, retrieval, import and management UI remain.
+`commands/memory_server/` serves `/mcp` over a loopback listener. `MemorySessionOffers` offers it through a credential-free stdio bridge to ACP sessions whose project enables memory sharing. The bridge reads a private token file; adapter configuration contains no bearer token. Ephemeral bearer tokens bind calls to session id, agent and cwd. They are local authorization, not DeskMate account tokens. Tokens are revoked on session shutdown. Memory tools, sharing gates, scope resolution, retrieval, import and management UI remain.
 
 Automatic gateway extraction is removed. Delta capture still records relevant events locally, and MCP `memory_remember` / `memory_forget` remain active. Indexing uses existing local embedding models. Optional existing BYOK summarization / research / session chat are separate, user-configured features; none is needed to launch an ACP CLI or persist memory.
 

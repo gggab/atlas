@@ -49,6 +49,7 @@ import { saveThreadToKb } from "../lib/turn-actions";
 import { sessionCanRetry } from "../lib/retry-gate";
 import { pinScope } from "../stores/chat-pins-store";
 import { cn } from "@/lib/utils";
+import { CONTENT_COLUMN } from "../lib/row-metrics";
 import { isScrollHot } from "@/lib/scroll-hot";
 import { GradualBlur } from "@/components/gradual-blur";
 import { LoadingState, WAITING_LABEL } from "./loading-state";
@@ -58,6 +59,7 @@ import {
   ThinkingRowView,
   MarkerRowView,
   MarkerGroupRowView,
+  SubagentRowView,
   WorkHeaderRowView,
   SeparatorRowView,
   TurnFooterRowView,
@@ -211,7 +213,7 @@ function WorkingIndicator({
       />
     ) : undefined;
   return (
-    <div className="mx-auto w-full max-w-[760px] px-6 pt-2 pb-3">
+    <div className={cn(CONTENT_COLUMN, "pt-2 pb-3")}>
       <LoadingState label={label} stalledContent={stall} />
     </div>
   );
@@ -343,6 +345,12 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
   const supportsRewind = agentCatalogEntry(agent)?.supportsRewind === true;
   const canRetry = useChatStore((s) => sessionCanRetry(s.sessions[tabId], supportsRewind));
 
+  // Delegated children, keyed by their launching call. A stable reference —
+  // immer re-identifies it only when a child changes — so this subscription
+  // settles, and it is `undefined` for the overwhelming majority of sessions,
+  // where the projection then behaves exactly as it did before.
+  const subagents = useChatStore((s) => s.sessions[tabId]?.subagents);
+
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   /** Tool sequences the reader has opened. */
   const [expandedTurns, setExpandedTurns] = useState<ReadonlySet<string>>(() => new Set());
@@ -380,12 +388,18 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     if (!live && prevProjectionRef.current) return prevProjectionRef.current;
     const next = projectRows(
       messages,
-      { expanded, expandedTurns, streaming: isStreaming, turnInProgress },
+      {
+        expanded,
+        expandedTurns,
+        streaming: isStreaming,
+        turnInProgress,
+        subagents,
+      },
       prevProjectionRef.current,
     );
     prevProjectionRef.current = next;
     return next;
-  }, [messages, expanded, expandedTurns, isStreaming, turnInProgress, live]);
+  }, [messages, expanded, expandedTurns, isStreaming, turnInProgress, live, subagents]);
   const rows: Row[] = projection.rows;
 
   // ── Is the live turn still silent? ───────────────────────────────────
@@ -1080,6 +1094,8 @@ function RowView({
       return <MarkerRowView row={row} tabId={tabId} />;
     case RowKind.MarkerGroup:
       return <MarkerGroupRowView row={row} tabId={tabId} onExpandTurn={onExpandTurn} />;
+    case RowKind.Subagent:
+      return <SubagentRowView row={row} tabId={tabId} />;
     case RowKind.Separator:
       return <SeparatorRowView row={row} />;
     case RowKind.WorkHeader:

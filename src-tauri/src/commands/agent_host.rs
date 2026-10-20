@@ -124,6 +124,7 @@ pub struct SessionSnapshot {
     pub prompt_image_supported: bool,
     pub steering_supported: bool,
     pub plan: Vec<PlanEntry>,
+    pub subagents: Vec<atlas_agent_wire::Subagent>,
     pub messages: Vec<Message>,
     pub usage: Usage,
     pub created_at: DateTime<Utc>,
@@ -259,6 +260,27 @@ const BACKFILL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120
 /// minutes. It is simply tried again on the next trigger.
 const SYNC_AGENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// How long the project sync leaves an agent alone after it failed to
+/// answer, doubling each time up to [`SYNC_BACKOFF_MAX`], and reset by one
+/// answer.
+///
+/// Without this the per-agent timeout was a retry loop: the sync runs on
+/// every window focus, so an agent that could not list its sessions cost the
+/// user [`SYNC_AGENT_TIMEOUT`] of a held connection on every alt-tab, forever
+/// — thirteen times in ten minutes in one log. The timeout bounds one
+/// attempt; this bounds how often there is one.
+const SYNC_BACKOFF_FIRST: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+const SYNC_BACKOFF_MAX: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// One agent's standing with the project sync after a failure.
+#[derive(Debug, Clone, Copy)]
+struct SyncBackoff {
+    /// Not asked again before this.
+    until: std::time::Instant,
+    /// How long the next failure holds it off.
+    next: std::time::Duration,
+}
+
 /// A project synced less than this long ago is not synced again.
 ///
 /// The sidebar fires a sync on mount, on a cwd change and on every window
@@ -388,6 +410,9 @@ pub struct AgentHost {
     /// [`AgentHost::sync_project`]. In memory only: a restart syncing once more
     /// is the right behaviour.
     last_project_sync: Mutex<HashMap<String, std::time::Instant>>,
+    /// Agents the project sync is leaving alone for a while, and until when
+    /// — see [`SyncBackoff`].
+    sync_backoff: Mutex<HashMap<String, SyncBackoff>>,
     /// Why `history` is `None`, carried into every history command's error so
     /// the sidebar can say it instead of reading as an empty list.
     history_error: Option<String>,
@@ -508,6 +533,7 @@ impl AgentHost {
             activity: Mutex::new(HashMap::new()),
             aliases: Mutex::new(HashMap::new()),
             last_project_sync: Mutex::new(HashMap::new()),
+            sync_backoff: Mutex::new(HashMap::new()),
             history_error,
             branch_probes: Arc::default(),
             request_elicitations: RequestElicitations {
@@ -871,17 +897,40 @@ impl AgentHost {
     /// session id".
     pub fn restart_for_update(&self, plugin_id: &str, version: &str) -> Result<()> {
         let agent = self.agent_for(plugin_id)?;
+        self.disconnect_chats(
+            &agent,
+            &format!("updated to v{version}; the next message reconnects"),
+        );
+        self.kill_agent(plugin_id, &agent);
+        Ok(())
+    }
+
+    /// `agent`'s process exited and the manager dropped its connection
+    /// (`AgentManagerEvent::ConnectionExited`).
+    ///
+    /// The manager forgot the sessions; the host and the tabs still held
+    /// them, so a tab's next message went to a session id the respawned agent
+    /// had never heard of and failed with "unknown session id". The same
+    /// notice as an update restart lets each tab rebind instead.
+    pub fn agent_exited(&self, agent: &Agent) {
+        let plugin_id = Self::plugin_id_of(agent);
+        self.disconnect_chats(agent, "the agent stopped; the next message reconnects");
+        self.forget_request_elicitations(&ThreadAgentId::new(plugin_id.as_str()));
+        self.forget_sessions_of(agent);
+    }
+
+    /// Tell every open chat on `agent` it is disconnected, then close its
+    /// projection: the tab rebinds (respawn + `session/load`) on its next send
+    /// with its transcript intact.
+    fn disconnect_chats(&self, agent: &Agent, reason: &str) {
         let sessions: Vec<String> = lock(&self.sessions)
             .iter()
-            .filter(|(_, record)| record.agent == agent)
+            .filter(|(_, record)| &record.agent == agent)
             .map(|(id, _)| id.clone())
             .collect();
         for id in &sessions {
             let session_id = acp::SessionId::new(id.as_str());
-            self.projector.note_agent_disconnected(
-                &session_id,
-                format!("updated to v{version}; the next message reconnects"),
-            );
+            self.projector.note_agent_disconnected(&session_id, reason);
             // The projection holds the session's only strong thread handle,
             // and through it the connection: left in place, the old process
             // outlives the restart until the tab closes — while the update
@@ -889,8 +938,6 @@ impl AgentHost {
             // lets the process go now. After the notice, which needs it.
             self.projector.close_session(&session_id);
         }
-        self.kill_agent(plugin_id, &agent);
-        Ok(())
     }
 
     pub async fn new_session(
@@ -1215,6 +1262,23 @@ impl AgentHost {
             plan: project::plan_entries(&thread.plan().entries),
             messages: if with_messages {
                 project::snapshot_messages(&thread, current_model.as_deref())
+            } else {
+                Vec::new()
+            },
+            subagents: if with_messages {
+                // The snapshot's message ids are positional (`msg-{ix}`), and
+                // `snapshot_messages` builds them the same way, so naming the
+                // entry's own index here points at the same message.
+                project::subagents(
+                    &thread,
+                    |ix| Some(format!("msg-{ix}")),
+                    |ix| {
+                        thread
+                            .entry_created_at(ix)
+                            .unwrap_or(created_at)
+                            .timestamp_millis()
+                    },
+                )
             } else {
                 Vec::new()
             },
@@ -2293,6 +2357,37 @@ impl AgentHost {
         }
     }
 
+    /// Until when the sync is leaving `plugin_id` alone, if it is.
+    fn sync_held_off_until(&self, plugin_id: &str) -> Option<std::time::Instant> {
+        let now = std::time::Instant::now();
+        lock(&self.sync_backoff)
+            .get(plugin_id)
+            .map(|backoff| backoff.until)
+            .filter(|until| *until > now)
+    }
+
+    /// The agent answered: it is in good standing again.
+    fn note_sync_answered(&self, plugin_id: &str) {
+        lock(&self.sync_backoff).remove(plugin_id);
+    }
+
+    /// The agent did not answer: hold it off, for longer each time. Answers
+    /// how long.
+    fn note_sync_failed(&self, plugin_id: &str) -> std::time::Duration {
+        let mut backoff = lock(&self.sync_backoff);
+        let hold = backoff
+            .get(plugin_id)
+            .map_or(SYNC_BACKOFF_FIRST, |previous| previous.next);
+        backoff.insert(
+            plugin_id.to_owned(),
+            SyncBackoff {
+                until: std::time::Instant::now() + hold,
+                next: (hold * 2).min(SYNC_BACKOFF_MAX),
+            },
+        );
+        hold
+    }
+
     /// Whether the manager currently holds a failed connect for `plugin_id`.
     ///
     /// `Error` entries are evicted from the manager's table as they land, so
@@ -2431,22 +2526,44 @@ impl AgentHost {
                 tracing::warn!(%plugin_id, "project sync skipped: the agent's connect failed");
                 continue;
             }
+            if let Some(until) = self.sync_held_off_until(&plugin_id) {
+                tracing::debug!(
+                    %plugin_id,
+                    in_secs = until.saturating_duration_since(std::time::Instant::now()).as_secs(),
+                    "project sync skipped: backing off after a failure"
+                );
+                continue;
+            }
             let listed = tokio::time::timeout(
                 SYNC_AGENT_TIMEOUT,
                 self.list_sessions_of(&plugin_id, Some(PathBuf::from(cwd))),
             )
             .await;
             let sessions = match listed {
-                Ok(Ok(Some(sessions))) => sessions,
-                Ok(Ok(None)) => continue,
+                Ok(Ok(Some(sessions))) => {
+                    self.note_sync_answered(&plugin_id);
+                    sessions
+                }
+                Ok(Ok(None)) => {
+                    self.note_sync_answered(&plugin_id);
+                    continue;
+                }
                 Ok(Err(e)) => {
-                    tracing::warn!(error = %e.message, %plugin_id, "project sync found nothing");
+                    let hold = self.note_sync_failed(&plugin_id);
+                    tracing::warn!(
+                        error = %e.message,
+                        %plugin_id,
+                        retry_in_secs = hold.as_secs(),
+                        "project sync found nothing"
+                    );
                     continue;
                 }
                 Err(_elapsed) => {
+                    let hold = self.note_sync_failed(&plugin_id);
                     tracing::warn!(
                         %plugin_id,
                         timeout_secs = SYNC_AGENT_TIMEOUT.as_secs(),
+                        retry_in_secs = hold.as_secs(),
                         "project sync timed out"
                     );
                     continue;
@@ -3783,6 +3900,20 @@ mod tests {
             }],
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn an_exited_external_agent_forgets_sessions_and_records_their_end() {
+        let (host, _dir, project, record) = recording_host(LiveAgent::new("s-evict")).await;
+        let agent_id = host.spawn(TEST_AGENT_ID).await.unwrap().agent_id;
+        host.new_session(agent_id, project, Vec::new())
+            .await
+            .unwrap();
+        host.agent_exited(&Agent::Custom {
+            id: TEST_AGENT_ID.into(),
+        });
+        assert!(!lock(&host.sessions).contains_key("s-evict"));
+        assert_eq!(record.sessions().unwrap()[0].ended_at, Some(200));
     }
 
     /// Issue #81: an agent process that exits ends its sessions — the

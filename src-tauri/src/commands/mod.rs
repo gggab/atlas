@@ -33,6 +33,7 @@ pub mod knowledge_graph_layout;
 pub mod knowledge_links;
 pub mod knowledge_meta;
 pub mod log;
+pub mod memory_bridge;
 pub mod memory_delta;
 pub mod memory_graph;
 pub mod memory_indexer;

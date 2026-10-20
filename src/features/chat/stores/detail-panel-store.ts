@@ -23,6 +23,11 @@ import { createSelectors } from "@/lib/create-selectors";
 export type PanelTarget =
   | { kind: "tool"; toolCallId: string }
   | { kind: "output"; toolCallId: string }
+  /** A delegated child, addressed by the call that launched it — which is its
+   *  identity (ACP has no subagent concept, so the launch IS the record). The
+   *  panel reads the child from the chat store; a transcript row carries no
+   *  more than its id, as every other target does. */
+  | { kind: "subagent"; toolCallId: string }
   | null;
 
 interface DetailPanelState {
@@ -46,11 +51,7 @@ const DEFAULT_WIDTH = 460;
 /** True when two targets address the same thing (so a repeat click closes). */
 function sameTarget(a: PanelTarget, b: PanelTarget): boolean {
   if (!a || !b) return false;
-  if (a.kind !== b.kind) return false;
-  if ((a.kind === "tool" || a.kind === "output") && (b.kind === "tool" || b.kind === "output")) {
-    return a.toolCallId === b.toolCallId;
-  }
-  return false;
+  return a.kind === b.kind && a.toolCallId === b.toolCallId;
 }
 
 export const useDetailPanelStore = createSelectors(

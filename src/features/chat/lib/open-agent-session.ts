@@ -161,7 +161,7 @@ export async function openAgentSession({
     });
     setAcpBinding(targetTabId, agent.agent_id, acpSessionId, cwd);
     // Restore live status + docked plan AFTER the bind (which clears the plan).
-    hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan);
+    hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan, snapshot.subagents);
     // This path seeded the mode pill from the stored preference but never told
     // the agent, so the pill could read Bypass while the engine enforced Ask.
     // Applied before `setResumePending(false)`, which is what releases a queued

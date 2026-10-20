@@ -13,7 +13,13 @@
 // The closed set matters: a new row kind is a deliberate addition to the
 // vocabulary of the transcript, not an ad-hoc branch in a render function.
 
-import type { ChatMessage, ToolCallDisplay, TurnFile } from "@/types/agent";
+import type {
+  ChatMessage,
+  Subagent,
+  SubagentStatus,
+  ToolCallDisplay,
+  TurnFile,
+} from "@/types/agent";
 import type { ImageAttachment } from "@/types/agents";
 
 // Shared so a row without images keeps a stable prop for the row's `memo`.
@@ -42,6 +48,7 @@ export const RowKind = {
   Separator: 5,
   TurnFooter: 6,
   WorkHeader: 7,
+  Subagent: 8,
 } as const;
 
 /** Marker execution state — drives the leading glyph, nothing else. */
@@ -207,6 +214,52 @@ export interface WorkHeaderRow extends RowBase {
   open: boolean;
 }
 
+/**
+ * A child agent the turn delegated to — the launching tool call, rendered as
+ * the child rather than as the call.
+ *
+ * The call that spawns a subagent is a poor row: its name is the agent's word
+ * for the mechanism ("Task", "spawn_agent", "Start subagent counter") and its
+ * result is a transport detail. The child is the thing the reader is following,
+ * so the row carries the child's name, status and work instead, and the launch
+ * survives only as the identity (`toolCallId`).
+ *
+ * Deliberately NOT folded into a `MarkerGroup`. A folded block says "loaded
+ * tools" and hides how many agents are running and whether any has come back —
+ * which is the whole question a delegating turn raises.
+ */
+export interface SubagentRow extends RowBase {
+  kind: typeof RowKind.Subagent;
+  /** The launching call's id — the child's identity, and what its own calls
+   *  point back to (`ToolCallDisplay.parentToolCallId`). */
+  toolCallId: string;
+  name: string;
+  status: SubagentStatus;
+  /** The child's role, when the launch named one: Claude's `subagent_type`,
+   *  the engine's `agent_type`. */
+  role: string | undefined;
+  /** What it was asked to do, for the row's second line. */
+  prompt: string | undefined;
+  /** What it reported back. For a mail child (the native engine's) this is the
+   *  whole of what it ever says. */
+  result: string | undefined;
+  /** Epoch ms the launch was first seen — the live elapsed figure counts from
+   *  here, exactly as a marker's does. */
+  startedAt: number;
+  /** Set once it has ended, so a settled row states a duration rather than
+   *  ticking forever. */
+  endedAt: number | undefined;
+  /** Its own tool calls, when the agent attributes them. ALWAYS EMPTY for a
+   *  mail child, whose calls run on a thread this session never sees — so an
+   *  empty list is "not visible", never "did nothing". */
+  markers: MarkerRow[];
+  /** How many calls the CHILD reports having made, which is not
+   *  `markers.length`: the agent can count work whose calls it never attributed
+   *  to this session. Zero means "nothing visible", so a row renders no count
+   *  rather than "0" — which would be a claim about the child that is false. */
+  workCount: number;
+}
+
 export interface SeparatorRow extends RowBase {
   kind: typeof RowKind.Separator;
   label: string;
@@ -235,7 +288,8 @@ export type Row =
   | MarkerGroupRow
   | SeparatorRow
   | TurnFooterRow
-  | WorkHeaderRow;
+  | WorkHeaderRow
+  | SubagentRow;
 
 // ── Turns ──────────────────────────────────────────────────────────────────
 
@@ -762,6 +816,11 @@ export interface ProjectOptions {
    *  right now — it may be paused on a permission prompt. Drives the work
    *  header only; defaults to `streaming`. */
   turnInProgress?: boolean;
+  /** The session's delegated children, keyed by their launching call id
+   *  (`ChatSession.subagents`). Absent for the overwhelming majority of
+   *  sessions, and then this projection behaves exactly as it did before:
+   *  no subagent rows, and nothing re-attributed. */
+  subagents?: Record<string, Subagent>;
 }
 
 /**
@@ -782,6 +841,27 @@ export function projectRows(
 ): Projection {
   const rows: Row[] = [];
   const turns: Turn[] = [];
+
+  // A child's calls are attributed to it by `parentToolCallId`, and they can
+  // arrive in a LATER message than the launch — the agent announces the call
+  // and assigns it afterwards. So they are collected in one pass up front
+  // rather than looked up per launch, which would be O(children × calls) over
+  // a transcript re-projected on every streaming frame.
+  //
+  // Skipped entirely when the session has delegated nothing, which is almost
+  // every session: no allocation, no pass.
+  const childCalls = new Map<string, ToolCallDisplay[]>();
+  if (opts.subagents) {
+    for (const m of messages) {
+      for (const tc of m.toolCalls) {
+        const parent = tc.parentToolCallId;
+        if (!parent || !opts.subagents[parent]) continue;
+        const bucket = childCalls.get(parent);
+        if (bucket) bucket.push(tc);
+        else childCalls.set(parent, [tc]);
+      }
+    }
+  }
 
   const lastIdx = messages.length - 1;
   let i = 0;
@@ -867,6 +947,8 @@ export function projectRows(
     };
     let workedMs: number | null = null;
     let toolCount = 0;
+    /** Children this turn delegated to, flushed after its last row. */
+    const delegated: SubagentRow[] = [];
     let footerMsg: ChatMessage | null = null;
     let headerShown = false;
     let sawError = false;
@@ -894,9 +976,52 @@ export function projectRows(
 
       for (const tc of msg.toolCalls) {
         if (isInternalTool(tc)) continue;
+
+        // A child's own call belongs under its parent's row, not in the
+        // turn's stream: left here it would read as the parent's work, and
+        // three children running at once would interleave into one
+        // unattributable block. Collected by `childCalls` above.
+        //
+        // BEFORE the counters: a child's failed grep is the child's failure,
+        // and counted here it set the whole turn to "error" and inflated the
+        // parent's tool count with work it never did.
+        if (tc.parentToolCallId && opts.subagents?.[tc.parentToolCallId]) continue;
+
         toolCount += 1;
-        markers.push(markerFor(tc, turnId, false));
         if (tc.status === "failed") sawError = true;
+
+        // A launching call becomes the child it launched. Its own shape says
+        // nothing a reader wants — see `SubagentRow`.
+        const child = opts.subagents?.[tc.id];
+        if (child) {
+          // Collected, not pushed here. A child outlives the moment it was
+          // spawned — it keeps working while the parent writes prose and runs
+          // its own tools — so a row left where the launch happened gets
+          // buried mid-turn and goes on changing where nobody is looking.
+          // They go at the END of the turn, together, which is also where
+          // Claude Desktop puts them: one block, last thing before the footer.
+          const id = `sa:${tc.id}`;
+          const own = (childCalls.get(tc.id) ?? []).map((c) => markerFor(c, turnId, false));
+          delegated.push({
+            kind: RowKind.Subagent,
+            id,
+            turnId,
+            firstInTurn: false,
+            toolCallId: tc.id,
+            name: child.name.trim() || "Subagent",
+            status: child.status,
+            role: child.role,
+            prompt: child.prompt,
+            result: child.result,
+            startedAt: child.startedAtMs,
+            endedAt: child.endedAtMs,
+            markers: own,
+            workCount: child.toolCallCount,
+          });
+          continue;
+        }
+
+        markers.push(markerFor(tc, turnId, false));
       }
 
       const prose = derivedProse(msg);
@@ -922,6 +1047,10 @@ export function projectRows(
       i += 1;
     }
     flushMarkers();
+    for (const row of delegated) {
+      row.firstInTurn = rows.length === rowStart;
+      rows.push(row);
+    }
 
     const turnIsLive = opts.streaming && i > lastIdx;
     if (turnIsLive) {
@@ -1089,8 +1218,23 @@ function foldWork(
     expandedTurns: ReadonlySet<string>;
   },
 ): void {
+  // The trailing run that is NOT work: the answer, and the children the turn
+  // delegated to.
+  //
+  // Subagents survive the fold deliberately. A folded turn hides what it did
+  // because the answer is what remains worth reading — but a child is not
+  // something the turn did and finished with: it has its own state, it may
+  // still be running after the turn settles, and it is the one thing a
+  // delegating turn exists to report. Claude Desktop keeps them visible for
+  // the same reason, between the answer and the footer.
   let answerStart = rows.length;
-  while (answerStart > rowStart && rows[answerStart - 1].kind === RowKind.Prose) answerStart -= 1;
+  while (
+    answerStart > rowStart &&
+    (rows[answerStart - 1].kind === RowKind.Prose ||
+      rows[answerStart - 1].kind === RowKind.Subagent)
+  ) {
+    answerStart -= 1;
+  }
   const foldable = !o.live && answerStart > rowStart;
   // A settled prose-only turn with no timing has nothing to say.
   if (!o.live && !foldable && o.workedMs === null) return;

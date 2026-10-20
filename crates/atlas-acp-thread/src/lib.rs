@@ -64,6 +64,7 @@ use std::sync::{Arc, Mutex};
 pub mod connection;
 pub mod elicitation;
 pub mod prompt;
+pub mod subagent;
 pub mod terminal;
 pub mod thread;
 

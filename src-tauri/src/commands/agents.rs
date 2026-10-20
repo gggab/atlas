@@ -375,6 +375,7 @@ struct RequestElicitation {
 /// block. One ordered queue, not a task per write, because an end overtaking
 /// its start would be dropped. The quit path's grace covers the last writes.
 struct SharingGatedLifecycle {
+    token_files: Arc<super::memory_bridge::TokenFiles>,
     scheduler: Option<std::sync::Weak<crate::scheduler::Scheduler>>,
     writes: std::sync::mpsc::Sender<LifecycleWrite>,
     /// The memory tool server: its tokens are minted and revoked right here,
@@ -400,7 +401,11 @@ enum LifecycleWrite {
 }
 
 impl SharingGatedLifecycle {
-    fn new(app: AppHandle, server: Arc<super::memory_server::MemoryServerHost>) -> Self {
+    fn new(
+        app: AppHandle,
+        server: Arc<super::memory_server::MemoryServerHost>,
+        token_files: Arc<super::memory_bridge::TokenFiles>,
+    ) -> Self {
         let scheduler = app
             .try_state::<Arc<crate::scheduler::Scheduler>>()
             .map(|s| Arc::downgrade(s.inner()));
@@ -438,6 +443,7 @@ impl SharingGatedLifecycle {
             })
             .expect("the session lifecycle thread starts");
         Self {
+            token_files,
             writes: tx,
             scheduler,
             server,
@@ -475,6 +481,7 @@ impl super::agent_host::SessionLifecycle for SharingGatedLifecycle {
         self.browser.stop(session_id);
         tauri::async_runtime::spawn(self.ssh.runtime.revoke(session_id, None, true));
         super::agent_host::SessionLifecycle::session_ended(&**self.server.tokens(), session_id);
+        self.token_files.session_ended(session_id);
         if let Some(keep_awake) = &self.keep_awake {
             keep_awake.session_ended(session_id);
         }
@@ -561,9 +568,17 @@ pub fn install_manager(app: &AppHandle) {
             .inner()
             .clone();
         browser.start(server.tokens().clone());
+        let token_files = Arc::new(super::memory_bridge::TokenFiles::new(
+            data_dir.join("mcp-bridge"),
+        ));
+        {
+            let files = token_files.clone();
+            tauri::async_runtime::spawn_blocking(move || files.sweep_stale_launches());
+        }
         host.set_session_lifecycle(Arc::new(SharingGatedLifecycle::new(
             app.clone(),
             server.clone(),
+            token_files.clone(),
         )));
         let gate_app = app.clone();
         let gate: super::memory_server::SharingGate =
@@ -590,7 +605,8 @@ pub fn install_manager(app: &AppHandle) {
             super::memory_server::MemorySessionOffers::new(server.clone(), gate.clone())
                 .with_ssh(ssh)
                 .with_browser(browser)
-                .with_code(super::code_server::CodeOffer::new(code_tools));
+                .with_code(super::code_server::CodeOffer::new(code_tools))
+                .with_token_files(token_files);
         if let Ok(scheduler) = crate::scheduler::Scheduler::get(app) {
             let weak_scheduler = Arc::downgrade(&scheduler);
             host.set_scheduled_activity_explainer(Arc::new(move |session, at| {
@@ -694,6 +710,9 @@ pub fn install_manager(app: &AppHandle) {
                                 "status": status,
                             }),
                         );
+                    }
+                    Ok(AgentManagerEvent::ConnectionExited { agent }) => {
+                        host.agent_exited(&agent);
                     }
                     Ok(AgentManagerEvent::ConnectionFailed {
                         agent: Agent::Custom { id },

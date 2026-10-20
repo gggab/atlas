@@ -414,6 +414,54 @@ async fn changes_are_what_other_sessions_recorded_since_the_last_look() {
     let _ = std::fs::remove_dir_all(&p);
 }
 
+/// A forget by one session is a change the others hear about: its id comes
+/// back in `forgotten`, once, and never for the session that forgot.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_forget_reaches_the_other_session_as_a_tombstone() {
+    let p = temp_project("tombstone");
+    let memory = ticking_memory();
+    let tokens = Arc::new(MemoryTokens::default());
+    let server = serve(
+        memory.clone(),
+        tokens.clone(),
+        always_on(),
+        Sources::default(),
+    )
+    .await;
+    let mine = connect(&server.url(), &tokens.mint("s-mine", "claude", &p))
+        .await
+        .unwrap();
+    let theirs = connect(&server.url(), &tokens.mint("s-theirs", "codex", &p))
+        .await
+        .unwrap();
+
+    let (_, r) = call(
+        &theirs,
+        "memory_remember",
+        json!({ "kind": "fact", "content": "Staging lives on fly.io" }),
+    )
+    .await;
+    let id = r["entry"]["id"].clone();
+    let (_, _) = call(&mine, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_changes", json!({})).await;
+    let (_, _) = call(&theirs, "memory_forget", json!({ "id": id })).await;
+
+    let (_, delta) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(delta["forgotten"], json!([id]), "{delta}");
+    let (_, again) = call(&mine, "memory_changes", json!({})).await;
+    assert_eq!(again["forgotten"], json!([]), "once: {again}");
+    let (_, own) = call(&theirs, "memory_changes", json!({})).await;
+    assert_eq!(
+        own["forgotten"],
+        json!([]),
+        "not to the session that forgot: {own}"
+    );
+
+    mine.cancel().await.ok();
+    theirs.cancel().await.ok();
+    let _ = std::fs::remove_dir_all(&p);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unknown_or_revoked_token_is_refused() {
     let project = temp_project("auth");
@@ -1118,18 +1166,22 @@ fn request(http_mcp: bool, cwd: &str, session: Option<&str>) -> SessionMcpReques
 /// The one server an offer carries, as `(name, url, bearer token)`.
 fn offered(offer: &SessionMcpOffer) -> Option<(String, String, String)> {
     match offer.servers() {
-        [acp::McpServer::Http(http)] => {
-            let token = http
-                .headers
-                .iter()
-                .find(|h| h.name == "Authorization")
-                .and_then(|h| h.value.strip_prefix("Bearer "))
-                .expect("the entry carries a bearer token")
-                .to_string();
-            Some((http.name.clone(), http.url.clone(), token))
+        [acp::McpServer::Stdio(entry)] => {
+            assert!(entry.env.is_empty());
+            assert_eq!(entry.args[0], super::BRIDGE_ARG);
+            let token = crate::commands::memory_bridge::read_token_file(std::path::Path::new(
+                &entry.args[2],
+            ))
+            .unwrap();
+            let encoded = serde_json::to_string(entry).unwrap();
+            assert!(
+                !encoded.contains(&token),
+                "an adapter must receive no credential"
+            );
+            Some((entry.name.clone(), entry.args[1].clone(), token))
         }
         [] => None,
-        other => panic!("one server at most: {other:?}"),
+        _ => panic!("external agents receive only credential-free stdio entries"),
     }
 }
 
@@ -1147,8 +1199,14 @@ async fn personal_offers_are_negotiated_separately_from_project_memory() {
     );
     offer.bind(&acp::SessionId::new("personal-1"));
     assert!(accepted.lock().unwrap().contains("personal-1"));
-    assert!(offered(&offers.offer(&request(false, &directory, Some("personal-1")))).is_none());
+    let resumed = offers.offer(&request(false, &directory, Some("personal-1")));
+    assert_eq!(
+        offered(&resumed).unwrap().0,
+        crate::commands::personal_server::NAME
+    );
     assert!(!accepted.lock().unwrap().contains("personal-1"));
+    resumed.bind(&acp::SessionId::new("personal-1"));
+    assert!(accepted.lock().unwrap().contains("personal-1"));
     let ordinary = offers.offer(&request(true, "/ordinary-project", None));
     assert_eq!(offered(&ordinary).unwrap().0, MEMORY_SERVER_NAME);
 }
@@ -1203,10 +1261,10 @@ async fn an_http_agent_is_offered_the_server_with_a_token_that_binds_to_its_sess
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_without_http_mcp_is_offered_nothing() {
+async fn an_agent_without_http_mcp_receives_the_stdio_bridge() {
     let host = running_host(always_on()).await;
     let offers = MemorySessionOffers::new(host, always_on());
-    assert_eq!(offered(&offers.offer(&request(false, "/p", None))), None);
+    assert!(offered(&offers.offer(&request(false, "/p", None))).is_some());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1228,27 +1286,54 @@ async fn an_offer_that_never_binds_leaves_no_live_token() {
     let offers = MemorySessionOffers::new(host.clone(), always_on());
     let offer = offers.offer(&request(true, "/p", Some("stored-1")));
     let (_, _, token) = offered(&offer).unwrap();
+    let acp::McpServer::Stdio(entry) = &offer.servers()[0] else {
+        panic!("stdio")
+    };
+    let token_file = std::path::PathBuf::from(&entry.args[2]);
     drop(offer);
+    assert!(
+        !token_file.exists(),
+        "an abandoned offer leaves no token file"
+    );
     assert_eq!(host.tokens().grant(&token), None);
     assert_eq!(host.tokens().token_for("stored-1"), None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn bridge_failures_never_fall_back_to_a_credential_bearing_entry() {
+    let host = running_host(always_on()).await;
+    let offers = MemorySessionOffers::new(host.clone(), always_on()).with_bridge_exe(None);
+    assert!(offers
+        .offer(&request(true, "/p", None))
+        .servers()
+        .is_empty());
+    let temp = tempfile::tempdir().unwrap();
+    let invalid = temp.path().join("file");
+    std::fs::write(&invalid, "not a directory").unwrap();
+    let files = Arc::new(crate::commands::memory_bridge::TokenFiles::new(invalid));
+    let offers = MemorySessionOffers::new(host, always_on()).with_token_files(files);
+    assert!(offers
+        .offer(&request(false, "/p", None))
+        .servers()
+        .is_empty());
 }
 
 #[test]
 fn the_decision_says_whether_the_server_is_included_and_why_not() {
     assert_eq!(
-        OfferDecision::decide(true, true, true),
-        OfferDecision::Included
+        OfferDecision::decide(true, true),
+        OfferDecision::IncludedViaBridge
     );
     assert_eq!(
-        OfferDecision::decide(false, true, true),
-        OfferDecision::Omitted("agent did not advertise mcpCapabilities.http")
+        OfferDecision::decide(true, true),
+        OfferDecision::IncludedViaBridge
     );
     assert_eq!(
-        OfferDecision::decide(true, false, true),
+        OfferDecision::decide(false, true),
         OfferDecision::Omitted("shared memory is off for this project")
     );
     assert_eq!(
-        OfferDecision::decide(true, true, false),
+        OfferDecision::decide(true, false),
         OfferDecision::Omitted("memory tool server is not running")
     );
 }
@@ -1256,16 +1341,15 @@ fn the_decision_says_whether_the_server_is_included_and_why_not() {
 #[test]
 fn each_decision_is_one_log_line_naming_the_agent_its_capability_and_the_outcome() {
     assert_eq!(
-        OfferDecision::Included.log_line("claude-code", true),
-        "memory tool server offer: agent=claude-code http_mcp=true memory_server=included",
+        OfferDecision::IncludedViaBridge.log_line("claude-code", true),
+        "memory tool server offer: agent=claude-code http_mcp=true memory_server=included_via_bridge",
     );
     assert_eq!(
-        OfferDecision::decide(false, false, true).log_line("gemini", false),
-        "memory tool server offer: agent=gemini http_mcp=false memory_server=omitted \
-         reason=\"agent did not advertise mcpCapabilities.http\"",
+        OfferDecision::decide(true, true).log_line("gemini", false),
+        "memory tool server offer: agent=gemini http_mcp=false memory_server=included_via_bridge",
     );
     assert_eq!(
-        OfferDecision::decide(true, false, true).log_line("codex", true),
+        OfferDecision::decide(false, true).log_line("codex", true),
         "memory tool server offer: agent=codex http_mcp=true memory_server=omitted \
          reason=\"shared memory is off for this project\"",
     );

@@ -13,7 +13,7 @@ import {
 
 import { chatLongPrompt } from "./chat-long-prompt";
 import { chatMarkdown } from "./chat-markdown";
-import { chatTools } from "./chat-tools";
+import { chatTools, chatSubagents } from "./chat-tools";
 
 import { designSystem } from "./design-system";
 import { keymapFirstRun } from "./keymap-first-run";
@@ -48,6 +48,7 @@ const all: Scenario[] = [
     actions: { ...permissionActions },
   },
   chatTools,
+  chatSubagents,
 
   chatLongPrompt,
   chatMarkdown,

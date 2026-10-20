@@ -17,13 +17,11 @@ pub enum CodeOfferDecision {
 }
 
 impl CodeOfferDecision {
-    /// Included for any agent that advertised HTTP MCP, while the user lets
+    /// Included over ACP's stdio bridge while the user lets
     /// agents use the code tools and the server is running. Not decided by
     /// the shared-memory toggle, nor by which agent it is.
-    pub fn decide(http_mcp: bool, enabled: bool, server_running: bool) -> Self {
-        if !http_mcp {
-            Self::Omitted("agent did not advertise mcpCapabilities.http")
-        } else if !enabled {
+    pub fn decide(enabled: bool, server_running: bool) -> Self {
+        if !enabled {
             Self::Omitted("code tools are off in Settings")
         } else if !server_running {
             Self::Omitted("code tool server is not running")
@@ -54,8 +52,7 @@ impl CodeOffer {
     }
 
     /// Decide for one request; the setting is read only when it can matter.
-    pub fn decide(&self, http_mcp: bool, server_running: bool) -> CodeOfferDecision {
-        let enabled = http_mcp && (self.gate)();
-        CodeOfferDecision::decide(http_mcp, enabled, server_running)
+    pub fn decide(&self, server_running: bool) -> CodeOfferDecision {
+        CodeOfferDecision::decide((self.gate)(), server_running)
     }
 }

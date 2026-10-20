@@ -68,6 +68,14 @@ for line in sys.stdin:
 /// Except under CI, where a missing interpreter is a failure: a runner without
 /// python3 would otherwise report these tests green having run none of them.
 fn python() -> Option<PathBuf> {
+    if let Some(path) = std::env::var_os("ATLAS_TEST_PYTHON") {
+        let path = PathBuf::from(path);
+        assert!(
+            path.is_file(),
+            "ATLAS_TEST_PYTHON must name a real interpreter"
+        );
+        return Some(path);
+    }
     let on_path = std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
             .map(|dir| dir.join("python3"))

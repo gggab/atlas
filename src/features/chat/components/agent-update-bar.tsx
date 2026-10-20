@@ -26,7 +26,7 @@ export function AgentUpdateBar({ tabId }: { tabId: string }) {
   if (!entry || (!phase && !entry.updateAvailable)) return null;
 
   return (
-    <div className="max-w-[720px] mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm">
+    <div className="mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm">
       <span className="select-text text-[var(--secondary-foreground)]">
         {phase
           ? `Updating ${entry.name} to v${phase.version}. Your conversation continues on it with your next message.`

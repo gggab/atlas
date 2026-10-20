@@ -73,7 +73,7 @@ Local file pages and website file uploads require **Allow access to file URLs** 
 直接说“每周四中午12点前要写周报”时，助手会按默认规则登记每周四11:30的提醒，任务中心可查、可修改。
 有明确截止时刻默认提前30分钟，只有日期默认当天9点；使用电脑当前时区并在创建时固定。缺日期、对象不清或规则冲突时先询问。
 默认提醒时间已过时跳过本次并明确告知；周期任务从下一个正常时间继续，不自动补发。
-可以说“记住房租每月 10 日交”，或明确给出提醒要求。聊天中的记忆工具要求 Agent 支持 HTTP MCP；聊天登记提醒还需在任务中心明确开启 Agent 任务工具，连接期间更改工具开关需重启应用生效。
+可以说“记住房租每月 10 日交”，或明确给出提醒要求。Memory tools use the local stdio-to-HTTP MCP bridge; 聊天登记提醒还需在任务中心明确开启 Agent 任务工具，连接期间更改工具开关需重启应用生效。
 日常直接说“我的房租每月 10 日交”也会触发助手尝试提炼稳定信息，不必每次说“记住”。
 明确事实可自动保存，含糊信息先成为待确认记忆；可能漏记，可从自己的消息下方点“保存为个人记忆”并编辑确认。
 每次发送会主动提供少量核心与主题相关记忆，最多18条、记忆资料块最多4000字符；被省略或截断的内容可由工具补查。置顶的核心记忆最多5条。
@@ -104,7 +104,7 @@ cleanup, see [independent background execution](docs/reference/background-servic
 | Personal facts, preferences, human sources and plan proposals | `<app-config-dir>/personal.sqlite` |
 | Durable tasks, runs and notification outbox | `<app-config-dir>/scheduler.sqlite` |
 
-同一仓库的多个 worktree 共享主项目的记忆范围。Agent 通过带有会话授权的本地 HTTP MCP 服务访问记忆，需要声明支持 HTTP MCP，并启用记忆共享。
+同一仓库的多个 worktree 共享主项目的记忆范围。Agents access the session-authorized local HTTP memory service through a stdio bridge, with project memory sharing explicitly enabled. Credentials remain in private files, outside adapter configuration.
 
 **提供项目记忆工具，不等于 Agent 已经读取记忆，也不等于自动注入上下文。** 项目共享记忆仍需要实际调用工具；个人助手会在自己的消息中明确附带有限的个人资料，普通项目聊天不变。依赖旧模型网关的自动记忆抽取已移除；个人助手也不会自动扫描全部聊天提取事实。
 

@@ -46,7 +46,7 @@ export function tools(calls: ToolCall[], at = t(0)): SessionMessage {
   };
 }
 
-type Opts = Partial<Pick<ToolCall, "status" | "result" | "id">>;
+type Opts = Partial<Pick<ToolCall, "status" | "result" | "id" | "parent_tool_call_id">>;
 
 function call(base: Omit<ToolCall, "id" | "status" | "result" | "locations">, o: Opts): ToolCall {
   return {
@@ -54,6 +54,7 @@ function call(base: Omit<ToolCall, "id" | "status" | "result" | "locations">, o:
     status: o.status ?? "completed",
     result: o.result ?? null,
     locations: [],
+    ...(o.parent_tool_call_id ? { parent_tool_call_id: o.parent_tool_call_id } : {}),
     ...base,
   };
 }

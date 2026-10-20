@@ -21,7 +21,7 @@ username also clears the trusted fingerprint. Deletion removes its saved credent
 ## Agent access
 
 Start or reopen an Agent session after the app has started its SSH tool server.
-The agent must advertise ACP HTTP MCP support. SSH is offered independently of
+ACP sessions receive a credential-free stdio bridge to the local HTTP MCP service. SSH is offered independently of
 the project's shared-memory switch. Available connections are queried only when needed.
 
 | Tool | Purpose |

@@ -3,6 +3,7 @@ import {
   AUTOFETCH_FAIL_THRESHOLD,
   configErrorDedupeKey,
   decideAgentUpdateFailed,
+  RETRY_AGENT_UPDATE_ACTION_ID,
   decideAutoFetchFailing,
   decideBehind,
   decideConfigError,
@@ -242,6 +243,10 @@ describe("decisions", () => {
     expect(d.title).toBe("Cursor couldn't update to v1.2.0");
     expect(d.body).toBe("EACCES");
     expect(d.target).toEqual({ type: "settings", section: "agents" });
+    expect(d.actions).toEqual([
+      { id: RETRY_AGENT_UPDATE_ACTION_ID, label: "Retry", args: { pluginId: "cursor" } },
+      { id: "open", label: "Open settings" },
+    ]);
     expect(d.dedupeKey).not.toBe(
       decideAgentUpdateFailed(
         { pluginId: "cursor", name: "Cursor", version: "1.2.0", error: "EACCES", seq: 2 },

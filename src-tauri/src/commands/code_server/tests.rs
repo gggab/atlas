@@ -335,17 +335,16 @@ fn entries(offer: &SessionMcpOffer) -> Vec<(String, String, String)> {
         .servers()
         .iter()
         .map(|server| {
-            let acp::McpServer::Http(http) = server else {
-                panic!("HTTP entries only")
+            let acp::McpServer::Stdio(entry) = server else {
+                panic!("external tools must be bridged")
             };
-            let token = http
-                .headers
-                .iter()
-                .find(|h| h.name == "Authorization")
-                .and_then(|h| h.value.strip_prefix("Bearer "))
-                .expect("a bearer token")
-                .to_string();
-            (http.name.clone(), http.url.clone(), token)
+            assert!(entry.env.is_empty());
+            let token = crate::commands::memory_bridge::read_token_file(std::path::Path::new(
+                &entry.args[2],
+            ))
+            .unwrap();
+            assert!(!serde_json::to_string(entry).unwrap().contains(&token));
+            (entry.name.clone(), entry.args[1].clone(), token)
         })
         .collect()
 }
@@ -400,27 +399,26 @@ async fn with_code_tools_off_the_code_server_is_not_offered() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn an_agent_without_http_mcp_is_offered_nothing() {
+async fn an_agent_without_http_mcp_gets_the_same_code_tools_via_stdio() {
     let host = running_host(enabled(true)).await;
     let offers =
         MemorySessionOffers::new(host, sharing(true)).with_code(CodeOffer::new(enabled(true)));
-    assert!(names(&offers.offer(&session_request(false))).is_empty());
+    assert_eq!(
+        names(&offers.offer(&session_request(false))),
+        ["atlas_memory", CODE_SERVER_NAME]
+    );
 }
 
 #[test]
 fn the_decision_says_whether_the_code_server_is_included_and_why_not() {
     use CodeOfferDecision::*;
-    assert_eq!(CodeOfferDecision::decide(true, true, true), Included);
+    assert_eq!(CodeOfferDecision::decide(true, true), Included);
     assert_eq!(
-        CodeOfferDecision::decide(false, true, true),
-        Omitted("agent did not advertise mcpCapabilities.http")
-    );
-    assert_eq!(
-        CodeOfferDecision::decide(true, false, true),
+        CodeOfferDecision::decide(false, true),
         Omitted("code tools are off in Settings")
     );
     assert_eq!(
-        CodeOfferDecision::decide(true, true, false),
+        CodeOfferDecision::decide(true, false),
         Omitted("code tool server is not running")
     );
     assert_eq!(

@@ -201,6 +201,7 @@ mod tests {
                 ],
                 raw_output: None,
                 content_blocks: vec![],
+                parent_tool_call_id: None,
             },
         }
     }

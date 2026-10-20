@@ -1669,3 +1669,301 @@ async fn streamed_text_costs_the_tail() {
         "five times the text cost {ratio:.1}x the time; streaming is still superlinear"
     );
 }
+
+// ----------------------------------------------------------------- subagents
+//
+// ACP has no subagent concept: every one of these is an ordinary tool call
+// plus `rawInput` and `_meta`, which is what `atlas_acp_thread::subagent`
+// reads. The unit tests there cover each agent's vocabulary; these drive the
+// whole path — thread, projection, wire — in one agent's words each, so that
+// what the detector recognises actually reaches a client.
+
+fn subagents(harness: &Harness) -> Vec<atlas_agent_delta::Subagent> {
+    harness
+        .recorder
+        .deltas()
+        .into_iter()
+        .filter_map(|delta| match delta {
+            SessionDelta::SubagentUpserted { subagent } => Some(subagent),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A launch named by its tool, with its children attributed by a vendor
+/// `_meta` parent key — the shape Claude Code and Devin both use.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_named_launch_becomes_a_subagent_and_its_work_nests_under_it() {
+    let harness = Harness::start();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "toolu_parent",
+        "title": "Review the auth module",
+        "kind": "think",
+        "status": "in_progress",
+        "rawInput": {
+            "description": "Review the auth module",
+            "prompt": "Read src/auth and report back.",
+            "subagent_type": "code-reviewer",
+        },
+        "_meta": { "claudeCode": { "toolName": "Task" } },
+    }));
+    harness.pump();
+
+    let launched = subagents(&harness);
+    let child = launched.last().expect("a subagent was announced");
+    assert_eq!(child.tool_call_id, "toolu_parent");
+    assert_eq!(child.name, "Review the auth module");
+    assert_eq!(child.role.as_deref(), Some("code-reviewer"));
+    assert_eq!(
+        child.prompt.as_deref(),
+        Some("Read src/auth and report back.")
+    );
+    assert_eq!(child.status, atlas_agent_delta::SubagentStatus::Running);
+    assert_eq!(child.tool_call_count, 0, "it has not done anything yet");
+
+    // The child reads a file. Same session, same stream as the parent's own
+    // work — only the meta tells them apart.
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "toolu_child",
+        "title": "Read src/auth.rs",
+        "kind": "read",
+        "status": "in_progress",
+        "_meta": { "claudeCode": { "parentToolUseId": "toolu_parent" } },
+    }));
+    harness.pump();
+
+    let nested = harness
+        .recorder
+        .deltas()
+        .into_iter()
+        .find_map(|delta| match delta {
+            SessionDelta::ToolCallUpserted { tool_call, .. } if tool_call.id == "toolu_child" => {
+                Some(tool_call)
+            }
+            _ => None,
+        })
+        .expect("the child's call reached the wire");
+    assert_eq!(
+        nested.parent_tool_call_id.as_deref(),
+        Some("toolu_parent"),
+        "a child's call names the launch it belongs to"
+    );
+    assert_eq!(
+        subagents(&harness)
+            .last()
+            .expect("an update")
+            .tool_call_count,
+        1,
+        "the launch counts its child's work"
+    );
+
+    // It finishes.
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "toolu_parent",
+        "status": "completed",
+        "content": [{ "type": "content", "content": { "type": "text", "text": "No issues found." } }],
+    }));
+    harness.pump();
+
+    let done = subagents(&harness).pop().expect("a terminal update");
+    assert_eq!(done.status, atlas_agent_delta::SubagentStatus::Completed);
+    assert_eq!(done.result.as_deref(), Some("No issues found."));
+    assert!(done.ended_at_ms.is_some(), "a finished child is stamped");
+}
+
+/// A launch that is itself the whole child (Claude's synchronous `Agent`)
+/// ends when that call does — not when it was created, which is all the
+/// thread remembers of it. Live, every such child read "done 0s".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_child_that_finishes_later_states_how_long_it_ran() {
+    let harness = Harness::start();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "toolu_counter",
+        "title": "counter",
+        "kind": "think",
+        "status": "in_progress",
+        "rawInput": { "description": "counter", "prompt": "Count the files." },
+        "_meta": { "claudeCode": { "toolName": "Agent" } },
+    }));
+    harness.pump();
+    let started = subagents(&harness).last().expect("announced").started_at_ms;
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "toolu_counter",
+        "status": "completed",
+        "content": [{ "type": "content", "content": { "type": "text", "text": "92" } }],
+    }));
+    harness.pump();
+
+    let done = subagents(&harness).pop().expect("a terminal update");
+    let ended = done.ended_at_ms.expect("a finished child is stamped");
+    assert!(
+        ended - started >= 1000,
+        "it ran for over a second, not {}ms",
+        ended - started
+    );
+
+    // A later, unrelated change re-derives every child; the end it was given
+    // must survive that rather than fall back to its launch time.
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "toolu_other",
+        "title": "Read README.md",
+        "kind": "read",
+        "status": "completed",
+    }));
+    harness.pump();
+    let all = subagents(&harness);
+    let latest = all
+        .iter()
+        .rev()
+        .find(|s| s.tool_call_id == "toolu_counter")
+        .expect("still announced");
+    assert_eq!(latest.ended_at_ms, Some(ended));
+}
+
+/// A reopened session: the launch and its result are replayed back to back,
+/// so the thread's clock says the child took no time. The child's own report
+/// is the duration, and its count of the work this session never saw.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replayed_child_keeps_the_time_and_work_it_reported() {
+    let harness = Harness::start();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "toolu_counter",
+        "title": "counter",
+        "kind": "think",
+        "status": "pending",
+        "rawInput": { "description": "counter", "subagent_type": "Explore", "prompt": "Count." },
+        "_meta": { "claudeCode": { "toolName": "Agent" } },
+    }));
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "toolu_counter",
+        "status": "completed",
+        "rawOutput": [{
+            "type": "text",
+            "text": "There are 92 files.\nagentId: a1\n<usage>subagent_tokens: 27872\ntool_uses: 2\nduration_ms: 17145</usage>",
+        }],
+        "_meta": { "claudeCode": { "toolName": "Agent" } },
+    }));
+    harness.pump();
+
+    let done = subagents(&harness).pop().expect("announced");
+    assert_eq!(done.status, atlas_agent_delta::SubagentStatus::Completed);
+    assert_eq!(
+        done.ended_at_ms.expect("stamped") - done.started_at_ms,
+        17145,
+        "the child's own clock, not the replay's"
+    );
+    assert_eq!(done.tool_call_count, 2, "work the replay never showed");
+}
+
+/// An agent that models children as a tree reports each thing it does to one
+/// as its own call. The child's identity is its path, so several calls
+/// collapse into one row.
+#[tokio::test(flavor = "multi_thread")]
+async fn lifecycle_calls_for_one_child_collapse_into_one_subagent() {
+    let harness = Harness::start();
+
+    let step = |id: &str, title: &str, kind: &str, status: &str| {
+        serde_json::json!({
+            "sessionUpdate": "tool_call",
+            "toolCallId": id,
+            "title": title,
+            "kind": "other",
+            "status": status,
+            "rawInput": {
+                "agentPath": "/root/ui_test_one",
+                "agentThreadId": "thr_1",
+                "activityKind": kind,
+            },
+        })
+    };
+
+    harness.update(step(
+        "c1",
+        "Start subagent Ui test one",
+        "started",
+        "completed",
+    ));
+    harness.pump();
+    let after_start = subagents(&harness);
+    let child = after_start.last().expect("a subagent");
+    assert_eq!(child.name, "Ui test one", "named from its agent path");
+    assert_eq!(child.tool_call_id, "c1");
+
+    harness.update(step(
+        "c2",
+        "Complete subagent Ui test one",
+        "completed",
+        "completed",
+    ));
+    harness.pump();
+
+    let all = subagents(&harness);
+    let ids: std::collections::BTreeSet<_> = all.iter().map(|s| s.tool_call_id.clone()).collect();
+    assert_eq!(
+        ids,
+        ["c1".to_owned()].into_iter().collect(),
+        "both steps are the same child, keyed on its agent path"
+    );
+}
+
+/// An agent that names its delegation tool something Atlas has never seen,
+/// but whose input says what it is — the Copilot shape, and the reason the
+/// detector reads evidence rather than a table of tool names.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_launch_is_recognised_from_its_input_alone() {
+    let harness = Harness::start();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call-x",
+        "title": "Delegating work",
+        "kind": "other",
+        "status": "in_progress",
+        "rawInput": {
+            "agent_type": "coding-agent",
+            "description": "Fix the flaky test",
+            "prompt": "Find and fix the flake in auth_test.rs.",
+        },
+    }));
+    harness.pump();
+
+    let child = subagents(&harness).pop().expect("a subagent");
+    assert_eq!(child.name, "Fix the flaky test");
+    assert_eq!(child.role.as_deref(), Some("coding-agent"));
+}
+
+/// The guard that matters most: a phantom subagent row never completes, so an
+/// ordinary tool call must never become one.
+#[tokio::test(flavor = "multi_thread")]
+async fn ordinary_tool_calls_announce_no_subagent() {
+    let harness = Harness::start();
+
+    harness.update(serde_json::json!({
+        "sessionUpdate": "tool_call",
+        "toolCallId": "call-1",
+        "title": "Run the tests",
+        "kind": "execute",
+        "status": "in_progress",
+        // A description and a prompt, but not a Task tool.
+        "rawInput": { "description": "Run the tests", "prompt": "cargo test" },
+    }));
+    harness.pump();
+
+    assert!(
+        subagents(&harness).is_empty(),
+        "shape alone must not read as a subagent"
+    );
+}

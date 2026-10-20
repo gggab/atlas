@@ -15,7 +15,7 @@ use atlas_bus::EventBus;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::types::{Message, PlanEntry, RateLimitWindow, SessionStatus, ToolCall, Usage};
+use crate::types::{Message, PlanEntry, RateLimitWindow, SessionStatus, Subagent, ToolCall, Usage};
 use crate::AgentId;
 
 /// One change to one session. Tagged on the wire by `kind`.
@@ -62,6 +62,13 @@ pub enum SessionDelta {
         message_id: String,
         tool_call_id: String,
         delta: String,
+    },
+    /// A subagent was launched, made progress, or ended. The full snapshot
+    /// travels, like [`SessionDelta::ToolCallUpserted`], so the client never
+    /// merges fields. Additive: a client that does not know the kind ignores
+    /// it and still sees the launching tool call, as before.
+    SubagentUpserted {
+        subagent: Subagent,
     },
     PlanUpdated {
         plan: Vec<PlanEntry>,

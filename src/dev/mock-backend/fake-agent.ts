@@ -13,6 +13,7 @@ import type {
   SessionSnapshot,
   ToolCall,
 } from "@/types/agents";
+import type { Subagent } from "@/types/agent";
 import type { TypedHandlers, Unit } from "./types";
 import { text, tool, tools } from "./fixtures/chat";
 import {
@@ -31,6 +32,9 @@ interface FakeSession {
   cwd: string;
   pluginId: string;
   messages: SessionMessage[];
+  /** Children this session delegated to, keyed by launch in the real wire and
+   *  held as a list here because that is the shape the snapshot carries. */
+  subagents?: Subagent[];
 }
 
 const sessions = new Map<string, FakeSession>();
@@ -157,6 +161,10 @@ function snapshot(s: FakeSession, withMessages: boolean): SessionSnapshot {
     prompt_image_supported: true,
     plan: [],
     messages: withMessages ? s.messages : [],
+    // Carried with the transcript, like `messages`: a resumed session's
+    // children are re-seeded from here (`hydrateSessionSnapshot`), so the
+    // metadata-only read omits them exactly as it omits messages.
+    subagents: withMessages ? s.subagents : undefined,
     usage: { input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0 },
     created_at: now,
     updated_at: now,
@@ -215,6 +223,23 @@ export async function streamText(
     });
     await new Promise((r) => setTimeout(r, opts.chunkMs ?? 28));
   }
+}
+
+/**
+ * Announce a delegated child, or update one.
+ *
+ * Whole-record upserts keyed on the launching call, which is what the real
+ * projector sends — so a scenario drives the same path a live agent does, and
+ * the snapshot stays in step for a re-read.
+ */
+export async function upsertSubagent(subagent: Subagent, sessionId?: string): Promise<void> {
+  const s = latest(sessionId);
+  if (!s) return;
+  s.subagents = [
+    ...(s.subagents ?? []).filter((held) => held.toolCallId !== subagent.toolCallId),
+    subagent,
+  ];
+  await sendDelta({ kind: "subagent_upserted", ...at(s), subagent });
 }
 
 /** Update one tool call in place (status, output) — for live-turn scenarios. */

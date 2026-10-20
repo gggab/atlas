@@ -18,6 +18,60 @@ use support::spawning::{manager_offering_mcp, session_requests};
 
 struct LocalServices;
 
+struct BridgedServices;
+
+impl SessionMcpServers for BridgedServices {
+    fn offer(&self, _request: &SessionMcpRequest) -> SessionMcpOffer {
+        let servers = [
+            "atlas_memory",
+            "atlas_code",
+            "atlas_ssh",
+            "atlas_browser",
+            "atlas_personal",
+            "atlas_tasks",
+        ]
+        .map(|name| {
+            acp::McpServer::Stdio(acp::McpServerStdio::new(name, "bridge").args(vec![
+                "mcp-bridge".into(),
+                "http://127.0.0.1:4321/mcp".into(),
+                "private-token-file".into(),
+            ]))
+        })
+        .into_iter()
+        .collect();
+        SessionMcpOffer::new(servers, |_| {})
+    }
+}
+
+#[tokio::test]
+async fn bridged_services_cross_the_real_acp_wire_without_http_support() {
+    let Some((manager, pid_file)) =
+        manager_offering_mcp("bridged-services", json!({}), Arc::new(BridgedServices))
+    else {
+        eprintln!("skipping: no python3 on this machine");
+        return;
+    };
+    manager
+        .new_session(custom("fake-agent"), vec![std::env::temp_dir()])
+        .await
+        .unwrap();
+    let requests = session_requests(&pid_file);
+    let servers = requests[0].1["mcpServers"].as_array().unwrap();
+    assert_eq!(servers.len(), 6);
+    for server in servers {
+        assert_eq!(server["args"][0], "mcp-bridge");
+        assert!(server.get("headers").is_none());
+        assert!(server
+            .get("env")
+            .is_none_or(|env| env.as_array().unwrap().is_empty()));
+    }
+    assert_eq!(
+        requests[0].1["_meta"]["claudeCode"]["options"]["allowedTools"],
+        json!(["mcp__atlas_code"])
+    );
+    manager.shutdown();
+}
+
 impl SessionMcpServers for LocalServices {
     fn offer(&self, _request: &SessionMcpRequest) -> SessionMcpOffer {
         let servers = ["atlas_memory", "atlas_code", "atlas_ssh", "atlas_browser"]

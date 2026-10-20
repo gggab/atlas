@@ -2867,6 +2867,7 @@ mod diff_path_tests {
             locations,
             raw_output: None,
             content_blocks: blocks,
+            parent_tool_call_id: None,
         }
     }
 
@@ -2911,6 +2912,7 @@ mod diff_path_tests {
             locations: Vec::new(),
             raw_output: None,
             content_blocks: Vec::new(),
+            parent_tool_call_id: None,
         }
     }
 

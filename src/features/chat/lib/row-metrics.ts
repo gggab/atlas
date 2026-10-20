@@ -11,6 +11,30 @@
 // `max-height` budget `useWholeLineClamp` (in `transcript-rows.tsx`) snaps to
 // whole lines and with the "is this long enough to need a Show more" test.
 
+/**
+ * Height the floating chat header occupies.
+ *
+ * Shared because two surfaces have to agree with it and with each other: the
+ * transcript pads its content by this much so the first row clears the bar,
+ * and the overview rail reserves the same height so its first card begins
+ * under the header's icons rather than beside them (the bar floats over the
+ * conversation column only, so a rail starting at y=0 sits next to them).
+ *
+ * Here rather than in `chat-panel.tsx`: the rail is a lazily imported chunk,
+ * and a static import of the panel to reach one number would pull the whole
+ * panel into that chunk and make the split pointless.
+ */
+export const HEADER_INSET = 46;
+
+/**
+ * The conversation's content frame: centred, 760px at most, padded the same on
+ * both sides.
+ *
+ * Transcript rows and permission cards share this frame, including when the
+ * overview rail narrows the conversation column.
+ */
+export const CONTENT_COLUMN = "mx-auto w-full max-w-[760px] px-6";
+
 export const M = {
   /** Lines a user prompt shows before clamping behind "Show more". */
   userMaxLines: 12,

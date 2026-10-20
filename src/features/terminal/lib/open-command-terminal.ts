@@ -11,7 +11,7 @@
 // created later by the panel, and the terminal writes the queued line into the
 // user's own interactive shell once it exists.
 
-import { useLayoutStore } from "@/features/layout/stores/layout-store";
+import { groupOf, useLayoutStore } from "@/features/layout/stores/layout-store";
 import { isWindows } from "@/lib/platform";
 import { useTerminalStore } from "../stores/terminal-store";
 
@@ -138,4 +138,30 @@ export function closeCommandTerminal(t: CommandTerminal): void {
   }
   // The tab was already the user's — only the terminal we added goes.
   terminal.closeTerminalById(t.terminalId);
+}
+
+/** Where a command terminal stands relative to the screen.
+ *
+ *  `"hidden"` is the one that matters: the tab is still open, just not the one
+ *  showing in its column. `"closed"` and `"visible"` are deliberately NOT
+ *  merged with it — a caller that hides UI while the terminal is out of sight
+ *  must still show that UI when the terminal is gone outright, or the user is
+ *  left with no way to finish or cancel whatever the terminal was for. */
+export type CommandTerminalPresence = "visible" | "hidden" | "closed";
+
+/**
+ * Whether a command terminal is the tab currently showing in its column.
+ *
+ * Per COLUMN, not per window: Atlas splits into up to three, each with its own
+ * active tab (`activeByGroup`). A terminal in the right-hand column is on
+ * screen while the user types in a chat on the left, so keying this off the
+ * focused tab would hide things about a terminal the user can plainly see.
+ */
+export function useCommandTerminalPresence(t: CommandTerminal | null): CommandTerminalPresence {
+  return useLayoutStore((s) => {
+    if (!t) return "closed";
+    const tab = s.tabs.find((candidate) => candidate.id === t.tabId);
+    if (!tab) return "closed";
+    return s.activeByGroup[groupOf(tab)] === tab.id ? "visible" : "hidden";
+  });
 }

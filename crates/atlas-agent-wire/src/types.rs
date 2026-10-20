@@ -84,6 +84,68 @@ pub struct ToolCall {
     /// where a git-backed diff has nothing to compare against.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub content_blocks: Vec<ToolContentBlock>,
+    /// The subagent this call belongs to, named by the id of the call that
+    /// launched it ([`Subagent::tool_call_id`]).
+    ///
+    /// Absent for the parent's own work, which is almost every call. A child's
+    /// tool calls arrive on the same session as its parent's, interleaved; this
+    /// is the only thing that tells them apart (`atlas_acp_thread::subagent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_tool_call_id: Option<String>,
+}
+
+/// How far along a subagent is.
+///
+/// Deliberately not [`ToolCallStatus`]: a subagent that the parent interrupted
+/// is neither completed nor failed, and a client that shows "failed" for one
+/// the user stopped is lying about it.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SubagentStatus {
+    Running,
+    Completed,
+    Failed,
+    Interrupted,
+}
+
+/// A child agent the running agent delegated work to.
+///
+/// Projected from the tool call that launched it, which is also its identity:
+/// ACP has no subagent concept, so there is no id to use but that call's
+/// (`atlas_acp_thread::subagent` documents what each adapter sends).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Subagent {
+    /// The launching tool call's id — the key a child's calls point back to.
+    pub tool_call_id: String,
+    /// The message the launching call belongs to, so the client can place the
+    /// subagent in the transcript as well as in a panel.
+    pub message_id: String,
+    pub name: String,
+    pub status: SubagentStatus,
+    /// The child's instructions, when the launch carried them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    /// The child's role: Claude's `subagent_type`, the engine's `agent_type`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// What it reported back, once it finished.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// How many tool calls it has made so far — what a collapsed row counts.
+    pub tool_call_count: u32,
+    /// When the launching call was first seen, as epoch milliseconds. The
+    /// client derives the elapsed time from it rather than being sent a
+    /// duration that is stale the moment it arrives.
+    pub started_at_ms: i64,
+    /// Set once it reached a terminal status.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at_ms: Option<i64>,
+    /// The child ran on an agent thread of its own (the engine's subagents),
+    /// so its work is not in this session: `tool_call_count` stays 0 however
+    /// much it did. Omitted when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub own_thread: bool,
 }
 
 /// A tool-content block the UI renders structurally rather than as text.

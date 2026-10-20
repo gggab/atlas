@@ -160,6 +160,22 @@ export function evictSnapshot(projectId: string): void {
 }
 
 /**
+ * Reset the panel-data stores to their initial (no project) state.
+ *
+ * These stores are global, not per project: a switch overwrites them (restore
+ * or cold load), but nothing else ever empties them. So when the project set
+ * goes away with no successor — an org switch, closing the last project — the
+ * file tree, git status and KB of the project just torn down stay on screen
+ * beside the Welcome screen, inside an org that does not contain it.
+ */
+export function clearPanelStores(): void {
+  useExplorerStore.setState(dataSlice(useExplorerStore.getInitialState()));
+  useGitStore.setState(dataSlice(useGitStore.getInitialState()));
+  useKnowledgeStore.setState(dataSlice(useKnowledgeStore.getInitialState()));
+  useKnowledgeMetaStore.setState(dataSlice(useKnowledgeMetaStore.getInitialState()));
+}
+
+/**
  * The persist hash captured for this project, or null if no snapshot. Used by
  * the flush coordinator to skip redundant disk writes when nothing changed.
  */

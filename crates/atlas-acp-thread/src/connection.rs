@@ -225,6 +225,16 @@ pub trait AgentConnection: Send + Sync {
         work_dirs: Vec<PathBuf>,
     ) -> BoxFuture<'static, Result<AcpThreadHandle>>;
 
+    /// Resolves once the agent process behind this connection has exited.
+    ///
+    /// A connection whose process is gone can still be handed out as
+    /// "connected", and every request on it waits a full deadline to learn
+    /// what this says at once. The manager watches it to evict the entry.
+    /// Connections with no process to lose (the native agent) never resolve.
+    fn exited(self: Arc<Self>) -> BoxFuture<'static, ()> {
+        Box::pin(std::future::pending())
+    }
+
     /// Whether this agent supports loading existing sessions.
     fn supports_load_session(&self) -> bool {
         false

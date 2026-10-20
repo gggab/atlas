@@ -12,6 +12,7 @@
 // progress via `atlas:registry-install:progress`.
 
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { withDeadline } from "@/features/chat/lib/with-deadline";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowUpCircle, Check, Download, Globe, Loader2, RefreshCw, Search, X } from "lucide-react";
@@ -139,6 +140,9 @@ type Filter = "all" | "installed" | "not-installed";
  *  this window would be a no-op round trip anyway. */
 const STALE_AFTER_MS = 60 * 60 * 1000;
 
+/** The install command writes a map entry; only a stale-registry refresh (30 s) can precede it. */
+const INSTALL_DEADLINE_MS = 60_000;
+
 export function AgentsMarketplace() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
@@ -204,8 +208,12 @@ export function AgentsMarketplace() {
     installingIds.add(entry.id);
     notifyInstalling();
     try {
-      if (kind === "detected") await acpRegistry.installDetected(entry.id);
-      else await acpRegistry.install(entry.id);
+      // An install here is a settings write plus, at most, one registry
+      // refresh (30 s in Rust). A card that said "Installing…" with no way to
+      // cancel and no second click was the alternative.
+      const request =
+        kind === "detected" ? acpRegistry.installDetected(entry.id) : acpRegistry.install(entry.id);
+      await withDeadline(request, INSTALL_DEADLINE_MS, `Installing ${entry.name} has not finished`);
       toast.success(`${entry.name} installed`);
     } catch (e) {
       toast.error(`Couldn't install ${entry.name}: ${String(e)}`);

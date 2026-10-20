@@ -8,8 +8,8 @@
 //! - **One bearer token per (session, scope)** ([`tokens`]): minted when a
 //!   session starts, revoked when it ends, checked on every request. The
 //!   token says who is calling and which scope's record to open.
-//! - **Handed to every agent that can take it** ([`offers`]): ACP agents that
-//!   advertise `mcpCapabilities.http`.
+//! - **Handed to ACP agents through stdio** ([`offers`]): credentials stay in
+//!   private files; the bridge forwards to the session-authorized HTTP service.
 //! - **Seven tools** ([`tools`]), read first, write last: `memory_briefing`,
 //!   `memory_changes`, `memory_search`, `memory_get`, `memory_list`,
 //!   `memory_remember`, `memory_forget`. The server's instructions
@@ -37,7 +37,7 @@ pub use briefing::{SessionClocks, SessionReads};
 #[allow(unused_imports)]
 pub use host::{MemoryServer, MemoryServerHost, SharingGate, Sources};
 #[allow(unused_imports)]
-pub use offers::{MemorySessionOffers, OfferDecision};
+pub use offers::{MemorySessionOffers, OfferDecision, BRIDGE_ARG};
 pub(crate) use tokens::require_token;
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};

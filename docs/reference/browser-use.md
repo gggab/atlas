@@ -44,7 +44,7 @@ its assigned manifest key; Edge omits it. Identities and native hosts stay uncha
 Passing fixtures does not prove store certification or real CLI integration.
 
 DeskMate offers `atlas_browser` independently of shared memory to ACP sessions
-advertising HTTP MCP. It uses live session tokens and the external CLI's model
+through a stdio bridge to its local HTTP endpoint. It uses live session tokens and the external CLI's model
 subscription. No additional model API/key is needed.
 
 ## Existing browser tabs through an extension

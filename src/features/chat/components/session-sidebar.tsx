@@ -525,7 +525,10 @@ export const SessionSidebar = memo(function SessionSidebar({
         // but the AGENT was handed none of it and won't refer back to it.
         toast.info("This agent can't replay past messages — it won't remember what's above.");
       }
-      hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan);
+      // With its subagents: the bind above cleared them, and a finished child
+      // is never re-announced by a live delta — left out, a reopened chat's
+      // delegated work came back as bare launching tool calls.
+      hydrateSessionSnapshot(targetTabId, snapshot.status, snapshot.plan, snapshot.subagents);
       if (snapshot.available_models.length > 0) {
         setAcpModels(targetTabId, snapshot.current_model, snapshot.available_models);
       }

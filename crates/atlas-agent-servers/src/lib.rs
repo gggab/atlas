@@ -68,7 +68,7 @@ pub mod session_mcp;
 pub use connection::{
     client_capabilities_for_agent, map_acp_error, AcpConnection, AcpConnectionDefaults,
     AgentServerCommand, ConnectionDeadlines, RequestElicitationSink, ThreadEventSink,
-    INITIALIZE_TIMEOUT,
+    INITIALIZE_TIMEOUT, REQUEST_TIMEOUT,
 };
 pub use debug_log::{
     AcpDebugLog, AcpDebugMessage, AcpDebugMessageContent, AcpDebugMessageDirection,

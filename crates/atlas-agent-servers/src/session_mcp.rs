@@ -371,6 +371,12 @@ pub fn preapproval_meta(servers: &[acp::McpServer], ask_first: &AskFirst) -> Opt
             {
                 Some(format!("mcp__{}", http.name).into())
             }
+            acp::McpServer::Stdio(stdio)
+                if stdio.name == "atlas_code"
+                    && ask_first.tools_on(&stdio.name).next().is_none() =>
+            {
+                Some(format!("mcp__{}", stdio.name).into())
+            }
             _ => None,
         })
         .collect();
@@ -407,6 +413,26 @@ mod tests {
 
     fn http(name: &str) -> acp::McpServer {
         acp::McpServer::Http(acp::McpServerHttp::new(name, "http://127.0.0.1:1/mcp"))
+    }
+
+    #[test]
+    fn bridged_code_keeps_preapproval_without_preapproving_other_services() {
+        let servers = [
+            "atlas_memory",
+            "atlas_code",
+            "atlas_browser",
+            "atlas_ssh",
+            "atlas_tasks",
+            "atlas_personal",
+        ]
+        .map(|name| acp::McpServer::Stdio(acp::McpServerStdio::new(name, "bridge")));
+        let meta = preapproval_meta(&servers, &AskFirst::none()).unwrap();
+        assert_eq!(
+            serde_json::Value::Object(meta),
+            serde_json::json!({
+                "claudeCode": {"options": {"allowedTools": ["mcp__atlas_code"]}}
+            })
+        );
     }
 
     /// Claude Code asked before every Atlas tool call (review of #354): the

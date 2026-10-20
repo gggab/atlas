@@ -12,7 +12,8 @@ pub use delta::{DeltaSink, Emitter, SessionDelta, SessionDeltaEnvelope};
 pub use error::{classify_message, ErrorClass};
 pub use types::{
     extract_content_blocks, Message, MessageImage, MessageMode, MessageRole, PlanEntry,
-    RateLimitWindow, SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
+    RateLimitWindow, SessionStatus, Subagent, SubagentStatus, ToolCall, ToolCallStatus,
+    ToolContentBlock, Usage,
 };
 
 use serde::{Deserialize, Serialize};

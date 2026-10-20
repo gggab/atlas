@@ -1,3 +1,4 @@
+import { OPEN_ACTION_ID } from "./catalog";
 /**
  * App warning rules — pure, explicit state in / state out, no store or Tauri
  * imports (like `agent-warning-rules.ts`). Each `evaluateX` decides WHEN a
@@ -237,6 +238,8 @@ export interface AgentUpdateFailure {
   seq: number;
 }
 
+export const RETRY_AGENT_UPDATE_ACTION_ID = "agents.retry-update";
+
 export function decideAgentUpdateFailed(
   f: AgentUpdateFailure,
   env: NotificationEnv,
@@ -248,6 +251,10 @@ export function decideAgentUpdateFailed(
     body: trimError(f.error) || "The install did not complete. It will retry next time.",
     target: { type: "settings", section: "agents" },
     dedupeKey: `agent-update:${f.pluginId}:${f.version}:${f.seq}`,
+    actions: [
+      { id: RETRY_AGENT_UPDATE_ACTION_ID, label: "Retry", args: { pluginId: f.pluginId } },
+      { id: OPEN_ACTION_ID, label: "Open settings" },
+    ],
   };
   return decideNotification(event, env, prefs);
 }

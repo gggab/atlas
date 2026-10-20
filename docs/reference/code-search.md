@@ -7,7 +7,7 @@ read-only tools through the session-authorized `atlas_code` HTTP MCP service:
 
 ## Availability and scope
 
-The agent must advertise HTTP MCP support. Settings > General > "Let agents
+ACP requires stdio MCP support. Each external Agent receives a credential-free stdio bridge to the local HTTP service. Settings > General > "Let agents
 search code with DeskMate" controls both new offers and calls in existing sessions.
 It is independent of shared-memory sharing. The code endpoint shares the memory
 listener and one session token with the other local services; token binding and

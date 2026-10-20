@@ -4,14 +4,16 @@
 //! like on the wire right now". Deciding what *changed* — and therefore which
 //! delta to send — is [`crate::projector`]'s job.
 
+use std::collections::HashMap;
+
 use agent_client_protocol::schema::v1 as acp;
 use atlas_acp_thread::{
-    AssistantMessageChunk, ContentBlock, PermissionOptions, ToolCall as ThreadToolCall,
-    ToolCallContent, ToolCallStatus as ThreadToolCallStatus,
+    AgentThreadEntry, AssistantMessageChunk, ContentBlock, PermissionOptions,
+    ToolCall as ThreadToolCall, ToolCallContent, ToolCallStatus as ThreadToolCallStatus,
 };
 use atlas_agent_wire::{
-    Message, MessageImage, MessageMode, MessageRole, PlanEntry, ToolCall, ToolCallStatus,
-    ToolContentBlock,
+    Message, MessageImage, MessageMode, MessageRole, PlanEntry, Subagent, SubagentStatus, ToolCall,
+    ToolCallStatus, ToolContentBlock,
 };
 
 /// One run of same-kind chunks inside an assistant entry.
@@ -256,6 +258,10 @@ pub fn tool_call_meta(call: &ThreadToolCall) -> ToolCall {
             .collect(),
         raw_output: call.raw_output.clone(),
         content_blocks: content_blocks(&call.content),
+        parent_tool_call_id: call
+            .parent_tool_call_id
+            .as_ref()
+            .map(std::string::ToString::to_string),
     }
 }
 
@@ -556,6 +562,219 @@ pub fn snapshot_messages(
         }
     }
     out
+}
+
+// ── Subagents ───────────────────────────────────────────────────────────────
+
+/// Every subagent this thread has launched, in launch order.
+///
+/// Rebuilt from the thread rather than accumulated as events arrive: a child
+/// is identified by the call that launched it, and that call's own fields —
+/// its status, its result, the `rawInput` that names the child — are patched
+/// in place by later updates. Deriving keeps the answer correct whatever
+/// order those arrive in, which an incremental tally would not.
+///
+/// `message_id_at` gives the projection's message id for a thread entry, so
+/// the client can place a subagent in the transcript as well as in a panel.
+/// A subagent whose launching call has no message id yet is skipped: it has
+/// nowhere to be shown.
+pub fn subagents(
+    thread: &atlas_acp_thread::AcpThread,
+    message_id_at: impl Fn(usize) -> Option<String>,
+    started_at: impl Fn(usize) -> i64,
+) -> Vec<Subagent> {
+    subagents_timed(thread, message_id_at, started_at)
+        .into_iter()
+        .map(|(subagent, _)| subagent)
+        .collect()
+}
+
+/// [`subagents`], each paired with whether its end time is the child's own
+/// report rather than a floor — which a live projector, holding a better clock
+/// than the floor, needs to know before it overrides one.
+pub fn subagents_timed(
+    thread: &atlas_acp_thread::AcpThread,
+    message_id_at: impl Fn(usize) -> Option<String>,
+    started_at: impl Fn(usize) -> i64,
+) -> Vec<(Subagent, bool)> {
+    // One pass for the children's own work, so a launch can report how much
+    // of it there is. Codex sends several lifecycle calls per child, each
+    // with its own id, so the child's identity — its `agentPath` — is what
+    // the tally is keyed on, falling back to the launching call's id.
+    let mut counts: HashMap<String, u32> = HashMap::new();
+    // The child's latest call, for when it ended: the thread stamps an entry
+    // when it is created and never again, so a launch that is itself the
+    // whole child (Claude's `Agent`) has no time of its own for its end.
+    let mut last_call: HashMap<String, usize> = HashMap::new();
+    for (ix, entry) in thread.entries().iter().enumerate() {
+        let AgentThreadEntry::ToolCall(call) = entry else {
+            continue;
+        };
+        if let Some(parent) = &call.parent_tool_call_id {
+            *counts.entry(parent.to_string()).or_default() += 1;
+            last_call.insert(parent.to_string(), ix);
+        }
+    }
+
+    // What a child launched to run on its own ended as, if it has: nothing on
+    // the wire says so (Claude reports an async child's end only to a client
+    // that takes its draft task updates), but the agent holds the turn open
+    // until such children settle — so with no turn running, none is.
+    let async_end = (!thread.is_generating()).then(|| match thread.last_stop_reason() {
+        Some(acp::StopReason::Cancelled) => SubagentStatus::Interrupted,
+        _ => SubagentStatus::Completed,
+    });
+    let mut out: Vec<(Subagent, bool)> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    for (ix, entry) in thread.entries().iter().enumerate() {
+        let AgentThreadEntry::ToolCall(call) = entry else {
+            continue;
+        };
+        let Some(launch) = &call.launched_subagent else {
+            continue;
+        };
+        let Some(message_id) = message_id_at(ix) else {
+            continue;
+        };
+        let id = call.id.to_string();
+        let key = launch.native_id.clone().unwrap_or_else(|| id.clone());
+
+        // A child the agent reports in several steps (Codex) is one row: the
+        // first step opens it, the later ones move it along.
+        if let Some(&at) = seen.get(&key) {
+            let (previous, _) = &mut out[at];
+            previous.status = subagent_status(call, previous.status, async_end);
+            if let Some(result) = child_result(call) {
+                previous.result = Some(result);
+            }
+            if previous.status != SubagentStatus::Running && previous.ended_at_ms.is_none() {
+                previous.ended_at_ms = Some(started_at(ix));
+            }
+            continue;
+        }
+
+        let status = subagent_status(call, SubagentStatus::Running, async_end);
+        let started = started_at(ix);
+        // What the child says about itself: the only clock a replayed one has
+        // (every replayed entry is created in the same instant), and the only
+        // count of work whose calls were never replayed to this session.
+        let reported = atlas_acp_thread::subagent::reported_usage(call.raw_output.as_ref());
+        let finished = status != SubagentStatus::Running;
+        let reported_end = reported
+            .duration_ms
+            .filter(|_| finished)
+            .map(|ms| started + i64::try_from(ms).unwrap_or(i64::MAX - started));
+        seen.insert(key.clone(), out.len());
+        let subagent = Subagent {
+            tool_call_id: id.clone(),
+            message_id,
+            name: launch.name.clone(),
+            status,
+            prompt: launch.prompt.clone(),
+            role: launch.role.clone(),
+            result: child_result(call),
+            tool_call_count: counts
+                .get(&id)
+                .copied()
+                .unwrap_or(0)
+                .max(reported.tool_uses.unwrap_or(0)),
+            started_at_ms: started,
+            // Otherwise a floor, not the end: the live projector stamps the
+            // moment it sees the child finish, and the floor stands only where
+            // it never did and the child reported nothing.
+            ended_at_ms: reported_end.or_else(|| {
+                finished.then(|| started_at(last_call.get(&id).copied().unwrap_or(ix).max(ix)))
+            }),
+            own_thread: launch.own_thread,
+        };
+        out.push((subagent, reported_end.is_some()));
+    }
+    out
+}
+
+/// The child's status — which is NOT simply the launching call's.
+///
+/// Two things observed from live agents make the call's own status the wrong
+/// answer on its own:
+///
+/// - A **lifecycle step** says what it is: a `started` call completes the
+///   instant the child is spawned. Codex's `Start subagent …` call is
+///   `completed` while the child runs for another minute.
+/// - An **async launch** does the same without saying so in the input: Claude
+///   answers an async `Agent` call with `status: "async_launched"` and the
+///   call goes `completed` at once, while the child's own tool calls keep
+///   arriving. Both would have shown every child as finished the moment it
+///   started.
+///
+/// A synchronous delegation — opencode's `task`, Claude's non-async `Agent` —
+/// has neither marker, and there the call finishing IS the child finishing.
+///
+/// `previous` is what the child already reported, so a later step cannot undo
+/// a terminal one: an `interacted` step arrives after `completed` for a child
+/// the parent talks to again.
+fn subagent_status(
+    call: &ThreadToolCall,
+    previous: SubagentStatus,
+    async_end: Option<SubagentStatus>,
+) -> SubagentStatus {
+    use atlas_acp_thread::subagent::Activity;
+
+    if previous != SubagentStatus::Running {
+        return previous;
+    }
+    let finished = match tool_status(&call.status) {
+        ToolCallStatus::Completed => SubagentStatus::Completed,
+        ToolCallStatus::Failed => SubagentStatus::Failed,
+        ToolCallStatus::Pending | ToolCallStatus::Running => return SubagentStatus::Running,
+    };
+    // A failed launch is a failed child whatever kind of step it was.
+    if finished == SubagentStatus::Failed {
+        return SubagentStatus::Failed;
+    }
+    match atlas_acp_thread::subagent::activity(call.raw_input.as_ref()) {
+        Some(Activity::Completed) => SubagentStatus::Completed,
+        Some(Activity::Interrupted) => SubagentStatus::Interrupted,
+        // Starting or talking to a child says nothing about it ending.
+        Some(Activity::Started | Activity::Interacted) => SubagentStatus::Running,
+        None => {
+            // Read once from `_meta` and kept on the call, because the
+            // marker and the `completed` status arrive in different updates.
+            if call.launched_async {
+                async_end.unwrap_or(SubagentStatus::Running)
+            } else {
+                SubagentStatus::Completed
+            }
+        }
+    }
+}
+
+/// What the child reported back — never an async launch's own result, which
+/// is the agent's receipt for starting it ("Async agent launched
+/// successfully. (This tool result is internal metadata — never quote …)"),
+/// written for the model and not the child's answer.
+fn child_result(call: &ThreadToolCall) -> Option<String> {
+    tool_call_summary(call).filter(|_| !call.launched_async)
+}
+
+/// What a finished child reported back, flattened.
+///
+/// Only the text the agent put in the call's content: `rawOutput` is the
+/// structured form the parent model reads, and showing it verbatim would put
+/// a usage block and a model-directed trailer in front of the user.
+fn tool_call_summary(call: &ThreadToolCall) -> Option<String> {
+    let mut text = String::new();
+    for content in &call.content {
+        if let ToolCallContent::ContentBlock(block) = content {
+            let chunk = block_text(block);
+            if !chunk.is_empty() {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(&chunk);
+            }
+        }
+    }
+    (!text.trim().is_empty()).then_some(text)
 }
 
 #[cfg(test)]

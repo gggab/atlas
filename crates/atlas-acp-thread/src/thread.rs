@@ -510,10 +510,35 @@ pub struct ToolCall {
     pub raw_input: Option<serde_json::Value>,
     pub raw_output: Option<serde_json::Value>,
     pub tool_name: Option<Arc<str>>,
+    /// The subagent launch this call belongs to, when the agent said so.
+    ///
+    /// A child's work arrives on the parent session, indistinguishable from
+    /// the parent's own except for this: see [`crate::subagent`]. Carried per
+    /// call rather than resolved once, because a call can be attributed to a
+    /// child by a later update than the one that created it.
+    pub parent_tool_call_id: Option<Arc<str>>,
+    /// Set when this call LAUNCHED a subagent (rather than belonging to one).
+    pub launched_subagent: Option<crate::subagent::SubagentLaunch>,
+    /// The launch handed the child off to run on its own, so this call
+    /// completing means "started", not "finished"
+    /// ([`crate::subagent::launched_async`]). Sticky: the marker arrives once,
+    /// with the launch's result, and later updates of the same call do not
+    /// repeat it.
+    pub launched_async: bool,
 }
 
 impl ToolCall {
     pub fn from_acp(tool_call: acp::ToolCall, status: ToolCallStatus) -> Result<Self> {
+        let tool_name = tool_name_from_meta(&tool_call.meta);
+        let parent_tool_call_id = crate::subagent::parent_tool_call_id(tool_call.meta.as_ref());
+        let launched_subagent = crate::subagent::launch_of(
+            tool_name.as_deref(),
+            Some(tool_call.title.as_str()),
+            tool_call.raw_input.as_ref(),
+            tool_call.meta.as_ref(),
+        );
+        let launched_async =
+            crate::subagent::launched_async(tool_call.raw_output.as_ref(), tool_call.meta.as_ref());
         let label = Self::label_for(tool_call.kind, tool_call.title);
         let mut content = Vec::with_capacity(tool_call.content.len());
         for item in tool_call.content {
@@ -531,7 +556,10 @@ impl ToolCall {
             locations: tool_call.locations,
             raw_input: tool_call.raw_input,
             raw_output: tool_call.raw_output,
-            tool_name: tool_name_from_meta(&tool_call.meta),
+            tool_name,
+            parent_tool_call_id,
+            launched_subagent,
+            launched_async,
         })
     }
 
@@ -577,6 +605,14 @@ impl ToolCall {
             self.tool_name = Some(tool_name);
         }
 
+        // Only ever set, never cleared: a later update of a child's call can
+        // omit the attribution it already sent (a progress beat after the
+        // child finished), and dropping it would move the row back to the
+        // root mid-flight.
+        if let Some(parent) = crate::subagent::parent_tool_call_id(meta.as_ref()) {
+            self.parent_tool_call_id = Some(parent);
+        }
+
         if let Some(title) = title {
             self.label = Self::label_for(self.kind, title);
         }
@@ -612,6 +648,32 @@ impl ToolCall {
 
         if let Some(raw_output) = raw_output {
             self.raw_output = Some(raw_output);
+        }
+
+        // After the fields, not with them: a tool use streams its JSON input
+        // after the call is announced, so the launch is only readable once
+        // `raw_input` has landed.
+        //
+        // Re-read on EVERY update, not only while it is unknown. Observed
+        // from opencode: the launch is announced as `title: "task"` with an
+        // empty input, and the real description, prompt and role arrive in a
+        // later update. Detecting once left such a child named "Subagent" for
+        // its whole life. Every field here is read from the call's
+        // accumulated state (`raw_input` is only ever overwritten by a
+        // present value), so a later read is strictly better informed.
+        if let Some(launch) = crate::subagent::launch_of(
+            self.tool_name.as_deref(),
+            Some(self.label.as_str()),
+            self.raw_input.as_ref(),
+            meta.as_ref(),
+        ) {
+            self.launched_subagent = Some(launch);
+        }
+        // Sticky, like the parent link: the marker rides on the update that
+        // carries the launch's result, and the `completed` update that
+        // follows it a moment later does not repeat it.
+        if crate::subagent::launched_async(self.raw_output.as_ref(), meta.as_ref()) {
+            self.launched_async = true;
         }
 
         Ok(())
@@ -1002,6 +1064,7 @@ pub struct AcpThread {
     plan: Plan,
     turn_id: u32,
     running_turn: Option<RunningTurn>,
+    last_stop_reason: Option<acp::StopReason>,
     detached_steering_turn: Option<u32>,
     connection: Arc<dyn AgentConnection>,
     token_usage: Option<TokenUsage>,
@@ -1037,6 +1100,7 @@ impl AcpThread {
             plan: Plan::default(),
             turn_id: 0,
             running_turn: None,
+            last_stop_reason: None,
             detached_steering_turn: None,
             connection,
             token_usage: None,
@@ -1185,6 +1249,10 @@ impl AcpThread {
         self.running_turn
             .as_ref()
             .is_some_and(|turn| Some(turn.id) == self.detached_steering_turn)
+    }
+
+    pub fn last_stop_reason(&self) -> Option<acp::StopReason> {
+        self.last_stop_reason
     }
 
     fn emit(&self, event: AcpThreadEvent) {
@@ -1605,6 +1673,9 @@ impl AcpThread {
             Some(ix) => ix,
             None => {
                 let failed_tool_call = ToolCall {
+                    parent_tool_call_id: None,
+                    launched_subagent: None,
+                    launched_async: false,
                     id: update.id().clone(),
                     label: "Tool call not found".into(),
                     kind: acp::ToolKind::Fetch,
@@ -2035,6 +2106,7 @@ impl AcpThread {
     /// reaches. Checked while fixing `cancel_inner` below (ATL-218 finding 4).
     pub fn end_turn(&mut self, stop_reason: acp::StopReason) {
         self.running_turn = None;
+        self.last_stop_reason = Some(stop_reason);
         self.emit(AcpThreadEvent::Stopped(stop_reason));
         self.emit(AcpThreadEvent::StatusChanged);
     }

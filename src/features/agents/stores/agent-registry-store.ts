@@ -14,6 +14,7 @@
 // `signature` string and read the arrays via `getState()`.
 
 import { create } from "zustand";
+import { withDeadline } from "@/features/chat/lib/with-deadline";
 import type { AgentCatalogEntry } from "@/types/agent-catalog";
 import { agents, listenCatalogChanged } from "@/features/chat/lib/agents-api";
 import { acpRegistry, type AcpRegistryEntry } from "../lib/agent-registry-api";
@@ -140,6 +141,10 @@ export async function hydrateAgentRegistry(): Promise<void> {
   }
 }
 
+/** Twice the backend's own 30 s fetch ceiling: an expiry here means the
+ *  IPC hop hung, not the network. */
+const REGISTRY_REFRESH_DEADLINE_MS = 60_000;
+
 /** In-flight refresh, shared. A second caller joins the first rather than
  *  issuing a duplicate — the frontend half of the same rule the Rust store now
  *  follows (`AgentRegistryStore::refresh`). */
@@ -155,7 +160,15 @@ export function refreshAgentRegistry(): Promise<void> {
   useAgentRegistryStore.setState({ registryRefreshing: true });
   pendingRefresh = (async () => {
     try {
-      const listing = await acpRegistry.refresh();
+      // Rust bounds the fetch itself (30 s); this guards the IPC hop. Without
+      // it a refresh that never settled left `registryRefreshing` true for
+      // the life of the app: the Refresh button disabled, the auto-retry
+      // gated off, and every later refresh joining the dead promise.
+      const listing = await withDeadline(
+        acpRegistry.refresh(),
+        REGISTRY_REFRESH_DEADLINE_MS,
+        "The ACP registry has not answered",
+      );
       const catalog = await agents.catalog().catch(() => null);
       const entries = catalog?.entries ?? useAgentRegistryStore.getState().catalog;
       useAgentRegistryStore.setState({

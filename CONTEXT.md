@@ -131,3 +131,9 @@ Installed ACP CLI processes own vendor login and model selection. DeskMate owns 
 - **Derived variable** — a colour DeskMate computes from a key or a base token and no theme may set, because it is a function rather than a judgement (a status badge's fill is its status foreground at 12%). Written to `:root` like a key, absent from the schema, so writing one in a theme file is an unknown-key warning. *Avoid*: computed key, implicit key.
 - **Appearance** — which of the two a variant is, `dark` or `light`. The user's `themeMode` (`system` / `dark` / `light`) is what they asked for; the appearance is what it resolved to, and a theme with only the other variant resolves to that one. *Avoid*: mode, when the resolved answer is meant.
 - **Scale** — a named, finite ladder of non-colour values: type, control heights, radius, elevation, z-index layers, motion durations, icon sizes. A scale step is named, never measured (`text-xs`, not `text-[11px]`). Scales are app-owned; a theme sets `radius`, the fonts, `tracking-normal` and the shadow ramp, and nothing else on this side. Reference: `docs/reference/design-system.md`. *Avoid*: token, for a non-colour value.
+
+## ACP delegated work and local MCP transport
+
+A subagent is observed delegated work reported through actual ACP tool calls and metadata, not a new DeskMate execution engine or a promise of control support. Its launch ID, parent attribution, lifecycle and available transcript feed the chat rows and overview. Unknown formats remain ordinary tool calls.
+
+External ACP sessions receive local tools through the mandatory stdio transport. The DeskMate executable forwards each JSON-RPC message to the session-authorized loopback HTTP service and reads its credential from a private token file. Adapter arguments and environment carry no bearer token. See ADR-0020 and [selective ports](docs/reference/upstream-0.4.1-ports.md).

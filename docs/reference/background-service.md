@@ -14,7 +14,7 @@ The backend owns all live Agent sessions, scheduler claims, personal storage,
 task tools and notifications. Closing the desktop client does not stop it. Fixed
 reminders, minute intervals, calendar reminders and already-authorized Agent
 checks continue while the computer is awake and the user session is logged in.
-Scheduled model turns retain the existing limits, HTTP MCP and task-tool opt-in.
+Scheduled model turns retain the existing limits, the local MCP bridge and task-tool opt-in.
 They may consume vendor quota and use the CLI's existing permissions. A new
 permission, login or elicitation request waits for the user and raises an
 attention notification; no background approval is granted.

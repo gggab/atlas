@@ -30,7 +30,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use atlas_agent_wire::{
     AgentId, Message, MessageMode, MessageRole, PlanEntry, RateLimitWindow, SessionDelta,
-    SessionDeltaEnvelope, SessionStatus, ToolCall, ToolCallStatus, ToolContentBlock, Usage,
+    SessionDeltaEnvelope, SessionStatus, Subagent, SubagentStatus, ToolCall, ToolCallStatus,
+    ToolContentBlock, Usage,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -53,6 +54,7 @@ fn expected() -> BTreeMap<String, BTreeSet<String>> {
             "tool_call_output_chunk",
             &["message_id", "tool_call_id", "delta"],
         ),
+        ("subagent_upserted", &["subagent"]),
         ("plan_updated", &["plan"]),
         ("history_rewound", &["turns"]),
         ("mode_changed", &["mode_id"]),
@@ -105,6 +107,7 @@ fn contract_kind(delta: &SessionDelta) -> &'static str {
         SessionDelta::TextChunk { .. } => "text_chunk",
         SessionDelta::ThinkingChunk { .. } => "thinking_chunk",
         SessionDelta::ToolCallUpserted { .. } => "tool_call_upserted",
+        SessionDelta::SubagentUpserted { .. } => "subagent_upserted",
         SessionDelta::ToolCallOutputChunk { .. } => "tool_call_output_chunk",
         SessionDelta::PlanUpdated { .. } => "plan_updated",
         SessionDelta::HistoryRewound { .. } => "history_rewound",
@@ -208,6 +211,9 @@ fn samples() -> Vec<SessionDelta> {
             message_id: "msg-1".into(),
             tool_call_id: "call-1".into(),
             delta: "line\n".into(),
+        },
+        SessionDelta::SubagentUpserted {
+            subagent: sample_subagent(),
         },
         SessionDelta::PlanUpdated {
             plan: vec![PlanEntry {
@@ -326,6 +332,23 @@ fn sample_tool_call() -> ToolCall {
             old_text: Some("old".into()),
             new_text: "new".into(),
         }],
+        parent_tool_call_id: Some("call-parent".into()),
+    }
+}
+
+fn sample_subagent() -> Subagent {
+    Subagent {
+        tool_call_id: "call-parent".into(),
+        message_id: "msg-1".into(),
+        name: "Review the auth module".into(),
+        status: SubagentStatus::Running,
+        prompt: Some("Read src/auth.".into()),
+        role: Some("code-reviewer".into()),
+        result: None,
+        tool_call_count: 2,
+        started_at_ms: 1_700_000_000_000,
+        ended_at_ms: None,
+        own_thread: true,
     }
 }
 
@@ -348,6 +371,7 @@ fn golden() -> BTreeMap<&'static str, serde_json::Value> {
         "content_blocks": [
             { "type": "diff", "path": "src/main.rs", "oldText": "old", "newText": "new" }
         ],
+        "parent_tool_call_id": "call-parent",
     });
     BTreeMap::from([
         (
@@ -390,6 +414,23 @@ fn golden() -> BTreeMap<&'static str, serde_json::Value> {
                 "message_id": "msg-1",
                 "tool_call_id": "call-1",
                 "delta": "line\n",
+            }),
+        ),
+        (
+            "subagent_upserted",
+            json!({
+                "kind": "subagent_upserted",
+                "subagent": {
+                    "toolCallId": "call-parent",
+                    "messageId": "msg-1",
+                    "name": "Review the auth module",
+                    "status": "running",
+                    "prompt": "Read src/auth.",
+                    "role": "code-reviewer",
+                    "toolCallCount": 2,
+                    "startedAtMs": 1_700_000_000_000i64,
+                    "ownThread": true,
+                },
             }),
         ),
         (

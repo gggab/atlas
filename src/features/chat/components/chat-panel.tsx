@@ -20,16 +20,17 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useChatStore } from "../stores/chat-store";
 import { pinScope, resolvePinIndex, type ChatPin } from "../stores/chat-pins-store";
 import { useDetailPanelStore } from "../stores/detail-panel-store";
+import { useThreadOverviewStore } from "../stores/thread-overview-store";
 import { appendNextStepsDirective } from "../lib/next-steps";
 import { stripInjectedContext } from "../lib/atlas-context";
 import { agents, ensureAgent, resetAgent } from "../lib/agents-api";
-import { isDeadlineError, withDeadline } from "../lib/with-deadline";
+import { isDeadlineError, progressSince, withDeadline } from "../lib/with-deadline";
 import { drainEdge } from "../lib/drain-gate";
 import { isSendHeldElsewhere, useSendHeldForTerminal } from "../stores/live-elsewhere-store";
 import { CHAT_STOP_EVENT, cycleChatAgent, isSwitchPending } from "../lib/switch-agent";
 import { loadCachedAcpModes } from "../lib/acp-modes-cache";
 import { configOptionPushes, loadConfigOptionPrefs } from "../lib/config-option-prefs";
-import type { ImageAttachment, SessionKey } from "@/types/agents";
+import type { ImageAttachment, SessionKey, SessionSnapshot } from "@/types/agents";
 import {
   hasInFlightToolCalls,
   isBusyAgentStatus,
@@ -152,6 +153,9 @@ import type { TranscriptHandle } from "./transcript";
 // Diffs + tool output live here rather than inline in the thread — see the
 // module header for why that's a perf decision as much as a UX one.
 const DetailPanel = lazy(() => import("./detail-panel").then((m) => ({ default: m.DetailPanel })));
+const ThreadOverviewPanel = lazy(() =>
+  import("./thread-overview-panel").then((m) => ({ default: m.ThreadOverviewPanel })),
+);
 // Full-screen side-by-side diff for a turn's changes. Lazy: it pulls the
 // virtualizer + the diff-highlight worker, and most sessions never open it.
 const GitDiffModal = lazy(() =>
@@ -168,6 +172,7 @@ import { cn } from "@/lib/utils";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
+import { snapshotMessageToWire } from "../lib/snapshot-message";
 
 interface ChatPanelProps {
   tabId: string;
@@ -224,15 +229,37 @@ async function respawnAndRebind(tabId: string): Promise<boolean> {
       useAppStore.getState().currentProject?.path ||
       "/";
     let key: SessionKey;
+    let loaded = false;
+    let replayed: SessionSnapshot | undefined;
     if (sess.acpSessionId) {
       try {
         key = await agents.loadSession(agent.agent_id, sess.acpSessionId, cwd);
+        loaded = true;
       } catch (err) {
         console.warn("resume after disconnect failed; starting fresh:", err);
         key = (await agents.newSession(agent.agent_id, cwd)).key;
       }
     } else {
       key = (await agents.newSession(agent.agent_id, cwd)).key;
+    }
+    // `session/load` replays the whole conversation, and each replayed
+    // message arrives as an append — onto a tab that is still showing it, so
+    // every earlier message came back a second time. Repaint from the
+    // reloaded thread, as opening a history row does (`resume-session.ts`).
+    // An agent that resumed without replaying hands back an empty thread;
+    // then what is on screen is the record, and stays.
+    if (loaded) {
+      try {
+        const snapshot = await agents.snapshot(key);
+        if (snapshot.messages.length > 0) {
+          useChatStore
+            .getState()
+            .actions.replaceMessages(tabId, snapshot.messages.map(snapshotMessageToWire));
+          replayed = snapshot;
+        }
+      } catch (err) {
+        console.warn("repaint after agent restart failed:", err);
+      }
     }
     // The respawned agent starts on its OWN default, and a bind does not
     // reset `acpModeExplicit`/`acpCurrentMode` — so without this the pill kept
@@ -254,6 +281,8 @@ async function respawnAndRebind(tabId: string): Promise<boolean> {
     // never sees the tab still disconnected.
     const actions = useChatStore.getState().actions;
     actions.setAcpBinding(tabId, agent.agent_id, key.session_id, cwd);
+    if (replayed)
+      actions.hydrateSessionSnapshot(tabId, replayed.status, replayed.plan, replayed.subagents);
     actions.setDisconnected(tabId, false);
     return true;
   } catch (err) {
@@ -296,6 +325,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
 
   // Narrow boolean — changes only when the detail panel opens or closes.
   const detailOpen = useDetailPanelStore((s) => !!s.targets[tabId]);
+  const overviewOpen = useThreadOverviewStore((s) => !!s.open[tabId]);
 
   // Full-screen diff. Driven by a window event rather than a prop chain so a row
   // opening it re-renders nothing in the transcript.
@@ -451,11 +481,13 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
             `${label} has not finished connecting`,
             // A first run downloads Node and `npm install`s the adapter, which
             // can outlast the deadline on a slow disk or connection (Defender
-            // scanning node_modules on Windows). While the manager still reports
-            // install progress the connect is alive: killing it restarts the
-            // install from scratch, forever. The backend's own connect ceiling
-            // still ends a real hang.
-            () => !!useChatStore.getState().agentStartingStatus[pluginId],
+            // scanning node_modules on Windows). While the install keeps
+            // restating its status (it ticks with the elapsed time) the job
+            // is alive and the deadline re-arms; a status that stops moving
+            // is a hang, and the deadline fires. Either way the install
+            // itself is a backend job that outlives this connect, so a
+            // retry joins it rather than restarting it.
+            progressSince(() => useChatStore.getState().agentStartingStatus[pluginId]),
           ),
           label,
           tabId,
@@ -1165,6 +1197,8 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
   // skeleton rather than a blank pane so that wait doesn't read as a broken tab.
   if (!session) {
     return (
+      // The same card, so the tab does not change shape when the session
+      // lands a frame later.
       <div ref={rootRef} className="h-full overflow-hidden">
         <div className="mx-auto w-full max-w-[760px] pt-[46px]">
           <PanelSkeleton rows={6} />
@@ -1615,6 +1649,15 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
       {detailOpen && (
         <Suspense fallback={null}>
           <DetailPanel tabId={tabId} messages={visibleMessages} />
+        </Suspense>
+      )}
+
+      {/* The thread overview, outermost on the right: a docked column, so the
+          conversation (and the detail panel beside it) reflow narrower rather
+          than being covered by the thing describing them. */}
+      {overviewOpen && (
+        <Suspense fallback={null}>
+          <ThreadOverviewPanel tabId={tabId} />
         </Suspense>
       )}
 

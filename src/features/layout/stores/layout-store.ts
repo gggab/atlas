@@ -238,7 +238,10 @@ const initialState: LayoutState = {
 const DEFAULT_GROUP = "main";
 const MAX_GROUPS = 3;
 
-function groupOf(tab: Tab | undefined): string {
+/** Which split column a tab lives in. Exported because anything asking "is
+ *  this tab the one on screen" has to read `activeByGroup`, and doing that
+ *  without this would mean restating the default-group literal. */
+export function groupOf(tab: { groupId?: string } | undefined): string {
   return tab?.groupId ?? DEFAULT_GROUP;
 }
 

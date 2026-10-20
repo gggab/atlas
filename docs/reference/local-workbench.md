@@ -10,7 +10,7 @@ when the connected CLI explicitly advertises the ACP steering extension.
 - External CLI: `atlas-agent-store` → `atlas-agent-servers` → `atlas-agent-manager` → `AgentHost` / delta projector. Capability gates control authentication, models and session restoration. Tabs do not own process lifetime, so several sessions can run concurrently.
 - History: global `atlas-thread-metadata` metadata, DeskMate transcripts, and per-project `atlas-checkpoint` recording / Git checkpoints remain separate from memory.
 - Memory: `atlas-memory` record and index, `SharedMemoryStore`, scope resolver, indexer and loopback MCP remain. The main worktree is the scope for all worktrees. Session tokens prevent unbound callers from reading or writing it.
-- Browser Use: HTTP-MCP-capable sessions receive a [local browser tool server](browser-use.md), independent of memory sharing. Once authorized, DeskMate Browser connects automatically and creates grouped task tabs. Completion closes Agent-created pages except necessary handoffs, removes groups, and preserves existing tabs/login.
+- Browser Use: ACP sessions receive a [local browser tool server](browser-use.md), independent of memory sharing. Once authorized, DeskMate Browser connects automatically and creates grouped task tabs. Completion closes Agent-created pages except necessary handoffs, removes groups, and preserves existing tabs/login.
 - The gateway extraction orchestrator, jobs and UI entry points are removed. MCP active writes and local event capture remain. No replacement account, paid API or execution engine was introduced.
 - Retained historical sync columns and native source tags support existing records only; no cloud client or native launcher remains.
 
@@ -82,7 +82,7 @@ pause tasks. No daemon, model gateway or mobile notification service is added.
 
 ## Verification
 
-Run frontend typechecks, Vitest contracts / chat / permissions / memory tests and production build; Rust app check plus manager, checkpoint and memory suites. Desktop tests in `memory_server/tests.rs` use the real loopback listener to check tokens and cross-agent access (`claude` writes alongside `codex`). Migration tests reopen old capture bindings and preserve data.
+Run frontend typechecks, Vitest contracts / chat / permissions / memory tests and production build; Rust app check plus manager, checkpoint and memory suites. Desktop tests in `memory_server/tests.rs` use the real loopback listener to check tokens and cross-agent access through credential-free stdio offers. Migration tests reopen old capture bindings and preserve data.
 
 A browser mock validates UI and IPC wiring only. Real vendor subscription login, CLI streaming, approval, model selection and resume require installed CLIs and the user's vendor accounts. This build does not add automatic quota fallback, multi-model review or new memory injection.
 
@@ -193,3 +193,7 @@ For the installed MSVC 2019 toolchain, local validation used `NK_TARGET_HASWELL=
 Python-backed subprocess tests originally returned early because the fixtures look for an extensionless `python3`. Validation supplied a temporary Python entry point and its real standard library, then reran them. The two test-only process liveness helpers use Windows `tasklist` on Windows and retain `kill -0` elsewhere; successful spawn, permission streaming, model selection, cancellation and process teardown were then observed.
 
 Not verified: real vendor subscription login / billed turns / vendor session restore, a native desktop GUI launch or installer, the ignored model-dependent/benchmark cases, the excluded platform cases, or runtime packet capture of a packaged app. No DeskMate account/service/upload endpoint or corresponding command registration remains in production source. This source/contract audit is separate from network capture. No commit, push, publishing or deployment was performed.
+
+## Selective alpha-0.4.1 ports
+
+See [the port scope and development checks](upstream-0.4.1-ports.md) for ACP recovery, memory delta correctness, notification actions, subagent observation and the credential-free MCP bridge. Storage ownership and removed modules remain unchanged.

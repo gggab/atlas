@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { AgentMonogram, ExternalAgentIcon } from "@/components/agent-icons";
+import { withDeadline } from "../lib/with-deadline";
 import { acpRegistry } from "@/features/agents/lib/agent-registry-api";
 import { hydrateAgentRegistry } from "@/features/agents/stores/agent-registry-store";
 import {
@@ -42,7 +43,9 @@ export function FeaturedAgentOffers({
     if (installing) return;
     setInstalling(id);
     try {
-      await acpRegistry.install(id);
+      // A settings write plus at most one registry refresh (30 s in Rust):
+      // the row must not spin forever with every other row disabled.
+      await withDeadline(acpRegistry.install(id), 60_000, `Installing ${label} has not finished`);
       // The catalog is what knows the installed agent's display alias, so the
       // agentType can only be resolved after this lands.
       await hydrateAgentRegistry();

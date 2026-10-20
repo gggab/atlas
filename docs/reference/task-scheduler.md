@@ -49,7 +49,7 @@ remain usable. No temporary database or alternate execution path hides the error
   Resuming an overdue paused interval starts a fresh interval without replaying
   paused ticks. Existing one-shot and calendar reminders keep their behavior.
 - Agent checks reuse the bound installed CLI, directory and conversation. They
-  need a negotiated HTTP MCP connection and a valid task-server offer.
+  need an admitted ACP connection and a valid, explicitly enabled task-server offer through the stdio bridge.
 - Optional per-task quiet hours defer native notification submission from 22:00
   to 08:00 in the computer's current timezone. Task execution itself can continue.
 - Native notification clicks open task details. The in-app notification center

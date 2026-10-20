@@ -141,6 +141,27 @@ describe("decideNotification", () => {
   });
 });
 
+describe("decision actions", () => {
+  it("defaults to Open for a local target", () => {
+    expect(decideNotification(event("agent-done"), away, {})!.actions).toEqual([
+      { id: "open", label: "Open" },
+    ]);
+  });
+
+  it("keeps an event's own actions in order; an empty list falls back to the default", () => {
+    const actions = [
+      { id: "git.choose-pull", label: "Rebase or merge…" },
+      { id: "open", label: "Open" },
+    ];
+    expect(decideNotification({ ...event("agent-done"), actions }, away, {})!.actions).toEqual(
+      actions,
+    );
+    expect(decideNotification({ ...event("agent-done"), actions: [] }, away, {})!.actions).toEqual([
+      { id: "open", label: "Open" },
+    ]);
+  });
+});
+
 describe("computeAway", () => {
   it("is away when unfocused, whatever the input age", () => {
     expect(computeAway(false, 0)).toBe(true);

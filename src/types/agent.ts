@@ -219,6 +219,23 @@ export interface ChatSession {
    *  streaming frame. Set on `plan_updated`, reset at each turn start. The dock
    *  hides itself when this is empty or fully completed while idle. */
   livePlan?: PlanStep[];
+  /** Children this session delegated to, keyed by the id of the tool call that
+   *  launched each one (`Subagent.toolCallId`), which is a child's identity
+   *  here — ACP has no subagent concept, so the launch IS the record.
+   *
+   *  Unlike `livePlan` this is NOT per-turn: a child belongs to the message
+   *  that launched it (`Subagent.messageId`) and stays in the transcript with
+   *  it, so an earlier turn's children remain readable. Cleared only when the
+   *  transcript itself is replaced — a New Chat reset, or a rebind onto a
+   *  different backend session — and re-seeded from the snapshot
+   *  (`hydrateSessionSnapshot`), which carries them for exactly that reason.
+   *
+   *  A map rather than an array because the wire ships whole records keyed on
+   *  that id (`subagent_upserted`, like `tool_call_upserted`): an upsert is
+   *  then one assignment and cannot duplicate a row. Read it through
+   *  `orderedSubagents` — object key order is insertion order, which is
+   *  arrival order, which is not launch order once a child updates. */
+  subagents?: Record<string, Subagent>;
   /** Per-turn scratch: files the current turn has read/edited, keyed by tool
    *  call id so repeated pending→completed upserts are idempotent (no message
    *  rescans). Reset at turn start, frozen into the trailing message's
@@ -482,6 +499,52 @@ export interface ToolCallDisplay {
    * than as recognisable Write/Edit arguments) populate it.
    */
   contentBlocks?: ToolContentBlock[];
+  /**
+   * The subagent this call belongs to, named by the id of the call that
+   * launched it (`Subagent.toolCallId`).
+   *
+   * Absent for the parent's own work, which is almost every call. A child's
+   * calls arrive on the same session as its parent's, interleaved; this is
+   * what tells them apart, so a client that wants to nest them groups on it.
+   */
+  parentToolCallId?: string;
+}
+
+/** How far along a subagent is. Not a `ToolCall` status: a child the parent
+ *  interrupted is neither completed nor failed. */
+export type SubagentStatus = "running" | "completed" | "failed" | "interrupted";
+
+/**
+ * A child agent the running agent delegated work to.
+ *
+ * ACP has no subagent concept, so the call that launched one is also its
+ * identity — see `atlas_acp_thread::subagent` for what each adapter sends and
+ * how Atlas reads it.
+ */
+export interface Subagent {
+  /** The launching tool call's id — what a child's calls point back to. */
+  toolCallId: string;
+  /** The message the launching call belongs to, so it can be placed in the
+   *  transcript as well as in a panel. */
+  messageId: string;
+  name: string;
+  status: SubagentStatus;
+  /** The child's instructions, when the launch carried them. */
+  prompt?: string;
+  /** The child's role: Claude's `subagent_type`, the engine's `agent_type`. */
+  role?: string;
+  /** What it reported back, once it finished. */
+  result?: string;
+  /** How many tool calls it has made — what a collapsed row counts. */
+  toolCallCount: number;
+  /** Epoch ms the launching call was first seen. The elapsed time is derived
+   *  from it rather than sent as a duration that is stale on arrival. */
+  startedAtMs: number;
+  endedAtMs?: number;
+  /** The child ran on an agent thread of its own (the engine's subagents), so
+   *  its work is not in this session and `toolCallCount` stays 0 however much
+   *  it did. Absent when false. */
+  ownThread?: boolean;
 }
 
 export interface FileChange {

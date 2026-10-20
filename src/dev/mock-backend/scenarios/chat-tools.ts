@@ -15,6 +15,7 @@ import {
   requestPermissionQuestionMulti,
   setSeedTranscript,
   setStatus,
+  upsertSubagent,
   upsertToolCall,
 } from "../fake-agent";
 
@@ -75,6 +76,94 @@ const settledTurn = [
   ),
 ];
 
+/**
+ * A delegating turn: two children, one that reports its work to this session
+ * and one that does not.
+ *
+ * Both shapes have to be on screen at once, because they render differently
+ * and only one of them is obvious. `counter` is a STREAMING child — its calls
+ * carry `parent_tool_call_id`, so the panel lists them. `greeter` is a MAIL
+ * child, like the native engine's: it runs on its own thread and reports once,
+ * so its work count stays 0 and the panel says so rather than showing an
+ * empty list.
+ */
+async function delegatingTurn(): Promise<void> {
+  await playTranscript([
+    user("Count the files in src/commands and compose a one-line greeting.", t(70)),
+    text("Launching both subagents now to work in parallel.", t(71)),
+  ]);
+  await setStatus("running");
+
+  const launches = tools(
+    [
+      tool.delegate("Count the files in src/commands", { id: "sa-counter" }),
+      tool.delegate("Compose a one-line greeting", { id: "sa-greeter" }),
+    ],
+    t(72),
+  );
+  await playTranscript([launches]);
+
+  const startedAt = Date.now();
+  await upsertSubagent({
+    toolCallId: "sa-counter",
+    messageId: launches.id,
+    name: "counter",
+    role: "explore",
+    status: "running",
+    prompt: "Count the files in src/commands. Reply with the number only.",
+    toolCallCount: 0,
+    startedAtMs: startedAt,
+  });
+  await upsertSubagent({
+    toolCallId: "sa-greeter",
+    messageId: launches.id,
+    name: "greeter",
+    ownThread: true,
+    status: "running",
+    prompt: "Compose exactly one one-line greeting.",
+    toolCallCount: 0,
+    startedAtMs: startedAt,
+  });
+
+  // The streaming child's own calls, stamped with the launch that owns them.
+  await new Promise((r) => setTimeout(r, 1200));
+  await playTranscript([
+    tools(
+      [
+        tool.search("src/commands", { parent_tool_call_id: "sa-counter" }),
+        tool.read("src/commands/mod.rs", { parent_tool_call_id: "sa-counter" }),
+      ],
+      t(74),
+    ),
+  ]);
+  await upsertSubagent({
+    toolCallId: "sa-counter",
+    messageId: launches.id,
+    name: "counter",
+    role: "explore",
+    status: "running",
+    prompt: "Count the files in src/commands. Reply with the number only.",
+    toolCallCount: 2,
+    startedAtMs: startedAt,
+  });
+
+  // The mail child finishes first and reports in one go — no attributed work,
+  // ever. Left with `counter` still running, which is the state worth seeing.
+  await new Promise((r) => setTimeout(r, 2000));
+  await upsertSubagent({
+    toolCallId: "sa-greeter",
+    messageId: launches.id,
+    name: "greeter",
+    ownThread: true,
+    status: "completed",
+    prompt: "Compose exactly one one-line greeting.",
+    result: "Hello! Great to see you here — what would you like to work on today?",
+    toolCallCount: 0,
+    startedAtMs: startedAt,
+    endedAtMs: Date.now(),
+  });
+}
+
 async function liveTurn(): Promise<void> {
   await playTranscript([
     user("Now run the full test suite.", t(60)),
@@ -108,6 +197,16 @@ async function liveTurn(): Promise<void> {
 }
 
 let finishLive = async () => {};
+
+export const chatSubagents: Scenario = {
+  name: "chat-subagents",
+  description: "Delegated work, attribution, child details and the thread overview.",
+  init: () => setSeedTranscript(settledTurn),
+  setup: async () => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await delegatingTurn();
+  },
+};
 
 export const chatTools: Scenario = {
   name: "chat-tools",

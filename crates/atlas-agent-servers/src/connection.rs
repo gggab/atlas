@@ -67,7 +67,7 @@ const STDERR_DRAIN_GRACE: Duration = Duration::from_secs(1);
 /// Normally longer than [`INITIALIZE_TIMEOUT`] because `session/load` replays history
 /// and `session/new` may set a mode round-trip behind it. `session/prompt`
 /// deliberately has no deadline — see [`CANCEL_GRACE`].
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How long an agent gets to answer its own cancellation before the turn is
 /// resolved locally.
@@ -151,6 +151,8 @@ pub struct AcpConnection {
     /// Decides the MCP servers each session request carries. `None` sends
     /// every session an empty list.
     session_mcp: Option<Arc<dyn SessionMcpServers>>,
+    /// `true` once the child has exited; see [`AgentConnection::exited`].
+    exited: tokio::sync::watch::Receiver<bool>,
     _io_task: tokio::task::JoinHandle<()>,
     _stderr_task: tokio::task::JoinHandle<()>,
     _wait_task: tokio::task::JoinHandle<()>,
@@ -363,6 +365,7 @@ impl AcpConnection {
         // From here on the child's death is a live-session event, not a
         // connect failure: every thread is told, so an agent that dies
         // mid-turn surfaces in the conversation instead of going quiet.
+        let (exited_tx, exited) = tokio::sync::watch::channel(false);
         let wait_task = tokio::spawn({
             let sessions = sessions.clone();
             async move {
@@ -373,6 +376,10 @@ impl AcpConnection {
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .emit_load_error(load_error.clone());
                 }
+                // After the threads, so a thread that reacts by asking the
+                // manager for a connection does not find the old one gone a
+                // moment before it hears why.
+                exited_tx.send_replace(true);
             }
         });
 
@@ -418,6 +425,7 @@ impl AcpConnection {
             thread_events,
             debug_log,
             session_mcp: None,
+            exited,
             _io_task: io_task,
             _stderr_task: stderr_task,
             _wait_task: wait_task,
@@ -716,6 +724,25 @@ fn timed_out(
 
 /// Runs a one-shot RPC on the connect/bind path under [`REQUEST_TIMEOUT`].
 /// Free-standing so [`AcpSessionList`] can use it without a connection.
+/// [`REQUEST_TIMEOUT`] on a session RPC the bind path awaits BEFORE the
+/// session is handed to the user: `session/set_mode` and
+/// `session/set_config_option`. These ran with no deadline, after the ones
+/// that had one — an agent that answered `session/new` and then wedged on
+/// `set_mode` parked the bind forever with every clock already satisfied.
+/// Never used for `session/prompt`.
+async fn bounded<T, E>(
+    phase: &'static str,
+    request: impl Future<Output = std::result::Result<T, E>>,
+) -> Result<std::result::Result<T, E>> {
+    match tokio::time::timeout(REQUEST_TIMEOUT, request).await {
+        Ok(result) => Ok(result),
+        Err(_elapsed) => Err(anyhow!(
+            "the agent did not answer `{phase}` within {}s",
+            REQUEST_TIMEOUT.as_secs()
+        )),
+    }
+}
+
 pub(crate) async fn with_request_deadline<T>(
     agent: &AgentId,
     phase: &str,
@@ -855,6 +882,18 @@ pub fn client_capabilities_for_agent(_agent_id: &AgentId) -> acp::ClientCapabili
     let meta = acp::Meta::from_iter([
         ("terminal_output".into(), true.into()),
         ("terminal-auth".into(), true.into()),
+        // Ask for a subagent's own narration, which an adapter otherwise keeps
+        // inside the launching tool call — a row that runs for minutes saying
+        // nothing. The text arrives on this session, each chunk stamped with
+        // the launching call's id, which is how `atlas_acp_thread::subagent`
+        // attributes it. Deliberately not the RFD's
+        // `clientCapabilities.subagents`: that moves children onto their own
+        // ACP sessions and reports them with `subagent_update` session
+        // updates, which the v1 `SessionUpdate` enum cannot represent.
+        (
+            atlas_acp_thread::subagent::SUBAGENT_TRANSCRIPT_META_KEY.into(),
+            true.into(),
+        ),
     ]);
 
     acp::ClientCapabilities::new()
@@ -1003,6 +1042,16 @@ impl AgentConnection for AcpConnection {
 
     fn agent_id(&self) -> AgentId {
         self.id.clone()
+    }
+
+    fn exited(self: Arc<Self>) -> BoxFuture<'static, ()> {
+        let mut exited = self.exited.clone();
+        Box::pin(async move {
+            // `wait_for` answers at once when already true, and when the
+            // sender is gone (the connection dropped) — either way there is
+            // no live process behind this connection.
+            let _ = exited.wait_for(|done| *done).await;
+        })
     }
 
     fn telemetry_id(&self) -> Arc<str> {
@@ -1531,18 +1580,23 @@ impl AgentSessionModes for AcpSessionModes {
             .current_mode_id = mode.clone();
 
         async move {
-            match conn
-                .send_request(acp::SetSessionModeRequest::new(session_id, mode))
-                .block_task()
-                .await
-            {
+            // Flattened: a refusal from the agent and an expiry both roll the
+            // local mode back.
+            let result = bounded(
+                "session/set_mode",
+                conn.send_request(acp::SetSessionModeRequest::new(session_id, mode))
+                    .block_task(),
+            )
+            .await
+            .and_then(|answer| answer.map_err(|err| anyhow!(err)));
+            match result {
                 Ok(_) => Ok(()),
                 Err(err) => {
                     modes
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner)
                         .current_mode_id = previous;
-                    Err(anyhow!(err))
+                    Err(err)
                 }
             }
         }
@@ -1745,17 +1799,19 @@ impl AgentModelSelector for AcpModelSelector {
         let config_id = self.select().map(|select| select.config_id);
 
         async move {
-            let response = conn
-                .send_request(acp::SetSessionConfigOptionRequest::new(
+            let response = bounded(
+                "session/set_config_option (model)",
+                conn.send_request(acp::SetSessionConfigOptionRequest::new(
                     session_id,
                     config_id?,
                     acp::SessionConfigOptionValue::ValueId {
                         value: acp::SessionConfigValueId::new(model_id.as_str()),
                     },
                 ))
-                .block_task()
-                .await
-                .map_err(map_acp_error)?;
+                .block_task(),
+            )
+            .await?
+            .map_err(map_acp_error)?;
 
             // The response carries the authoritative list, so the local view
             // does not have to guess that the pick took.
@@ -1799,13 +1855,15 @@ impl AgentSessionConfigOptions for AcpSessionConfigOptions {
         let options = self.options.clone();
 
         async move {
-            let response = conn
-                .send_request(acp::SetSessionConfigOptionRequest::new(
+            let response = bounded(
+                "session/set_config_option",
+                conn.send_request(acp::SetSessionConfigOptionRequest::new(
                     session_id, config_id, value,
                 ))
-                .block_task()
-                .await
-                .map_err(map_acp_error)?;
+                .block_task(),
+            )
+            .await?
+            .map_err(map_acp_error)?;
 
             *options
                 .config_options

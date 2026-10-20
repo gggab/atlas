@@ -33,7 +33,7 @@ Agent checks retain their existing execution/session boundary.
 
 The foreground Agent is instructed on every human send to learn clearly asserted,
 stable facts and preferences from new human input without requiring a "remember"
-phrase. This is best effort: HTTP MCP availability and instructions do not prove
+phrase. This is best effort: MCP tool availability and instructions do not prove
 that extraction ran or found every useful fact. No receipt means no saved claim;
 no tool call is not an extraction-completion signal. Without personal MCP, the
 manual editor and per-human-message save action remain available. This feature

@@ -90,12 +90,76 @@ enum Inner {
     Managed {
         containing_dir: PathBuf,
         http: Arc<dyn HttpClient>,
-        /// Serialises installation: two agents resolving at once must not both
-        /// download Node over the top of each other.
+        /// The installed runtime, once one has passed its check.
         install: tokio::sync::Mutex<Option<PathBuf>>,
+        /// The download in flight, if any. One per process: two agents
+        /// resolving at once share it, and a caller that gives up waiting
+        /// (a connect past its deadline) leaves it running — a 50 MB
+        /// download that restarted from zero every time a caller gave up
+        /// could never finish on a slow link.
+        job: std::sync::Mutex<Option<NodeJob>>,
     },
     Unavailable(String),
 }
+
+/// The result of one managed-runtime install, shared by its waiters.
+type NodeJob = futures::future::Shared<
+    futures::future::BoxFuture<'static, std::result::Result<PathBuf, Arc<anyhow::Error>>>,
+>;
+
+/// Report `what` on `status` now, and again with the elapsed time every
+/// [`STATUS_TICK`] until the returned task is aborted (or dropped: the guard
+/// aborts on drop).
+///
+/// The elapsed time is for the renderer as much as for the user. Its bind
+/// deadline re-arms only while the status *changes*; a long install that
+/// said "Installing …" once and then nothing for ten minutes looked exactly
+/// like a wedged one. A status that keeps moving is a job that is alive.
+pub(crate) fn tick_status(status: LoadingStatus, what: String) -> StatusTicker {
+    status.send(Some(format!("{what}…"))).ok();
+    let handle = tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let mut interval = tokio::time::interval(STATUS_TICK);
+        interval.tick().await; // the first tick is immediate
+        loop {
+            interval.tick().await;
+            let secs = started.elapsed().as_secs();
+            let elapsed = if secs < 60 {
+                format!("{secs}s")
+            } else {
+                format!("{}m {:02}s", secs / 60, secs % 60)
+            };
+            if status.send(Some(format!("{what}… {elapsed}"))).is_err() {
+                return;
+            }
+        }
+    });
+    StatusTicker(handle)
+}
+
+/// How often a running install restates its status.
+const STATUS_TICK: Duration = Duration::from_secs(20);
+
+/// Aborts the ticker when dropped, so no caller can forget to.
+pub(crate) struct StatusTicker(tokio::task::JoinHandle<()>);
+
+impl StatusTicker {
+    pub(crate) fn abort(&self) {
+        self.0.abort();
+    }
+}
+
+impl Drop for StatusTicker {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// How long the runtime's health check (`node npm --version`) may take. A
+/// runtime that answers nothing — a wedged filesystem, a Gatekeeper scan of
+/// a freshly extracted binary — used to park every agent behind the install
+/// lock with no error and no status text.
+const NODE_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl NodeRuntime {
     /// A runtime that installs itself under `<data_dir>/node` on first use.
@@ -104,6 +168,7 @@ impl NodeRuntime {
             containing_dir: data_dir.join("node"),
             http,
             install: tokio::sync::Mutex::new(None),
+            job: std::sync::Mutex::new(None),
         }))
     }
 
@@ -213,92 +278,137 @@ impl NodeRuntime {
         }
     }
 
-    // The `install` guard is held across the download and extract on purpose:
-    // it is a double-checked install lock, and the whole point is that a second
-    // caller waits rather than racing a `remove_dir_all(containing_dir)` against
-    // an extraction already in flight. That is what `tokio::sync::Mutex` is for.
-    #[expect(
-        clippy::await_holding_invalid_type,
-        reason = "the install lock must span the download so concurrent callers do not race the extract"
-    )]
     async fn install_if_needed(&self, loading_status: Option<&LoadingStatus>) -> Result<PathBuf> {
-        let (containing_dir, http, install) = match &*self.0 {
+        let (install, job_slot) = match &*self.0 {
             Inner::Unavailable(reason) => bail!("Node.js is unavailable: {reason}"),
-            Inner::Managed {
-                containing_dir,
-                http,
-                install,
-            } => (containing_dir, http, install),
+            Inner::Managed { install, job, .. } => (install, job),
         };
 
-        let mut install = install.lock().await;
-        if let Some(node_dir) = install.as_ref() {
+        if let Some(node_dir) = install.lock().await.as_ref() {
             return Ok(node_dir.clone());
         }
 
-        let (os, arch) = node_platform()?;
-        let node_dir = containing_dir.join(format!("node-{NODE_VERSION}-{os}-{arch}"));
-
-        if !node_install_works(&node_dir).await {
-            // Not just the version directory: Zed wipes the whole containing
-            // directory (`node_runtime.rs:680-683`) so an abandoned install of
-            // another version does not accumulate.
-            let _ = tokio::fs::remove_dir_all(containing_dir).await;
-
-            let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
-            let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
-            let url = format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}");
-            tracing::info!(url, "downloading the managed Node.js runtime");
-            if let Some(tx) = loading_status {
-                tx.send(Some("Downloading Node.js…".to_owned())).ok();
+        // Join the install in flight, or start it. Started on its own task:
+        // see [`Inner::Managed::job`].
+        let job = {
+            let mut slot = job_slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            match slot.as_ref() {
+                Some(job) => job.clone(),
+                None => {
+                    let job = self.start_install_job(loading_status.cloned());
+                    *slot = Some(job.clone());
+                    job
+                }
             }
-
-            // Before the bytes, the digest for them. This runtime is about to
-            // be executed as a child process on every npx agent, and unlike
-            // the registry it costs nothing to verify.
-            let digest = node_archive_digest(&**http, &file_name).await?;
-
-            // The tarball's single top-level directory is the version directory,
-            // so extracting it *into* the containing dir produces `node_dir`.
-            let kind = registry_archive_kind_for_url(&url)?;
-            // Bounded, because the install lock is held across this: a stalled
-            // nodejs.org socket would otherwise block every agent for good.
-            // A timeout leaves `install` as `None`, so the next caller retries.
-            tokio::time::timeout(
-                NODE_INSTALL_TIMEOUT,
-                install_archive(&**http, &url, Some(&digest), containing_dir, &kind),
-            )
-            .await
-            .map_err(|_elapsed| {
-                anyhow::anyhow!(
-                    "the Node.js runtime download from {url} did not finish within {} minutes \
-                     (nodejs.org may be unreachable)",
-                    NODE_INSTALL_TIMEOUT.as_secs() / 60
-                )
-            })?
-            .context("installing the managed Node.js runtime")?;
-
-            anyhow::ensure!(
-                node_install_works(&node_dir).await,
-                "the downloaded Node.js runtime at {node_dir:?} does not run"
-            );
-
-            // A fresh runtime starts with a fresh npm cache. This is the only
-            // place the cache is wiped: keeping it across launches is what lets
-            // an install revalidate metadata instead of re-downloading tarballs,
-            // and lets an offline host fall back to what it already fetched.
-            let _ = tokio::fs::remove_dir_all(node_dir.join("cache")).await;
-        }
-
-        // Outside the install branch on purpose, so an installation from an
-        // earlier Atlas version gets these too.
-        let _ = tokio::fs::create_dir_all(node_dir.join("cache")).await;
-        let _ = tokio::fs::write(node_dir.join("blank_user_npmrc"), USER_NPMRC).await;
-        let _ = tokio::fs::write(node_dir.join("blank_global_npmrc"), []).await;
-
-        *install = Some(node_dir.clone());
+        };
+        let node_dir = job.await.map_err(|error| anyhow::anyhow!("{error:#}"))?;
+        *install.lock().await = Some(node_dir.clone());
         Ok(node_dir)
     }
+
+    fn start_install_job(&self, loading_status: Option<LoadingStatus>) -> NodeJob {
+        use futures::FutureExt as _;
+        let inner = self.0.clone();
+        let task = tokio::spawn(async move {
+            let result = install_runtime(&inner, loading_status.as_ref()).await;
+            if let Inner::Managed { job, .. } = &*inner {
+                // Unregister before resolving, so a caller that wakes and
+                // asks again finds the cached path rather than a done job.
+                job.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .take();
+            }
+            result
+        });
+        async move {
+            match task.await {
+                Ok(result) => result.map_err(Arc::new),
+                Err(join) => Err(Arc::new(anyhow::anyhow!(
+                    "the Node.js install task failed: {join}"
+                ))),
+            }
+        }
+        .boxed()
+        .shared()
+    }
+}
+
+/// Check the runtime on disk and download it if it does not run. The body of
+/// the install job; one call per process at a time.
+async fn install_runtime(inner: &Inner, loading_status: Option<&LoadingStatus>) -> Result<PathBuf> {
+    let Inner::Managed {
+        containing_dir,
+        http,
+        ..
+    } = inner
+    else {
+        bail!("Node.js is unavailable");
+    };
+
+    let (os, arch) = node_platform()?;
+    let node_dir = containing_dir.join(format!("node-{NODE_VERSION}-{os}-{arch}"));
+
+    if !node_install_works(&node_dir).await {
+        let extension = if cfg!(windows) { "zip" } else { "tar.gz" };
+        let file_name = format!("node-{NODE_VERSION}-{os}-{arch}.{extension}");
+        let url = format!("https://nodejs.org/dist/{NODE_VERSION}/{file_name}");
+        tracing::info!(url, "downloading the managed Node.js runtime");
+        let _ticker =
+            loading_status.map(|tx| tick_status(tx.clone(), "Downloading Node.js".to_owned()));
+
+        // Before the bytes, the digest for them. This runtime is about to
+        // be executed as a child process on every npx agent, and unlike
+        // the registry it costs nothing to verify.
+        let digest = node_archive_digest(&**http, &file_name).await?;
+
+        // The tarball's single top-level directory is the version directory,
+        // so extracting it *into* the containing dir produces `node_dir`.
+        //
+        // Nothing is removed first. `install_archive` stages the download,
+        // verifies it, and only then replaces `containing_dir` whole — which
+        // is also what clears an abandoned install of another version. A
+        // `remove_dir_all` before the fetch used to make a dropped download
+        // cost the runtime that was there AND the npm cache under it, the
+        // cache the offline fallback depends on.
+        let kind = registry_archive_kind_for_url(&url)?;
+        tokio::time::timeout(
+            NODE_INSTALL_TIMEOUT,
+            install_archive(&**http, &url, Some(&digest), containing_dir, &kind),
+        )
+        .await
+        .map_err(|_elapsed| {
+            anyhow::anyhow!(
+                "the Node.js runtime download from {url} did not finish within {} minutes \
+                 (nodejs.org may be unreachable)",
+                NODE_INSTALL_TIMEOUT.as_secs() / 60
+            )
+        })?
+        .context("installing the managed Node.js runtime")?;
+
+        anyhow::ensure!(
+            node_install_works(&node_dir).await,
+            "the downloaded Node.js runtime at {node_dir:?} does not run"
+        );
+
+        // A fresh runtime starts with a fresh npm cache. This is the only
+        // place the cache is wiped: keeping it across launches is what lets
+        // an install revalidate metadata instead of re-downloading tarballs,
+        // and lets an offline host fall back to what it already fetched.
+        let _ = tokio::fs::remove_dir_all(node_dir.join("cache")).await;
+    }
+
+    // Outside the install branch on purpose, so an installation from an
+    // earlier Atlas version gets these too.
+    let _ = tokio::fs::create_dir_all(node_dir.join("cache")).await;
+    let _ = tokio::fs::write(node_dir.join("blank_user_npmrc"), USER_NPMRC).await;
+    let _ = tokio::fs::write(node_dir.join("blank_global_npmrc"), []).await;
+
+    if let Some(tx) = loading_status {
+        tx.send(None).ok();
+    }
+    Ok(node_dir)
 }
 
 /// `npm <subcommand>` outlived its deadline ([`npm_timeout`]) and was killed.
@@ -336,7 +446,8 @@ async fn node_install_works(node_dir: &Path) -> bool {
     }
 
     let npm_file = node_dir.join(NPM_PATH);
-    let result = atlas_process::async_command(&node_binary)
+    let mut command = atlas_process::async_command(&node_binary);
+    command
         .env(
             NODE_CA_CERTS_ENV_VAR,
             std::env::var(NODE_CA_CERTS_ENV_VAR).unwrap_or_default(),
@@ -346,8 +457,19 @@ async fn node_install_works(node_dir: &Path) -> bool {
         .args(["--cache".into(), node_dir.join("cache")])
         .args(["--userconfig".into(), node_dir.join("blank_user_npmrc")])
         .args(["--globalconfig".into(), node_dir.join("blank_global_npmrc")])
-        .output()
-        .await;
+        // Expiry drops the future; the check must take its process with it.
+        .kill_on_drop(true);
+    let result = match tokio::time::timeout(NODE_CHECK_TIMEOUT, command.output()).await {
+        Ok(result) => result,
+        Err(_elapsed) => {
+            tracing::warn!(
+                node = %node_binary.display(),
+                timeout_secs = NODE_CHECK_TIMEOUT.as_secs(),
+                "the managed Node.js binary did not answer its check in time"
+            );
+            return false;
+        }
+    };
 
     match result {
         Ok(output) if output.status.success() => true,

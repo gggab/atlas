@@ -548,15 +548,15 @@ mod tests {
             session_id: None,
         };
         let offer = offers.offer(&request);
-        let [agent_client_protocol::schema::v1::McpServer::Http(http)] = offer.servers() else {
-            panic!("SSH offered independently of memory sharing");
+        let [agent_client_protocol::schema::v1::McpServer::Stdio(entry)] = offer.servers() else {
+            panic!("SSH is bridged independently of memory sharing");
         };
-        assert_eq!(http.name, "atlas_ssh");
-        let token = http.headers[0]
-            .value
-            .strip_prefix("Bearer ")
-            .unwrap()
-            .to_string();
+        assert_eq!(entry.name, "atlas_ssh");
+        assert!(entry.env.is_empty());
+        let token =
+            crate::commands::memory_bridge::read_token_file(std::path::Path::new(&entry.args[2]))
+                .unwrap();
+        assert!(!serde_json::to_string(entry).unwrap().contains(&token));
         let client = ()
             .serve(StreamableHttpClientTransport::from_config(
                 StreamableHttpClientTransportConfig::with_uri(url.clone())
@@ -641,7 +641,12 @@ mod tests {
         assert_eq!(unauthorized.status(), reqwest::StatusCode::UNAUTHORIZED);
         let mut no_http = request;
         no_http.http_mcp = false;
-        assert!(offers.offer(&no_http).servers().is_empty());
+        let bridged = offers.offer(&no_http);
+        let [agent_client_protocol::schema::v1::McpServer::Stdio(entry)] = bridged.servers() else {
+            panic!("SSH remains available over the mandatory stdio transport");
+        };
+        assert_eq!(entry.name, "atlas_ssh");
+        assert!(entry.env.is_empty());
         client.cancel().await.ok();
     }
 }

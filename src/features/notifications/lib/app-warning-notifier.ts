@@ -1,4 +1,10 @@
 /** App warnings for config errors and Agent update failures. */
+import {
+  useAgentRegistryStore,
+  hydrateAgentRegistry,
+} from "@/features/agents/stores/agent-registry-store";
+import { registerNotificationAction } from "./notification-actions";
+import { RETRY_AGENT_UPDATE_ACTION_ID } from "./app-warning-rules";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import {
   getConfigInfo,
@@ -71,6 +77,38 @@ function noteConfig(error: string | null): void {
 // --- Agent updates --------------------------------------------------------
 
 let updateSeq = 0;
+
+/** The registry's entry for `pluginId`, reading the registry first if this
+ *  run has not (a banner pressed after a cold start). */
+async function registryEntry(pluginId: string) {
+  if (!useAgentRegistryStore.getState().hydrated) await hydrateAgentRegistry();
+  return useAgentRegistryStore.getState().registryEntries.find((e) => e.id === pluginId);
+}
+
+// "Retry" on a failed agent update: update again, to whatever version the
+// registry offers now — only while the agent is installed, still behind, and
+// not already updating (the background pass may have got there first).
+registerNotificationAction(
+  RETRY_AGENT_UPDATE_ACTION_ID,
+  async ({ args }) => {
+    const entry = args?.pluginId ? await registryEntry(args.pluginId) : undefined;
+    if (!entry) return;
+    // Lazy: agent-update imports this module to report failures.
+    const { updateAgent } = await import("@/features/agents/lib/agent-update");
+    await updateAgent(entry.id, entry.name, entry.version);
+  },
+  {
+    stillApplies: async ({ args }) => {
+      if (!args?.pluginId) return false;
+      const entry = await registryEntry(args.pluginId);
+      return (
+        !!entry?.installed &&
+        entry.updateAvailable &&
+        !useAgentRegistryStore.getState().updatePhases[args.pluginId]
+      );
+    },
+  },
+);
 
 /** An agent update failed (background install or the Update button). */
 export function notifyAgentUpdateFailed(f: {

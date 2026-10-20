@@ -36,6 +36,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if run_bridge_if_asked() {
+        return;
+    }
     #[cfg(debug_assertions)]
     if std::env::args().any(|arg| {
         matches!(
@@ -749,4 +752,48 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+pub fn run_bridge_if_asked() -> bool {
+    let mut args = std::env::args_os().skip(1);
+    if args.next().and_then(|a| a.into_string().ok()).as_deref()
+        != Some(commands::memory_server::BRIDGE_ARG)
+    {
+        return false;
+    }
+    let (Some(url), Some(token_file)) =
+        (args.next().and_then(|a| a.into_string().ok()), args.next())
+    else {
+        eprintln!("usage: atlas mcp-bridge <url> <token file>");
+        std::process::exit(2);
+    };
+    let token = match commands::memory_bridge::read_token_file(std::path::Path::new(&token_file)) {
+        Ok(token) => token,
+        Err(e) => {
+            eprintln!("mcp-bridge: {e:#}");
+            std::process::exit(1);
+        }
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(e) => {
+            eprintln!("mcp-bridge: {e}");
+            std::process::exit(1);
+        }
+    };
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+    if let Err(e) = runtime.block_on(commands::memory_bridge::bridge(
+        &url,
+        &token,
+        stdin,
+        tokio::io::stdout(),
+    )) {
+        eprintln!("mcp-bridge: {e:#}");
+        std::process::exit(1);
+    }
+    true
 }

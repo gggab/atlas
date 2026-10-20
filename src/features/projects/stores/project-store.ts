@@ -5,7 +5,12 @@ import { basename } from "@/lib/paths";
 
 import { logEvent } from "@/features/log/lib/log";
 import { flushAll } from "../lib/flush-registry";
-import { captureSnapshot, restoreSnapshot, evictSnapshot } from "../lib/project-snapshot";
+import {
+  captureSnapshot,
+  restoreSnapshot,
+  evictSnapshot,
+  clearPanelStores,
+} from "../lib/project-snapshot";
 import { revalidateProject } from "../lib/project-revalidate";
 import {
   useAppStore,
@@ -520,6 +525,7 @@ export const useProjectStore = createSelectors(
             set({ activeProjectId: null });
             await get().actions.switchTo(next.id);
           } else {
+            clearPanelStores();
             set({ activeProjectId: null });
             useAppStore.getState().actions.setActiveProject(null);
           }
