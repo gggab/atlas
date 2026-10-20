@@ -75,6 +75,12 @@ cargo test --locked -p atlas-profile -p atlas-agent-manager -p atlas-checkpoint 
 
 Run checks appropriate to the change. Report Windows/platform failures separately from passing checks. Real vendor login, CLI turns, installed browser extensions and native desktop behavior require their own verification.
 
+For app bootstrap changes, run
+`bun run test -- src/features/app/lib/use-app-bootstrap.test.tsx src/features/app/stores/app-store.test.ts`.
+Cover hydration reset after shell readiness, CLI opening, StrictMode, unmount
+and failed-bootstrap write protection. Browser fixtures alone cannot establish
+that a running desktop window has recovered its project state.
+
 For [independent background execution](docs/reference/background-service.md), run
 the focused UI/native suites and isolated debug-process fixture. Do not enable
 login startup or exercise maintenance commands against a developer's real profile

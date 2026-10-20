@@ -1,4 +1,4 @@
-import { startTransition, useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AppLayout } from "@/features/layout/components/app-layout";
 import { AppContextMenu } from "@/components/app-context-menu";
@@ -16,11 +16,8 @@ import { KeymapOnboarding } from "@/features/keybindings/components/keymap-onboa
 import { useNativeCloseTabAccelerator } from "@/features/keybindings/lib/use-native-close-tab-accelerator";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useTerminalStore } from "@/features/terminal/stores/terminal-store";
-import {
-  useAppStore,
-  setAppStateWritable,
-  type AppStateWire,
-} from "@/features/app/stores/app-store";
+import { useAppStore } from "@/features/app/stores/app-store";
+import { useAppBootstrap } from "@/features/app/lib/use-app-bootstrap";
 import { useChatStore } from "@/features/chat/stores/chat-store";
 import {
   listenAgents,
@@ -87,8 +84,7 @@ import {
 } from "@/features/notifications/lib/app-warning-notifier";
 import { notifyModelDownload } from "@/features/notifications/lib/outcome-notifier";
 import { logEvent } from "@/features/log/lib/log";
-import { warmMarkdownWorker, primeMarkdownRenderer } from "@/lib/markdown-cache";
-import { primeMarkdown } from "@/lib/markdown";
+import { warmMarkdownWorker } from "@/lib/markdown-cache";
 import { NotificationPanel } from "@/features/notifications/components/notification-panel";
 import { StopAgentsDialog } from "@/features/projects/components/stop-agents-dialog";
 import { SshHost } from "@/features/ssh/components/ssh-host";
@@ -229,136 +225,7 @@ export function App() {
   // dropping all of them on every restart. Each store carries its own
   // `version`/`migrate`, so stale keys from old builds are handled per-store.
 
-  // One-shot bootstrap of the Rust-owned `AppState` (currentProject +
-  // recentProjects). Replaces the zustand `persist` middleware that used
-  // to hydrate from localStorage. The Tauri invoke is async but fast
-  // (~5–20 ms warm); until it resolves the WelcomeScreen and project-aware
-  // panels render their empty/loading states.
-  //
-  // `startTransition` marks the welcome → project layout swap as non-urgent
-  // so React can pause reconciliation between component subtrees and keep
-  // the welcome UI interactive while the project layout mounts.
-  //
-  // Once hydration is done (success or failure) we dispatch `atlas:app-ready`
-  // — the inline script in `index.html` listens for it and removes the
-  // boot skeleton.
-  useEffect(() => {
-    let cancelled = false;
-    const signalReady = () => {
-      const flag = window as unknown as { __atlasAppReady?: boolean };
-      if (flag.__atlasAppReady) return;
-      flag.__atlasAppReady = true;
-      window.dispatchEvent(new CustomEvent("atlas:app-ready"));
-    };
-
-    (async () => {
-      // A terminal `atlas <path>` launch stashes the path in Rust (single-shot,
-      // so a window reload won't re-trigger). Consume it BEFORE hydrating: the
-      // CLI project must be ADDED to the project list and switched to, but
-      // hydrate replaces that list and fires its own `switchTo` — which would
-      // both clobber the CLI project and swallow the CLI switch (`switching`
-      // guard). So we suppress hydrate's auto-switch when a CLI path is present
-      // and perform the CLI open as the sole, final switch.
-      const cliPath = await invoke<string | null>("cli_take_initial_project_path").catch(
-        () => null,
-      );
-      // `bootstrap_app_state` is the only read of `state.json` Atlas ever
-      // performs, so a failure here is NOT "start empty and carry on": the
-      // stores keep their empty defaults, `AppState::apply_patch` replaces the
-      // persisted lists wholesale, and the unconditional quit flush would then
-      // write that emptiness over the user's real projects and orgs. Retry
-      // first — a transient IPC hiccup shouldn't cost a session.
-      let snapshot: AppStateWire | null = null;
-      for (let attempt = 1; attempt <= 3 && !snapshot; attempt++) {
-        try {
-          snapshot = await invoke<AppStateWire>("bootstrap_app_state");
-        } catch (e) {
-          console.warn(`bootstrap_app_state attempt ${attempt} failed:`, e);
-          if (attempt < 3) {
-            await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
-          }
-        }
-      }
-      if (cancelled) return;
-      try {
-        if (snapshot) {
-          const payload = snapshot;
-          startTransition(() => {
-            // The stores are about to hold the user's real state, so writing
-            // them back is safe from here on. Before this line they hold empty
-            // defaults and persistence is denied — see `appStateWritable`.
-            setAppStateWritable(true);
-            useAppStore.getState().actions.hydrate(payload, { skipActiveSwitch: !!cliPath });
-          });
-        } else {
-          // Every attempt failed. Come up in an explicitly READ-ONLY session
-          // rather than letting the empty stores overwrite `state.json`: the
-          // user's projects and orgs are still on disk, and a restart is what
-          // brings them back. Without this the app looks merely "empty" and
-          // then makes that permanent on quit.
-          setAppStateWritable(false);
-          logEvent({
-            source: "atlas",
-            kind: "bootstrap-failed",
-            summary: "bootstrap_app_state failed after 3 attempts; app-state writes suspended",
-            status: "failure",
-          });
-          toast.error(
-            "DeskMate couldn't load your projects. Your saved data is safe on disk — restart DeskMate to get it back.",
-            { duration: Infinity },
-          );
-          startTransition(() => {
-            useAppStore.getState().actions.hydrate(
-              {
-                currentProject: null,
-                recentProjects: [],
-                version: 1,
-              },
-              { skipActiveSwitch: !!cliPath },
-            );
-          });
-        }
-      } finally {
-        if (!cancelled) {
-          // Only open the CLI path when we actually have a snapshot. Without
-          // one there is no org to own the project, so `addProject` would
-          // refuse anyway — and its "no organisation" toast would bury the
-          // boot-failure one that actually tells the user what to do.
-          if (cliPath && snapshot) {
-            logEvent({
-              source: "atlas",
-              kind: "cli-launch-open-project",
-              summary: `Adding project from CLI argv: ${cliPath}`,
-              status: "success",
-              payload: { path: cliPath },
-            });
-            await useAppStore
-              .getState()
-              .actions.openProject(cliPath)
-              .catch((err) => {
-                logEvent({
-                  source: "atlas",
-                  kind: "cli-launch-open-project-failed",
-                  summary: `openProject failed: ${String(err)}`,
-                  status: "failure",
-                  payload: { error: String(err) },
-                });
-              });
-          }
-          signalReady();
-          // First paint is done — pull in the main-thread markdown renderer
-          // now so the first small chat block still parses synchronously. It
-          // is deliberately NOT a static import (it would land in the eager
-          // entry chunk); see `primeMarkdownRenderer`.
-          primeMarkdownRenderer();
-          primeMarkdown();
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  useAppBootstrap();
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newTabPaletteOpen, setNewTabPaletteOpen] = useState(false);

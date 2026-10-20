@@ -100,6 +100,14 @@ their saved offset. Hidden geometry cannot change the follow state or trigger
 history growth. These checks use simulated DOM geometry; native minimize/restore
 verification remains a separate desktop check.
 
+### Bootstrap recovery after development hot updates
+
+The app watches store hydration independently of the shell-ready flag. If a
+hot update resets the frontend stores, it reloads the saved backend snapshot
+before enabling app-state persistence again. Hydration does not cancel a CLI
+project open still in flight; unmount and StrictMode cleanup cancel stale
+attempts. Project/session data stays on disk throughout recovery.
+
 ## Selected upstream fixes
 
 The model picker selectively ports `6e910c7e`: search, favorites, provider
