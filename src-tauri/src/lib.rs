@@ -160,8 +160,8 @@ pub fn run() {
     };
 
     // Custom menu: replaces the default Window ▸ Close (Cmd+W) with a
-    // "Close Tab" item so Cmd+W in a focused embedded browser webview closes
-    // the tab instead of tearing down the window. See `menu.rs`.
+    // "Close Tab" item so the native menu closes the selected tab while
+    // keeping the window open. See `menu.rs`.
     //
     // macOS only. Elsewhere a menu is a Win32/GTK menu bar drawn inside the
     // window under Atlas's own titlebar, and the key-equivalent fallthrough it
@@ -353,7 +353,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
-        .manage(commands::browser::BrowserState::new())
         .manage(TerminalState::new())
         .manage(commands::modelchat::ModelChatState::new())
         .manage(FileIndexState::new())
@@ -436,15 +435,6 @@ pub fn run() {
                 commands::clipboard::clipboard_write_text,
                 commands::clipboard::scratch_write_bytes,
                 commands::window::set_window_title,
-                commands::browser::browser_open_window,
-                commands::browser::browser_embed_create,
-                commands::browser::browser_embed_navigate,
-                commands::browser::browser_embed_back,
-                commands::browser::browser_embed_forward,
-                commands::browser::browser_embed_reload,
-                commands::browser::browser_embed_set_bounds,
-                commands::browser::browser_embed_set_visible,
-                commands::browser::browser_embed_destroy,
                 commands::browser_use::browser_use_snapshot,
                 commands::browser_use::browser_use_manage,
                 commands::browser_use::browser_use_forget,
@@ -538,7 +528,6 @@ pub fn run() {
                 commands::knowledge::log_interaction,
                 commands::knowledge::save_editor_state,
                 commands::knowledge::load_editor_state,
-                commands::knowledge::fetch_readable,
                 commands::knowledge::knowledge_cover_upload,
                 commands::knowledge::knowledge_cover_data_url,
                 commands::knowledge_meta::knowledge_meta_load,

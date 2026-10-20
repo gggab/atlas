@@ -2,10 +2,8 @@ import { isMac } from "@/lib/platform";
 import type { Combo } from "./combo";
 
 /**
- * A chord in Tauri's accelerator spelling, for the one binding that also has
- * to exist outside the webview: the native Window ▸ Close Tab item, which is
- * what catches the chord while the embedded browser (a separate native
- * webview the dispatcher never sees) has focus. See `src-tauri/src/menu.rs`.
+ * A chord in Tauri's accelerator spelling for the native Window ▸ Close Tab
+ * item. Keep it aligned with the frontend tab shortcut. See `src-tauri/src/menu.rs`.
  *
  * Null for a chord Tauri can't express; the caller leaves the item unbound
  * rather than guessing at a near-miss.

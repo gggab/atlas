@@ -41,6 +41,20 @@ removed. Shared read-only commands remain; status snapshots no longer load branc
 lists, stashes or in-progress operations. No repository, credential, transcript,
 checkpoint or memory data is deleted.
 
+## Embedded Browser removal
+
+The built-in Browser tab, new-tab and command/context-menu entries, native
+WebView commands and reader fetcher are removed. Saved `browser` tabs are dropped
+when restoring app preferences and project editor state; other tabs remain.
+The Research layout preset is removed. Zen mode now opens Knowledge and Chat in
+two columns and restores the prior layout when toggled off.
+
+Browser automation continues through the Chrome/Edge companion extension and
+`atlas_browser` MCP. Browser control settings, website permissions, pause,
+takeover, CLI vendor authentication and external links remain available.
+Existing `browser-profile` data and saved knowledge notes are left on disk;
+removing the module does not clear user data.
+
 ## Other features: recommendations, not removals
 
 The [task scheduler](task-scheduler.md) adds profile-local durable reminders and
@@ -51,7 +65,6 @@ pause tasks. No daemon, model gateway or mobile notification service is added.
 | Feature | Potential later pruning | Impact |
 |---|---|---|
 | Research / papers | Search providers, imports, optional BYOK synthesis | Removes research search, PDF / mention / note integrations; retain local PDFs separately if approved. |
-| Embedded browser | Webview, reader and cookie-backed browsing | Removes in-app browsing and related page actions; vendor CLI browser login must still work. |
 | Local canvas / notebook | Editors, media nodes, graph layout and assets | Removes local document views; stored documents need an export plan first. Cloud team Spaces are already removed. |
 | Design / media extensions | SVG, image, PDF annotations and design integrations | Smaller UI and asset bundle, but removes previews / editing / export features. |
 | BYOK analysis / memory chat | Existing configured-provider model chat | Removes optional analysis; ordinary ACP chat and local memory do not require it. |
@@ -76,20 +89,6 @@ latest messages, including background arrivals; a reader browsing history keeps
 their saved offset. Hidden geometry cannot change the follow state or trigger
 history growth. These checks use simulated DOM geometry; native minimize/restore
 verification remains a separate desktop check.
-
-### Windows embedded browser creation
-
-The Browser tab hosts a native WebView2 on Windows. Both `browser_embed_create`
-and `browser_open_window` use Tauri async command dispatch so creation runs
-outside the main-thread IPC callback. Synchronous dispatch can deadlock WebView2
-creation, leaving the panel blank after entering a URL. The threading contract
-is checked by `tests/browser-command-contract.test.ts`; rendering and navigation
-still require verification in `bun run dev:app`, not the browser mock.
-
-Verified on Windows in DeskMate Dev on 2026-10-07: the live Google page rendered,
-address-bar navigation to `https://example.com` completed, and a separate DeskMate
-Browser window loaded that page. The focused contracts / overlay tests (16
-checks), test TypeScript check, and `cargo check --locked -p atlas --lib` passed.
 
 ## Selected upstream fixes
 
@@ -149,7 +148,7 @@ cargo check --locked -p atlas --lib
 
 Old native source labels, sync-state columns and organization attribution in stored records remain readable; they cannot launch an agent or send records to a server. Old organization projects and groups migrate into the local project registry, and old cloud capture bindings become local while session rows, checkpoint links and content-addressed blobs stay in place. Pinned logs merge into the local log once without deleting originals.
 
-The local Usage view reads captured token totals and session records. It uploads no product analytics. Vendor registry/install downloads, explicit embedding downloads and the retained research/browser/BYOK features can still use their own network services. Theme schema URLs and upstream project links are metadata, not cloud account/service clients.
+The local Usage view reads captured token totals and session records. It uploads no product analytics. Vendor registry/install downloads, explicit embedding downloads and the retained research/extension-browser/BYOK features can still use their own network services. Theme schema URLs and upstream project links are metadata, not cloud account/service clients.
 
 The existing optional BYOK handoff summary remains available through MCP. Raw handoff is the default. The removed gateway extractor has no replacement, and the unimplemented Local selector and gateway-specific image request warning were removed.
 

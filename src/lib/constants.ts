@@ -2,7 +2,6 @@ export const TAB_TYPES = [
   "chat",
   "personal",
   "canvas",
-  "browser",
   "tasks",
   "editor",
   "knowledge",

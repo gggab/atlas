@@ -4,7 +4,7 @@ import type { ActionId } from "@/features/keybindings/lib/actions";
 import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { openNewAgentChat } from "@/features/chat/lib/open-agent-session";
-import { MessageSquare, Terminal, Globe, Settings, Copy, RefreshCw } from "lucide-react";
+import { MessageSquare, Terminal, Settings, Copy, RefreshCw } from "lucide-react";
 
 /** `children` is the single element the menu is attached to — Base UI's
  * `render` clones it, the way Radix's `asChild` merged onto it. */
@@ -38,20 +38,6 @@ export function AppContextMenu({ children }: { children: React.ReactElement }) {
                       id: `terminal-${Date.now()}`,
                       type: "terminal",
                       title: "Terminal",
-                      closable: true,
-                      dirty: false,
-                      data: {},
-                    })
-                  }
-                />
-                <MenuItem
-                  icon={<Globe size={12} />}
-                  label="New Browser"
-                  onClick={() =>
-                    addTab({
-                      id: `browser-${Date.now()}`,
-                      type: "browser",
-                      title: "Browser",
                       closable: true,
                       dirty: false,
                       data: {},

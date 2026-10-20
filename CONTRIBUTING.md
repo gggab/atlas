@@ -14,6 +14,14 @@ and `cargo test --locked -p atlas-agent-manager --test steering`; the stdio suit
 requires Node.js on PATH or `ATLAS_TEST_NODE`. Mock/browser checks do not establish
 real desktop or vendor-task verification.
 
+For the [embedded Browser removal](docs/reference/local-workbench.md#embedded-browser-removal),
+check retired-tab restoration and the two-column Zen layout with
+`bun run test -- src/features/layout/stores/org-tabs.test.ts`. Run the retained
+browser-control tests, IPC/event/mock contracts, `bun run browser:test`, frontend
+typecheck/lint/build and `cargo check --locked -p atlas --lib`. Browser mocks do
+not establish native desktop or installed-extension verification. Preserve
+existing browser profile data and saved knowledge notes.
+
 For local-file browser changes, run `bun run browser:test` and the Chrome/Edge
 `browser:extension-smoke` fixtures. In their isolated profiles, verify the native
 file-access switch appears, disabled access blocks local navigation and uploads,

@@ -5,7 +5,6 @@ import { Dialog } from "@base-ui/react/dialog";
 import {
   Map,
   Terminal,
-  Globe,
   Brain,
   Network,
   BrainCircuit,
@@ -55,7 +54,6 @@ const MODULES: ModuleEntry[] = [
   { id: "knowledge", type: "knowledge", label: "Knowledge", icon: Brain },
   { id: "knowledge-graph", type: "knowledge-graph", label: "Knowledge Graph", icon: Network },
   { id: "memory", type: "memory", label: "Memory", icon: BrainCircuit },
-  { id: "browser", type: "browser", label: "Browser", icon: Globe },
   {
     id: "editor",
     type: "editor",

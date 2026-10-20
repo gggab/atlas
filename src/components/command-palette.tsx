@@ -7,7 +7,6 @@ import { useLayoutStore } from "@/features/layout/stores/layout-store";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { AtlasIcon } from "@/components/atlas-icon";
 import {
-  Globe,
   Terminal,
   Settings,
   PanelLeft,
@@ -145,13 +144,6 @@ export function CommandPalette({
         icon: Code,
         category: "Open",
         action: () => openTab("editor", "Untitled"),
-      },
-      {
-        id: "new-browser",
-        label: "Open Browser",
-        icon: Globe,
-        category: "Open",
-        action: () => openTab("browser", "Browser"),
       },
       {
         id: "new-knowledge",

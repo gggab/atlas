@@ -14,6 +14,7 @@ import {
 // The store's own predicates, not copies: a re-implementation here would keep
 // passing after the store stopped applying the rule.
 import { persistsInEditorState, restoredTabType, useLayoutStore } from "./layout-store";
+import { LAYOUT_TEMPLATES } from "../templates";
 
 /**
  * Org-scoped tabs must never reach the per-project editor state.
@@ -138,51 +139,93 @@ describe("migrateTabType", () => {
   });
 });
 
-describe("retired standalone Git Diff tabs", () => {
+describe.each(["diff", "browser"])("retired standalone %s tabs", (retiredType) => {
   it("drops the old module type while retaining editor and chat types", () => {
-    expect(migrateTabType("diff")).toBeNull();
-    expect(restorable(["diff", "editor", "chat"])).toEqual(["editor", "chat"]);
+    expect(migrateTabType(retiredType)).toBeNull();
+    expect(restorable([retiredType, "editor", "chat"])).toEqual(["editor", "chat"]);
   });
 
-  it("drops a saved diff tab from app preferences and keeps the other tabs", () => {
+  it("drops a saved module tab from app preferences and keeps the other tabs", () => {
     const baseline = useLayoutStore.getState();
-    const oldDiff = {
-      id: "diff:old",
-      type: "diff",
-      title: "Git Diff",
+    const oldTab = {
+      id: "retired:old",
+      type: retiredType,
+      title: retiredType,
       data: {},
       closable: true,
       dirty: false,
     };
     const restored = useLayoutStore.persist.getOptions().merge!(
-      { tabs: [...baseline.tabs, oldDiff], activeTabId: oldDiff.id },
+      { tabs: [...baseline.tabs, oldTab], activeTabId: oldTab.id },
       baseline,
     );
     expect(restored.tabs).toEqual(baseline.tabs);
     expect(restored.activeTabId).toBe(baseline.tabs[0].id);
   });
 
-  it("restores other project tabs when its previously active diff module was saved", async () => {
+  it("restores other project tabs when its previously active retired module was saved", async () => {
     const baseline = useLayoutStore.getState();
     vi.mocked(invoke).mockResolvedValue(
       JSON.stringify({
         tabs: [
-          { id: "old-diff", type: "diff", title: "Git Diff", data: {} },
+          { id: "old-module", type: retiredType, title: retiredType, data: {} },
           { id: "kept-editor", type: "editor", title: "Notes", data: {} },
         ],
-        activeByGroup: { main: "old-diff" },
+        activeByGroup: { main: "old-module" },
       }),
     );
     try {
       await useLayoutStore.getState().actions.loadEditorState("C:/test-project");
       const state = useLayoutStore.getState();
-      expect(state.tabs.some((t) => t.id === "old-diff")).toBe(false);
+      expect(state.tabs.some((t) => t.id === "old-module")).toBe(false);
       expect(state.tabs.some((t) => t.id === "kept-editor")).toBe(true);
       expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);
-      expect(state.activeTabId).not.toBe("old-diff");
+      expect(state.activeTabId).not.toBe("old-module");
     } finally {
       useLayoutStore.setState(baseline, true);
       vi.clearAllMocks();
+    }
+  });
+});
+
+describe("layouts without the embedded browser", () => {
+  it("removes the Research preset and all browser columns", () => {
+    expect(LAYOUT_TEMPLATES.map((template) => template.id)).not.toContain("research");
+    expect(
+      LAYOUT_TEMPLATES.flatMap((template) => template.columns.map((column) => column.type)),
+    ).not.toContain("browser");
+  });
+
+  it("uses Knowledge and Chat for Zen mode and restores existing work on exit", () => {
+    const baseline = useLayoutStore.getState();
+    const editor = {
+      id: "kept-editor",
+      type: "editor" as const,
+      title: "Draft",
+      closable: true,
+      dirty: true,
+      data: { filePath: "untitled:draft" },
+      groupId: "main",
+    };
+    try {
+      useLayoutStore.setState({ tabs: [...baseline.tabs, editor] });
+      baseline.actions.toggleZenMode();
+      const zen = useLayoutStore.getState();
+      expect(zen.groupOrder).toEqual(["zen-kb", "zen-chat"]);
+      expect(
+        zen.groupOrder.map((id) => zen.tabs.find((tab) => tab.id === zen.activeByGroup[id])?.type),
+      ).toEqual(["knowledge", "chat"]);
+      expect(zen.tabs.map((tab) => tab.type)).not.toContain("browser");
+      baseline.actions.toggleZenMode();
+      const restored = useLayoutStore.getState();
+      expect(restored.zen).toBe(false);
+      expect(restored.groupOrder).toEqual(baseline.groupOrder);
+      expect(restored.activeByGroup).toEqual(baseline.activeByGroup);
+      expect(restored.tabs.find((tab) => tab.id === editor.id)).toEqual(editor);
+      expect(restored.leftPanel).toEqual(baseline.leftPanel);
+      expect(restored.rightPanel).toEqual(baseline.rightPanel);
+    } finally {
+      useLayoutStore.setState(baseline, true);
     }
   });
 });

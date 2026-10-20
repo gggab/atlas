@@ -1,5 +1,9 @@
 # Browser Use
 
+Browser Use operates through the Chrome/Edge companion extension. The built-in
+Browser tab and its native WebView/reader have been removed; extension settings,
+permissions, task tabs and CLI vendor authentication remain independent.
+
 The companion desktop app is named **同桌 DeskMate** (**同桌 DeskMate Dev** for source builds).
 The extension retains the store name **DeskMate Browser**, its existing extension
 IDs and native host names; changing the app display name does not require a new

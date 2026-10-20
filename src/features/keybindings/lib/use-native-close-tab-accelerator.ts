@@ -4,10 +4,8 @@ import { setCloseTabAccelerator } from "./keybindings-api";
 import { toNativeAccelerator } from "./native-accelerator";
 
 /**
- * Keep the native Window ▸ Close Tab item on whatever `tabs.close` is bound
- * to. That item is the only way the chord works while the embedded browser —
- * a separate native webview — has focus, so it is the one binding that has to
- * exist in two places. See `src-tauri/src/menu.rs`.
+ * Keep the native Window ▸ Close Tab item aligned with the user's `tabs.close`
+ * binding. See `src-tauri/src/menu.rs`.
  */
 export function useNativeCloseTabAccelerator(): void {
   // Select the string, not the combo: it is stable across every store update

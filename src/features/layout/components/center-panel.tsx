@@ -42,9 +42,6 @@ const PersonalPanel = lazy(() =>
 const EditorPanel = lazy(() =>
   import("@/features/editor/components/editor-panel").then((m) => ({ default: m.EditorPanel })),
 );
-const BrowserPanel = lazy(() =>
-  import("@/features/browser/components/browser-panel").then((m) => ({ default: m.BrowserPanel })),
-);
 const MediaViewer = lazy(() =>
   import("@/features/media/components/media-viewer").then((m) => ({ default: m.MediaViewer })),
 );
@@ -99,7 +96,6 @@ import { useShallow } from "zustand/react/shallow";
 import {
   MessageSquare,
   Map,
-  Globe,
   Loader2,
   Code,
   Brain,
@@ -129,7 +125,6 @@ const tabIcons: Record<TabType, FallbackIcon> = {
   chat: AtlasIcon,
   personal: MessageSquare,
   canvas: Map,
-  browser: Globe,
   tasks: CheckSquare,
   editor: Code,
   knowledge: Brain,
@@ -161,7 +156,6 @@ const GROUP_OF = (t: Tab) => t.groupId ?? "main";
 export const PERSISTENT_TYPES_LIST = [
   "editor",
   "terminal",
-  "browser",
   "knowledge-graph",
   "pdf",
   // Keep chat + knowledge mounted across tab switches too: chat keeps its
@@ -191,7 +185,6 @@ const PERSISTENT_TYPES: ReadonlySet<TabType> = new Set(PERSISTENT_TYPES_LIST);
 // costs a full remount on switch-back.
 export const IDLE_EXPENSIVE_TYPES_LIST = [
   "terminal",
-  "browser",
   "knowledge-graph",
   "pdf",
 ] as const satisfies readonly PersistentTabType[];
@@ -256,7 +249,7 @@ export function CenterPanel() {
   // only the active one visible. Background projects keep the INERT expensive
   // subtrees mounted (editor/chat/knowledge/settings) so switching back is
   // instant, but drop the ones that keep working while hidden — terminals,
-  // browser embeds, Pixi graphs, PDFs — which were burning CPU/GPU in
+  // Pixi graphs, PDFs — which were burning CPU/GPU in
   // projects the user couldn't even see. A project with no view yet (never
   // visited this session) renders nothing until its first cold load.
   return (
@@ -668,7 +661,7 @@ const TabContentContainer = memo(function TabContentContainer({
 
   // Persist expensive tabs across tab switches within this column. For a
   // BACKGROUND project we additionally drop the types that keep working while
-  // hidden (see IDLE_EXPENSIVE_TYPES) — off-screen terminals/browser embeds/
+  // hidden (see IDLE_EXPENSIVE_TYPES) — off-screen terminals/
   // graphs were a major source of idle heat. Chat/knowledge/settings stay
   // mounted even in background projects: unmounting chat re-ran the whole
   // transcript-load path (window fill, markdown settle, anchor) on every
@@ -779,14 +772,6 @@ function PersistentPanel({
       );
     case "knowledge":
       return <KnowledgePanel tabId={tab.id} />;
-    case "browser":
-      return (
-        <BrowserPanel
-          tabId={tab.id}
-          groupId={GROUP_OF(tab)}
-          initialUrl={tab.data.url as string | undefined}
-        />
-      );
     case "knowledge-graph":
       return <KnowledgeGraph />;
     case "pdf":
@@ -951,8 +936,6 @@ function TabContent({ tab }: { tab: Tab }) {
       return <KnowledgeGraph />;
     case "memory":
       return <MemoryPanel />;
-    case "browser":
-      return <BrowserPanel initialUrl={tab.data.url as string | undefined} />;
     case "settings":
       return <SettingsPanel initialSection={tab.data.section as string | undefined} />;
     case "log":
@@ -999,7 +982,6 @@ const NEW_TAB_OPTIONS: Array<{ type: TabType; label: string; icon: React.Element
   { type: "chat", label: "Agents", icon: AtlasIcon },
   { type: "canvas", label: "Canvas", icon: Map },
   { type: "terminal", label: "Terminal", icon: Terminal },
-  { type: "browser", label: "Browser", icon: Globe },
   { type: "knowledge", label: "Knowledge", icon: Brain },
   { type: "memory", label: "Memory", icon: BrainCircuit },
   { type: "log", label: "Log", icon: ScrollText },

@@ -38,18 +38,6 @@ export const LAYOUT_TEMPLATES: LayoutTemplate[] = [
     focus: 1,
   },
   {
-    id: "research",
-    name: "Research",
-    description: "Knowledge, agent and the web side by side.",
-    panels: {},
-    columns: [
-      { type: "knowledge", title: "Knowledge" },
-      { type: "chat", title: "Agents" },
-      { type: "browser", title: "Browser" },
-    ],
-    focus: 1,
-  },
-  {
     id: "terminal",
     name: "Terminal",
     description: "Agent next to a terminal, with the file tree.",

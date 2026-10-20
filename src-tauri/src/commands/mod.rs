@@ -4,7 +4,6 @@ pub mod agent_transcript;
 pub mod agents;
 pub mod app_state;
 pub mod atlas_config;
-pub mod browser;
 pub mod browser_bridge;
 pub mod browser_use;
 pub mod byok;

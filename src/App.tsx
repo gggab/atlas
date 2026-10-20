@@ -32,7 +32,6 @@ import type { AgentDelta } from "@/types/agents";
 import { cycleChatAgent } from "@/features/chat/lib/switch-agent";
 import { FilePicker } from "@/features/file-picker/components/file-picker";
 import { HintOverlay } from "@/features/hint-nav/components/hint-overlay";
-import { BrowserOverlayWatcher } from "@/features/browser/components/browser-overlay-watcher";
 import {
   fileIndex,
   openFileIndex,
@@ -211,10 +210,8 @@ export function App() {
     };
   }, []);
 
-  // Close-active-tab from the native menu (Cmd+W). The embedded browser is a
-  // separate native webview, so its Cmd+W can't reach the React `useHotkeys`
-  // handler — it falls through to the menu's "Close Tab" item, which emits this
-  // event. Mirrors the Cmd+W hotkey: close whichever tab is active.
+  // The native Window ▸ Close Tab menu item targets the same active tab as
+  // the keyboard shortcut.
   useEffect(() => {
     const unlisten = listen("atlas:close-active-tab", () => {
       const current = useLayoutStore.getState().activeTabId;
@@ -1165,7 +1162,7 @@ export function App() {
     "split.focusRight": () => focusAdjacentGroup(1),
     // Close the focused split column (tabs move to the left neighbour).
     "split.close": () => closeGroup(useLayoutStore.getState().focusedGroupId),
-    // Zen mode: Knowledge │ Chat │ Browser, side panels hidden. Again restores.
+    // Zen mode: Knowledge │ Chat, side panels hidden. Again restores.
     "panels.zen": () => {
       if (currentProject) toggleZenMode();
     },
@@ -1261,7 +1258,6 @@ export function App() {
       <StopAgentsDialog />
       <SshHost />
       <RemoveAgentDialog />
-      <BrowserOverlayWatcher />
       {/* Renders nothing at all until a glyph-based icon theme is in use, and
           so costs an SVG theme (including the bundled default) nothing. */}
       <IconThemeFonts />

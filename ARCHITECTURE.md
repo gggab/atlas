@@ -114,7 +114,7 @@ src/features/<feature>/
   lib/          — pure helpers, and the invoke()/listen() wrappers (<domain>-api.ts)
 ```
 
-`src/features/` holds ~30 slices: app, chat, editor, terminal, browser, git, github, explorer, knowledge, canvas, layout, log, monitor, settings, memory, mission-control, model-chat, packs, projects, skills, and more.
+`src/features/` holds ~30 slices: app, chat, editor, terminal, browser (extension controls), git, github, explorer, knowledge, canvas, layout, log, monitor, settings, memory, mission-control, model-chat, packs, projects, skills, and more.
 
 - **Cross-feature widgets** live in `src/components/`.
 - **UI primitives** live in `src/ui/`.
@@ -156,7 +156,7 @@ fetch. See [current scope](docs/reference/local-workbench.md#source-control-remo
 
 `src/lib/constants.ts` holds `TAB_TYPES` (the tab-type registry); `src/features/layout/components/center-panel.tsx` holds the lazy-import map keyed off it. New panel type = lazy import in `center-panel.tsx` + entry in `TAB_TYPES` + entry in `NEW_TAB_OPTIONS` if it should reach the `+` menu.
 
-**Persistent module types — editor, terminal, browser, knowledge-graph, pdf — stay mounted across tab switches** via `display: contents` / `display: none` instead of unmounting. Remounting would rebuild CodeMirror instances, kill the PTY's rendered scrollback, or tear down the native embedded webview.
+**Persistent module types — editor, terminal, knowledge-graph, pdf, chat, knowledge and settings — stay mounted across tab switches** via `display: contents` / `display: none` instead of unmounting. Remounting would rebuild editor/rendering state or lose transcript scroll positions and form drafts. Idle-expensive views are unmounted for background projects.
 
 ## Backend (`src-tauri/src/`)
 
@@ -167,7 +167,7 @@ One Rust module per IPC domain under `src-tauri/src/commands/`. `commands/mod.rs
 | Agents (ported ACP stack) | agents, agent_host, agent_transcript, agent_memory, catalog, registry, capture |
 | Agent tool servers | memory_server (ADR-0010) |
 | Local code search | code_server (HTTP MCP + project search), code_index (per-project workers), atlas-search, atlas-codeindex, atlas-grepindex, atlas-retrieval |
-| Terminal / browser / fs | terminal, browser, fs |
+| Terminal / fs | terminal, fs |
 | Git | git, git_watcher, gitdiff, git_snapshot |
 | GitHub | github |
 | Knowledge | knowledge, knowledge_meta, knowledge_links, knowledge_export, knowledge_graph_layout |
@@ -206,7 +206,6 @@ Streaming from Rust to the UI runs on Tauri events, `atlas:*` channels, most pay
 | `atlas:agent-catalog:changed`, `atlas:registry-install:progress` | Marketplace catalog and install progress |
 | `atlas:auth-run:progress` / `:done` | interactive agent sign-in run |
 | `atlas:modelchat` | model-chat streaming |
-| `atlas:browser-nav` | embedded-webview navigation state |
 | `atlas:git-changed`, `atlas:git-status-fresh`, `atlas:git:op` | git state invalidation from the fs-watcher, and long-op progress |
 | `atlas:codebase-index:progress` | codebase-index build progress |
 | `atlas:update-checking` / `-available` / `-progress` / `-ready` / `-applied` / `-error` | auto-updater lifecycle |
@@ -291,7 +290,7 @@ resumption; ordinary chats without a waiting browser task send no handoff reques
 The frontend passes the original human text separately from the enriched Agent
 prompt; only that original text is matched for continuation. Recorded-turn
 replays omit it and cannot authorize a new handoff.
-DeskMate's embedded WebView and CLI vendor authentication remain separate. See
+The built-in Browser module is removed; CLI vendor authentication remains separate. See
 `docs/reference/browser-use.md` for setup, API and verification boundaries.
 
 ### Local memory MCP
@@ -396,7 +395,7 @@ Everything else is per-project files under `<project-root>/.atlas/`:
 
 ## Project structure
 
-`src/` contains the React UI; `src-tauri/` contains Tauri command handlers and runtime setup; `crates/` holds the reusable local subsystems listed above. `src/dev/mock-backend/` provides browser scenarios for local UI verification. `tests/` holds frontend contracts; crate integration suites exercise real local databases, Git and ACP subprocesses. Research, browser, local canvas / notebook, knowledge graph and design extensions remain for a separate scope decision.
+`src/` contains the React UI; `src-tauri/` contains Tauri command handlers and runtime setup; `crates/` holds the reusable local subsystems listed above. `src/dev/mock-backend/` provides browser scenarios for local UI verification. `tests/` holds frontend contracts; crate integration suites exercise real local databases, Git and ACP subprocesses. Research, local canvas / notebook, knowledge graph and design extensions remain for a separate scope decision.
 
 ## Existing data migration
 

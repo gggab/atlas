@@ -142,9 +142,8 @@ shortcut turned off, it works.
 ## The native Close Tab item
 
 On macOS, Window ▸ Close Tab carries the first chord bound to `tabs.close`.
-That menu item is what closes a tab while the embedded browser has focus, so
-it follows a rebind. A chord it can't express (punctuation) leaves the item
-without one.
+The native menu follows a rebind and closes the active tab. A chord it can't
+express (punctuation) leaves the item without one.
 
 ## Validation
 

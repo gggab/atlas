@@ -105,7 +105,7 @@ interface LayoutState {
   activeByGroup: Record<string, string | null>;
   /** The column that owns keyboard focus (tab hotkeys target it). */
   focusedGroupId: string;
-  /** Zen mode: a focused Knowledge │ Chat │ Browser 3-column split with the
+  /** Zen mode: a focused Knowledge │ Chat 2-column split with the
    *  global side panels hidden. `zenPrev` snapshots the layout to restore. */
   zen: boolean;
   zenPrev: ZenSnapshot | null;
@@ -157,7 +157,7 @@ interface LayoutActions {
     /** Close a split column, moving its tabs to the left neighbour (never the
      *  last remaining column). */
     closeGroup: (groupId: string) => void;
-    /** Toggle Zen mode: a Knowledge │ Chat │ Browser 3-column split with the
+    /** Toggle Zen mode: a Knowledge │ Chat 2-column split with the
      *  global side panels hidden; toggling again restores the prior layout. */
     toggleZenMode: () => void;
     /** Apply a predefined layout template to the active project: set panels +
@@ -243,7 +243,7 @@ function groupOf(tab: Tab | undefined): string {
 }
 
 /** Return `base` if no tab uses it, else a suffixed variant ("base-2", …).
- *  Lets a singleton type (terminal/browser/settings…) be opened in more than
+ *  Lets a singleton type (terminal/settings…) be opened in more than
  *  one split column: callers may reuse a fixed id (e.g. "terminal"), and two
  *  tabs sharing an id would collide React keys / activeByGroup / closeTab. */
 function uniqueTabId(s: LayoutState, base: string): string {
@@ -690,8 +690,8 @@ export const useLayoutStore = createSelectors(
                 reconcileGroups(s);
                 return;
               }
-              // Enter: snapshot the current layout, then build Knowledge │ Chat │
-              // Browser with the side panels hidden.
+              // Enter: snapshot the current layout, then build Knowledge │ Chat
+              // with the side panels hidden.
               const tabGroups: Record<string, string> = {};
               for (const t of s.tabs) tabGroups[t.id] = groupOf(t);
               s.zenPrev = {
@@ -704,7 +704,6 @@ export const useLayoutStore = createSelectors(
               };
               const G_KB = "zen-kb";
               const G_CHAT = "zen-chat";
-              const G_BROWSER = "zen-browser";
               // Reuse the existing singleton tab if present, else create one.
               const ensure = (type: TabType, title: string, gid: string): string => {
                 const existing = s.tabs.find((x) => x.type === type);
@@ -741,9 +740,8 @@ export const useLayoutStore = createSelectors(
               } else {
                 chat.groupId = G_CHAT;
               }
-              const browserId = ensure("browser", "Browser", G_BROWSER);
-              s.groupOrder = [G_KB, G_CHAT, G_BROWSER];
-              s.activeByGroup = { [G_KB]: kbId, [G_CHAT]: chat.id, [G_BROWSER]: browserId };
+              s.groupOrder = [G_KB, G_CHAT];
+              s.activeByGroup = { [G_KB]: kbId, [G_CHAT]: chat.id };
               s.focusedGroupId = G_CHAT;
               s.leftPanel.visible = false;
               s.rightPanel.visible = false;

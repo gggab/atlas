@@ -1,27 +1,8 @@
 //! Native macOS application menu.
 //!
-//! Atlas previously shipped no menu, so Tauri installed its *default* menu —
-//! whose Window ▸ Close item (Cmd+W) calls `performClose:` on the key window.
-//! In the main webview that's harmless: the keybinding dispatcher
-//! (`useActionHotkeys` in `App.tsx`) catches the close-tab chord and
-//! `preventDefault()`s it, so WebKit reports the key equivalent as handled and
-//! the menu never fires.
-//!
-//! But the embedded browser (`commands::browser`) is a *separate* native child
-//! webview loading remote pages. Those pages don't preventDefault Cmd+W, so the
-//! key equivalent fell through to the default Close item and tore down the whole
-//! window — taking the app with it.
-//!
-//! Fix: define our own menu that mirrors the macOS standard (so Copy/Paste/etc.
-//! still work in every webview) but replaces the predefined Close item with a
-//! custom `atlas-close-tab` item. Its handler (wired in `lib.rs`) emits
-//! `atlas:close-active-tab` to the main webview, which closes the active *tab*
-//! instead of the window. The main-webview preventDefault path is unchanged, so
-//! this only takes effect when a child webview has focus.
-//!
-//! The item's accelerator follows the user's `tabs.close` binding
-//! (`keybindings_set_close_tab_accelerator`), or the embedded browser would
-//! keep closing tabs on a chord the user retired.
+//! The Window ▸ Close Tab item emits `atlas:close-active-tab` to the main
+//! webview rather than closing the application window. Its accelerator follows
+//! the user's `tabs.close` binding via `keybindings_set_close_tab_accelerator`.
 
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Manager;
@@ -54,7 +35,7 @@ pub fn build(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )?;
 
     // Standard Edit menu — provides Cmd+C/V/X/A key equivalents that native
-    // webviews (including the embedded browser) rely on.
+    // webviews rely on.
     //
     // Undo/Redo are DELIBERATELY OMITTED. The predefined items bind Cmd+Z /
     // Cmd+Shift+Z to AppKit's `undo:` / `redo:` editing selectors, which macOS
@@ -62,8 +43,7 @@ pub fn build(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     // chain — WITHOUT dispatching a JS keydown to the page. That shadowed
     // CodeMirror's own history (`historyKeymap`), so Cmd+Z did nothing in the
     // code editor. Without these items Cmd+Z reaches the page as a normal
-    // keydown: CodeMirror handles its undo, and the embedded browser's text
-    // fields still undo via WebKit's built-in editing default action.
+    // keydown: CodeMirror handles its own undo history.
     let edit_menu = Submenu::with_items(
         app,
         "Edit",

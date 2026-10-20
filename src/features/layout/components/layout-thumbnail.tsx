@@ -2,7 +2,6 @@ import {
   Code,
   Terminal,
   Brain,
-  Globe,
   Gauge,
   MessageSquare,
   Network,
@@ -17,7 +16,6 @@ const TYPE_ICON: Partial<Record<TabType, LucideIcon>> = {
   terminal: Terminal,
   knowledge: Brain,
   "knowledge-graph": Network,
-  browser: Globe,
   usage: Gauge,
 };
 
