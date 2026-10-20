@@ -188,6 +188,50 @@ describe.each(["diff", "browser"])("retired standalone %s tabs", (retiredType) =
   });
 });
 
+describe("Develop layout without new scratch buffers", () => {
+  const develop = LAYOUT_TEMPLATES.find((template) => template.id === "develop")!;
+
+  it("leaves the file column empty until a file is opened", () => {
+    const baseline = useLayoutStore.getState();
+    try {
+      useLayoutStore.setState({ tabs: [] });
+      baseline.actions.applyLayoutTemplate(develop);
+      const state = useLayoutStore.getState();
+      expect(state.groupOrder).toEqual(["main", "tpl-1"]);
+      expect(state.activeByGroup.main).toBeNull();
+      expect(state.tabs.map((tab) => tab.type)).toEqual(["chat"]);
+      expect(state.tabs[0].id).toBe(state.activeByGroup["tpl-1"]);
+    } finally {
+      useLayoutStore.setState(baseline, true);
+    }
+  });
+
+  it.each(["C:/repo/notes.md", "untitled:existing"])(
+    "preserves an existing editor for %s",
+    (filePath) => {
+      const baseline = useLayoutStore.getState();
+      const editor = {
+        id: "existing",
+        type: "editor" as const,
+        title: "Notes",
+        closable: true,
+        dirty: true,
+        data: { filePath },
+        groupId: "main",
+      };
+      try {
+        useLayoutStore.setState({ tabs: [editor] });
+        baseline.actions.applyLayoutTemplate(develop);
+        const state = useLayoutStore.getState();
+        expect(state.tabs.filter((tab) => tab.type === "editor")).toEqual([editor]);
+        expect(state.activeByGroup.main).toBe(editor.id);
+      } finally {
+        useLayoutStore.setState(baseline, true);
+      }
+    },
+  );
+});
+
 describe("layouts without the embedded browser", () => {
   it("removes the Research preset and all browser columns", () => {
     expect(LAYOUT_TEMPLATES.map((template) => template.id)).not.toContain("research");

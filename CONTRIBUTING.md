@@ -22,6 +22,13 @@ typecheck/lint/build and `cargo check --locked -p atlas --lib`. Browser mocks do
 not establish native desktop or installed-extension verification. Preserve
 existing browser profile data and saved knowledge notes.
 
+For the Untitled Editor entry removal, run
+`bun run test -- src/components/tab-palettes.test.tsx src/features/keybindings src/features/layout src/features/editor`
+and frontend typecheck/lint/build. Verify both palettes omit scratch creation,
+retired shortcut overrides remain inert, Develop does not create a new draft,
+and existing file/legacy-draft editors survive layout changes. File editing and
+saving in the native app require separate desktop verification.
+
 For local-file browser changes, run `bun run browser:test` and the Chrome/Edge
 `browser:extension-smoke` fixtures. In their isolated profiles, verify the native
 file-access switch appears, disabled access blocks local navigation and uploads,

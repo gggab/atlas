@@ -55,6 +55,16 @@ takeover, CLI vendor authentication and external links remain available.
 Existing `browser-profile` data and saved knowledge notes are left on disk;
 removing the module does not clear user data.
 
+## Untitled Editor entry removal
+
+The Untitled Editor module entry, command-palette action and `tabs.newUntitled`
+shortcut are removed. The Develop layout reuses an open editor; without one,
+it leaves the file column empty until the user opens a file. It does not create
+an untitled buffer. Existing editor tabs and legacy untitled drafts remain
+available, including their save-as flow. File-tree navigation, file editing and
+saving remain unchanged. Stored keybinding overrides are preserved but no longer
+resolve to the removed action.
+
 ## Other features: recommendations, not removals
 
 The [task scheduler](task-scheduler.md) adds profile-local durable reminders and

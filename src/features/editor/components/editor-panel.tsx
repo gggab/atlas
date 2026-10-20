@@ -88,10 +88,8 @@ export function EditorPanel({ tabId, filePath, containerHeight }: EditorPanelPro
     setRenderMode("editor");
   }, [path]);
 
-  // Load file content from disk — unless this is an untitled scratch
-  // buffer (Cmd+N), in which case we seed an empty buffer in-memory
-  // and skip the IPC. The synthetic `untitled:<ts>` key keeps each
-  // unsaved tab's buffer separate in the store.
+  // Legacy untitled tabs start with an in-memory buffer and skip disk IPC.
+  // Their synthetic `untitled:<ts>` keys keep unsaved buffers separate.
   useEffect(() => {
     if (!path || buffer) return;
     if (isUntitled) {

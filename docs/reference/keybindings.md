@@ -16,6 +16,10 @@ binding and disappears when that action is unbound.
 The `panels.right` action now toggles Remote execution. Git view shortcuts in
 built-in presets are removed; explicit user overrides remain intact.
 
+The Untitled Editor action (`tabs.newUntitled`, formerly Cmd/Ctrl+N) is removed.
+Its saved overrides remain in the profile as unknown actions and cannot create
+new documents. Existing file editing and save shortcuts are unchanged.
+
 ## Presets and the first-run question
 
 A profile can be **based on** another editor's keys: `vscode`, `cursor`,

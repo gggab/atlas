@@ -20,7 +20,6 @@ import {
   BrainCircuit,
   ScrollText,
   Gauge,
-  Code,
   ArrowLeftToLine,
   ArrowRightToLine,
   Brain,
@@ -136,14 +135,6 @@ export function CommandPalette({
         icon: Terminal,
         category: "Open",
         action: () => openTab("terminal", "Terminal"),
-      },
-      {
-        id: "new-editor",
-        label: "New Untitled Editor",
-        actionId: "tabs.newUntitled",
-        icon: Code,
-        category: "Open",
-        action: () => openTab("editor", "Untitled"),
       },
       {
         id: "new-knowledge",

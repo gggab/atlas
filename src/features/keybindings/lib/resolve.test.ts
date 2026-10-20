@@ -11,6 +11,13 @@ const profile = (bindings: KeybindingProfile["bindings"]): KeybindingProfile => 
 });
 
 describe("resolveProfile", () => {
+  it("keeps retired untitled overrides inert without deleting user configuration", () => {
+    const bindings = { "tabs.newUntitled": ["cmd+n"] };
+    const r = resolveProfile(profile(bindings));
+    expect(r.unknownActionIds).toContain("tabs.newUntitled");
+    expect(r.byAction.has("tabs.newUntitled")).toBe(false);
+    expect(bindings).toEqual({ "tabs.newUntitled": ["cmd+n"] });
+  });
   it("falls back to defaults when no profile", () => {
     const r = resolveProfile(undefined);
     expect(r.byAction.get("panels.left")![0]!.serialized).toBe("cmd+b");

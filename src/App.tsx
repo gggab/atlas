@@ -1178,20 +1178,6 @@ export function App() {
     // ⌘T — new agent chat. Singleton: focuses the existing chat tab and resets
     // it to a fresh session rather than opening a second chat tab.
     "tabs.newChat": () => openNewAgentChat(),
-    // ⌘N — new untitled editor. The synthetic `untitled:<ts>` path
-    // tells the editor to start with an empty buffer and to fall
-    // into the save-as flow on ⌘S (see `editor-panel.tsx`).
-    "tabs.newUntitled": () => {
-      const ts = Date.now();
-      addTab({
-        id: `editor-untitled-${ts}`,
-        type: "editor",
-        title: "Untitled",
-        closable: true,
-        dirty: false,
-        data: { filePath: `untitled:${ts}` },
-      });
-    },
     // Keyboard-first equivalent of the `+` button's dropdown.
     "nav.newTabPalette": () => setNewTabPaletteOpen(true),
     "nav.layoutSwitcher": () => setLayoutSwitcherOpen(true),

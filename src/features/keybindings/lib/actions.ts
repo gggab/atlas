@@ -215,13 +215,6 @@ export const ACTIONS = [
     when: "global",
     defaults: ["cmd+shift+t"],
   },
-  {
-    id: "tabs.newUntitled",
-    title: "New untitled editor",
-    category: "Tabs",
-    when: "global",
-    defaults: ["cmd+n"],
-  },
   { id: "tabs.close", title: "Close tab", category: "Tabs", when: "global", defaults: ["cmd+w"] },
   {
     id: "tabs.prev",

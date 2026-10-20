@@ -762,6 +762,11 @@ export const useLayoutStore = createSelectors(
                 const gid = i === 0 ? DEFAULT_GROUP : `tpl-${i}`;
                 order.push(gid);
                 const existing = s.tabs.find((t) => t.type === col.type);
+                // File columns wait for an existing file instead of creating a scratch buffer.
+                if (!existing && col.type === "editor") {
+                  active[gid] = null;
+                  return;
+                }
                 let id: string;
                 if (existing) {
                   existing.groupId = gid;
@@ -769,16 +774,13 @@ export const useLayoutStore = createSelectors(
                 } else {
                   const ts = Date.now().toString(36);
                   id = `${col.type}-tpl-${i}-${ts}`;
-                  // A fresh editor needs a buffer key or it renders blank; seed an
-                  // untitled scratch buffer (same convention as ⌘N).
-                  const data = col.type === "editor" ? { filePath: `untitled:tpl-${i}-${ts}` } : {};
                   s.tabs.push({
                     id,
                     type: col.type,
                     title: col.title,
                     closable: col.type !== "chat",
                     dirty: false,
-                    data,
+                    data: {},
                     groupId: gid,
                   });
                 }
