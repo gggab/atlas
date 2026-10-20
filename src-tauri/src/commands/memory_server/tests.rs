@@ -27,7 +27,7 @@ use crate::commands::shared_memory::{
     store_for, EventKind, MemoryChanged, RawEvent, SharedMemoryStore,
 };
 
-fn temp_project(label: &str) -> String {
+pub(super) fn temp_project(label: &str) -> String {
     let dir = std::env::temp_dir().join(format!(
         "atlas-memory-server-{label}-{}",
         uuid::Uuid::new_v4()
@@ -38,16 +38,16 @@ fn temp_project(label: &str) -> String {
 
 /// A store whose clock advances one second per read, so every write has its
 /// own `updated_at`.
-fn ticking_memory() -> SharedMemoryStore {
+pub(super) fn ticking_memory() -> SharedMemoryStore {
     let t = Arc::new(AtomicI64::new(1_000));
     SharedMemoryStore::with_clock(Arc::new(move || t.fetch_add(1_000, Ordering::SeqCst)))
 }
 
-fn always_on() -> SharingGate {
+pub(super) fn always_on() -> SharingGate {
     Arc::new(|_| true)
 }
 
-async fn serve(
+pub(super) async fn serve(
     memory: SharedMemoryStore,
     tokens: Arc<MemoryTokens>,
     gate: SharingGate,
@@ -65,7 +65,10 @@ async fn serve(
     .unwrap()
 }
 
-async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()>, String> {
+pub(super) async fn connect(
+    url: &str,
+    token: &str,
+) -> Result<RunningService<RoleClient, ()>, String> {
     let transport = StreamableHttpClientTransport::from_config(
         StreamableHttpClientTransportConfig::with_uri(url.to_string())
             .auth_header(token.to_string()),
@@ -73,7 +76,7 @@ async fn connect(url: &str, token: &str) -> Result<RunningService<RoleClient, ()
     ().serve(transport).await.map_err(|e| format!("{e:?}"))
 }
 
-async fn call(
+pub(super) async fn call(
     client: &RunningService<RoleClient, ()>,
     name: &'static str,
     args: Value,
@@ -95,7 +98,7 @@ async fn call(
 }
 
 /// A captured event, as the delta path appends it for a session.
-fn capture(
+pub(super) fn capture(
     memory: &SharedMemoryStore,
     p: &str,
     agent: &str,
@@ -276,6 +279,7 @@ async fn the_briefing_carries_working_memory_the_index_and_the_first_look_extras
             index: None,
             bootstrap: Some(bootstrap),
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -694,6 +698,7 @@ async fn memory_search_also_returns_indexed_project_documents() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -752,6 +757,7 @@ async fn forgetting_through_the_tool_evicts_the_document_before_returning() {
             index: None,
             bootstrap: None,
             evict: Some(evict),
+            ..Sources::default()
         },
     )
     .await;
@@ -814,6 +820,8 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             EntryKind::Fact,
             "a fact worth keeping",
             "",
+            None,
+            &[],
         )
         .expect("remembered")
         .entry
@@ -852,6 +860,7 @@ async fn search_never_returns_a_shared_document_whose_entry_is_gone() {
             index: Some(index),
             bootstrap: None,
             evict: None,
+            ..Sources::default()
         },
     )
     .await;
@@ -962,16 +971,16 @@ fn every_read_tool_is_a_real_tool_and_no_write_is_in_the_list() {
     for read in super::tools::READ_TOOLS {
         assert!(names.contains(&read), "{read} is not a tool the server has");
     }
-    for write in ["memory_remember", "memory_forget"] {
+    for write in ["memory_remember", "memory_forget", "memory_feedback"] {
         assert!(
             !super::tools::READ_TOOLS.contains(&write),
             "{write} writes; it must not count as reading"
         );
     }
     assert_eq!(
-        super::tools::READ_TOOLS.len() + 2,
+        super::tools::READ_TOOLS.len() + 3,
         names.len(),
-        "every tool is either a read or one of the two writes"
+        "every tool is either a read or one of the three writes"
     );
 }
 
@@ -1045,6 +1054,10 @@ fn entry(
         uses,
         content_hash: String::new(),
         seq: None,
+        rev: 0,
+        state: atlas_memory::record::State::Active,
+        scope: "repo".into(),
+        evidence: "[]".into(),
     }
 }
 

@@ -24,7 +24,7 @@ use std::time::Duration;
 use atlas_memory::{CorpusDoc, MemoryEngine, MiniLmProvider};
 use dashmap::DashMap;
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
@@ -32,8 +32,7 @@ use super::agent_memory::{collect_corpus, MemoryDoc};
 use super::memory_graph::{model_dir, MODEL_FILES};
 
 /// Bound on the indexer's job queue — back-pressure so HNSW persistence never
-/// races a flood of enqueues; excess `try_send`s are dropped (a later watcher
-/// tick or `force_reindex` re-enqueues).
+/// races a flood of enqueues. Full-channel jobs are coalesced outside it and retried.
 pub const QUEUE_CAPACITY: usize = 256;
 
 /// Debounce window: FS events within this window collapse into one `IndexCorpus`.
@@ -41,18 +40,42 @@ const DEBOUNCE_WINDOW: Duration = Duration::from_millis(2000);
 
 /// A unit of background indexing work. **Every variant carries `cwd`** so the
 /// worker looks up exactly one project's engine and never touches another's.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Job {
     /// (Re)index a project's whole corpus into its HNSW store. Step 4.
-    IndexCorpus { cwd: String },
+    IndexCorpus {
+        cwd: String,
+    },
     /// Offer the repository's high-confidence Facts to global memory
     /// (`atlas_memory::global`): run once when a project opens and after an
     /// MCP write stores entries.
-    Compact { cwd: String },
+    Compact {
+        cwd: String,
+    },
+    Health {
+        cwd: String,
+    },
+    RewoundCheck {
+        cwd: String,
+        session: String,
+        retried: bool,
+    },
 }
 
 /// `cwd`-keyed owner of every open project's [`MemoryEngine`] plus its FS watcher.
 /// Stored as a Tauri managed `State<Arc<MemoryRegistry>>`.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HealthStatus {
+    pub checked_at: i64,
+    pub record: atlas_memory::health::Report,
+    pub corpus: atlas_memory::CorpusHealth,
+    pub restored: Option<(i64, bool)>,
+    pub error: Option<String>,
+}
+
+pub const MEMORY_HEALTH_EVENT: &str = "atlas:memory-health";
+
 pub struct MemoryRegistry {
     /// One engine per project root, shared (read by retrieve, written by indexer).
     engines: DashMap<String, Arc<RwLock<MemoryEngine>>>,
@@ -60,6 +83,8 @@ pub struct MemoryRegistry {
     watchers: DashMap<String, notify::RecommendedWatcher>,
     /// Producer end of the indexer's bounded queue.
     job_tx: mpsc::Sender<Job>,
+    overflow: parking_lot::Mutex<Vec<Job>>,
+    health: DashMap<String, HealthStatus>,
     /// Debounce coalesce window (overridable in tests).
     debounce_window: Duration,
     /// The shared on-device MiniLM provider, loaded **once** and reused by BOTH
@@ -77,6 +102,8 @@ impl MemoryRegistry {
             engines: DashMap::new(),
             watchers: DashMap::new(),
             job_tx,
+            overflow: parking_lot::Mutex::new(Vec::new()),
+            health: DashMap::new(),
             debounce_window: DEBOUNCE_WINDOW,
             provider: tokio::sync::Mutex::new(None),
         }
@@ -111,6 +138,14 @@ impl MemoryRegistry {
     /// model (its dir / dim / vector space changed).
     pub async fn invalidate_provider(&self) {
         *self.provider.lock().await = None;
+        for cwd in self
+            .engines
+            .iter()
+            .map(|e| e.key().clone())
+            .collect::<Vec<_>>()
+        {
+            let _ = self.enqueue(Job::Health { cwd });
+        }
     }
 
     /// Test hook: a registry with a custom debounce window.
@@ -125,15 +160,23 @@ impl MemoryRegistry {
     /// watcher, and enqueues an initial cold `IndexCorpus{cwd}` — so a freshly
     /// opened project is indexed even before the watcher fires. Subsequent calls
     /// just clone the existing handle (no re-enqueue, no second watcher).
+    #[cfg(test)]
     pub fn engine_for(&self, cwd: &str) -> Arc<RwLock<MemoryEngine>> {
+        self.try_engine_for(cwd).expect("open test memory corpus")
+    }
+
+    pub fn try_engine_for(&self, cwd: &str) -> Result<Arc<RwLock<MemoryEngine>>, String> {
         if let Some(existing) = self.engines.get(cwd) {
-            return existing.value().clone();
+            return Ok(existing.value().clone());
         }
 
         // Build outside the map so the shard lock isn't held across the index
         // load I/O. A lost race is harmless: `or_insert_with` keeps whoever
         // won and `ptr_eq` tells us if *we* were the inserter.
-        let fresh = Arc::new(RwLock::new(MemoryEngine::open(PathBuf::from(cwd))));
+        let fresh = Arc::new(RwLock::new(
+            MemoryEngine::try_open(PathBuf::from(cwd))
+                .map_err(|e| format!("open memory corpus: {e:#}"))?,
+        ));
         let inserted = self
             .engines
             .entry(cwd.to_string())
@@ -143,26 +186,51 @@ impl MemoryRegistry {
 
         if Arc::ptr_eq(&inserted, &fresh) {
             self.start_watcher(cwd);
-            // Cold index on open. Drop-on-full is fine (watcher/force_reindex retry).
-            let _ = self.job_tx.try_send(Job::IndexCorpus {
+            // Cold index, promotion and health are retained for retry on queue overflow.
+            let _ = self.enqueue(Job::IndexCorpus {
                 cwd: cwd.to_string(),
             });
             // One global-promotion pass per open: it only reads the record's
             // Facts and the small global ledger, so it is cheap; drop-on-full
             // is fine (the next open or MCP write re-enqueues).
-            let _ = self.job_tx.try_send(Job::Compact {
+            let _ = self.enqueue(Job::Compact {
                 cwd: cwd.to_string(),
             });
         }
-        inserted
+        if Arc::ptr_eq(&inserted, &fresh) {
+            let _ = self.enqueue(Job::Health {
+                cwd: cwd.to_string(),
+            });
+        }
+        Ok(inserted)
     }
 
-    /// Enqueue a job (non-blocking). Drops on a full queue rather than stalling
-    /// the caller — the IPC thread must never block on indexing.
+    /// Enqueue without blocking the IPC thread; retain distinct jobs for retry.
     pub fn enqueue(&self, job: Job) -> Result<(), String> {
-        self.job_tx
-            .try_send(job)
-            .map_err(|e| format!("indexer queue: {e}"))
+        match self.job_tx.try_send(job) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(job)) => {
+                let mut waiting = self.overflow.lock();
+                if !waiting.contains(&job) {
+                    waiting.push(job);
+                }
+                Ok(())
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => Err("memory indexer has stopped".into()),
+        }
+    }
+
+    pub fn health_status(&self, cwd: &str) -> Option<HealthStatus> {
+        self.health.get(cwd).map(|v| v.clone())
+    }
+
+    fn retry_overflow(&self) {
+        let jobs = std::mem::take(&mut *self.overflow.lock());
+        for job in jobs {
+            if let Err(e) = self.enqueue(job) {
+                tracing::warn!("{e}");
+            }
+        }
     }
 
     /// Fire-and-forget background reindex nudge for `cwd` (Step 5). Designed to
@@ -171,23 +239,10 @@ impl MemoryRegistry {
     /// `debug` log (a later FS-watcher tick or `force_reindex` re-enqueues);
     /// a closed queue (app shutting down) is likewise a silent drop.
     pub fn enqueue_index(&self, cwd: &str) {
-        use tokio::sync::mpsc::error::TrySendError;
-        match self.job_tx.try_send(Job::IndexCorpus {
+        if let Err(e) = self.enqueue(Job::IndexCorpus {
             cwd: cwd.to_string(),
         }) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) => {
-                tracing::debug!(
-                    target: "atlas::memory_indexer",
-                    "reindex nudge dropped (queue full): {cwd}"
-                );
-            }
-            Err(TrySendError::Closed(_)) => {
-                tracing::debug!(
-                    target: "atlas::memory_indexer",
-                    "reindex nudge dropped (indexer stopped): {cwd}"
-                );
-            }
+            tracing::warn!("{e}");
         }
     }
 
@@ -199,7 +254,9 @@ impl MemoryRegistry {
         if self.open_engine(cwd).is_some() {
             self.enqueue_index(cwd);
         } else {
-            let _ = self.engine_for(cwd);
+            if let Err(e) = self.try_engine_for(cwd) {
+                tracing::warn!("{e}");
+            }
         }
     }
 
@@ -219,6 +276,13 @@ impl MemoryRegistry {
     pub fn close_project(&self, cwd: &str) {
         self.watchers.remove(cwd);
         self.engines.remove(cwd);
+        self.health.remove(cwd);
+        self.overflow.lock().retain(|j| match j {
+            Job::IndexCorpus { cwd: p }
+            | Job::Compact { cwd: p }
+            | Job::Health { cwd: p }
+            | Job::RewoundCheck { cwd: p, .. } => p != cwd,
+        });
     }
 
     /// Start one `notify` watcher for `cwd`'s corpus roots, filtering to
@@ -352,7 +416,13 @@ async fn debounce_loop(
                 Err(_) => break, // quiet for `window` → flush
             }
         }
-        let _ = job_tx.try_send(Job::IndexCorpus { cwd: cwd.clone() });
+        if job_tx
+            .send(Job::IndexCorpus { cwd: cwd.clone() })
+            .await
+            .is_err()
+        {
+            return;
+        }
         if channel_closed {
             return;
         }
@@ -368,15 +438,54 @@ impl MemoryIndexer {
     /// Drain the queue forever. Spawned once from `lib.rs` with the matching
     /// receiver; returns only when every `job_tx` is dropped (app shutdown).
     pub async fn run(app: AppHandle, registry: Arc<MemoryRegistry>, mut rx: mpsc::Receiver<Job>) {
-        while let Some(job) = rx.recv().await {
+        let mut health_tick = tokio::time::interval(Duration::from_secs(30 * 60));
+        health_tick.tick().await;
+        loop {
+            registry.retry_overflow();
+            let job = tokio::select! {
+                job = rx.recv() => { let Some(job) = job else { break }; job },
+                _ = health_tick.tick() => {
+                    for cwd in registry.engines.iter().map(|e| e.key().clone()).collect::<Vec<_>>() { let _ = registry.enqueue(Job::Health { cwd }); }
+                    continue;
+                }
+            };
             match job {
+                Job::RewoundCheck {
+                    cwd,
+                    session,
+                    retried,
+                } => {
+                    rewound_check(&app, &cwd, &session).await;
+                    if !retried {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                            if let Some(registry) = app.try_state::<Arc<MemoryRegistry>>() {
+                                let _ = registry.enqueue(Job::RewoundCheck {
+                                    cwd,
+                                    session,
+                                    retried: true,
+                                });
+                            }
+                        });
+                    }
+                }
+                Job::Health { cwd } => {
+                    health_one(&app, &registry, &cwd).await;
+                }
                 Job::IndexCorpus { cwd } => {
                     // Shared provider — loaded once, reused by retrieve too.
                     let Some(prov) = registry.provider(&app).await else {
-                        tracing::warn!(
-                            target: "atlas::memory_indexer",
-                            "IndexCorpus {cwd}: MiniLM model not downloaded; skipping"
-                        );
+                        if let Some(engine) = registry.open_engine(&cwd) {
+                            let docs: Vec<CorpusDoc> = collect_corpus(&cwd)
+                                .await
+                                .iter()
+                                .map(to_corpus_doc)
+                                .collect();
+                            if let Err(e) = engine.write().await.index_documents(&docs) {
+                                tracing::warn!(target: "atlas::memory_indexer", "lexical indexing {cwd} failed: {e:#}");
+                            }
+                        }
                         continue;
                     };
                     if let Err(e) = index_one(&registry, &cwd, &prov).await {
@@ -394,6 +503,92 @@ impl MemoryIndexer {
             }
         }
     }
+}
+
+async fn rewound_check(app: &AppHandle, cwd: &str, session: &str) {
+    let memory = app
+        .state::<super::shared_memory::SharedMemoryStore>()
+        .inner()
+        .clone();
+    let cwd = cwd.to_string();
+    let session = session.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        if let Some(windows) = super::memory_capture::rewound_windows_for(
+            &super::memory_capture::CaptureReader::default(),
+            &cwd,
+            &session,
+            memory.now(),
+        ) {
+            if let Err(e) = memory.demote_rewound(&cwd, &session, &windows) {
+                tracing::warn!("memory rewind check failed: {e}");
+            }
+        }
+    })
+    .await;
+}
+
+async fn health_one(app: &AppHandle, registry: &MemoryRegistry, cwd: &str) {
+    let Some(engine) = registry.open_engine(cwd) else {
+        return;
+    };
+    let now = chrono::Utc::now().timestamp_millis();
+    let scope = cwd.to_string();
+    let memory = app
+        .state::<super::shared_memory::SharedMemoryStore>()
+        .inner()
+        .clone();
+    let checked = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        let reader = super::memory_capture::CaptureReader::default();
+        for writer in reader
+            .stores(&scope)
+            .recent_sessions(now.saturating_sub(24 * 3600 * 1000), now)
+            .into_iter()
+            .take(100)
+        {
+            if let Some(windows) =
+                super::memory_capture::rewound_windows_for(&reader, &scope, &writer.session_id, now)
+            {
+                memory.demote_rewound(&scope, &writer.session_id, &windows)?;
+            }
+        }
+        let store = super::shared_memory::store_for(&scope)?;
+        let report = store.heal(now).map_err(|e| format!("{e:#}"))?;
+        let restored = atlas_memory::record::RecordStore::restored_marker(store.root());
+        let corpus = engine
+            .blocking_write()
+            .heal()
+            .map_err(|e| format!("{e:#}"))?;
+        Ok((report, restored, corpus))
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    let status = match checked {
+        Ok((record, restored, corpus)) => HealthStatus {
+            checked_at: now,
+            record,
+            corpus,
+            restored: restored.or_else(|| registry.health_status(cwd).and_then(|s| s.restored)),
+            error: None,
+        },
+        Err(error) => HealthStatus {
+            checked_at: now,
+            record: Default::default(),
+            corpus: Default::default(),
+            restored: None,
+            error: Some(error),
+        },
+    };
+    registry.health.insert(cwd.to_string(), status);
+    let _ = app.emit(MEMORY_HEALTH_EVENT, serde_json::json!({ "cwd": cwd }));
+}
+
+#[tauri::command]
+pub fn memory_health_status(
+    project_path: String,
+    registry: State<'_, Arc<MemoryRegistry>>,
+) -> Option<HealthStatus> {
+    registry.health_status(&project_path)
 }
 
 /// Gather the corpus for `cwd`, diff+embed it into that project's engine under
@@ -505,7 +700,9 @@ pub(crate) async fn indexed_vectors(
     cwd: &str,
     docs: &[MemoryDoc],
 ) -> std::collections::HashMap<String, Vec<f32>> {
-    let engine = registry.engine_for(cwd);
+    let Ok(engine) = registry.try_engine_for(cwd) else {
+        return std::collections::HashMap::new();
+    };
     let guard = engine.read().await;
     if !guard.index_params_match(provider) {
         return std::collections::HashMap::new();
@@ -602,7 +799,7 @@ pub async fn force_reindex(
     let cwd = cwd.trim_end_matches('/').to_string();
     // Opening also enqueues an initial IndexCorpus on first open; the explicit
     // enqueue below covers the already-open case.
-    let _ = registry.engine_for(&cwd);
+    registry.try_engine_for(&cwd)?;
     registry.enqueue(Job::IndexCorpus { cwd })
 }
 
@@ -651,7 +848,7 @@ mod tests {
     /// and is never drained, so a blocking send would hang this test forever —
     /// completing at all proves it is non-blocking.
     #[test]
-    fn enqueue_index_never_blocks_and_drops_when_full() {
+    fn enqueue_index_never_blocks_and_retries_every_distinct_job() {
         let (job_tx, mut job_rx) = mpsc::channel::<Job>(1);
         let registry = MemoryRegistry::new(job_tx);
 
@@ -668,8 +865,13 @@ mod tests {
         }
         assert!(
             job_rx.try_recv().is_err(),
-            "overflow reindex nudges must be dropped, not queued"
+            "overflow jobs wait outside the bounded channel"
         );
+        registry.retry_overflow();
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd }) if cwd == "/proj/a"));
+        registry.retry_overflow();
+        assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd }) if cwd == "/proj/b"));
+        assert!(registry.overflow.lock().is_empty());
     }
 
     /// N rapid FS signals collapse into exactly ONE `IndexCorpus` job.
@@ -730,9 +932,10 @@ mod tests {
             Ok(Job::Compact { cwd: c }) => assert_eq!(c, cwd),
             other => panic!("expected one-time Compact, got {other:?}"),
         }
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Health { cwd: c }) if c == cwd));
         assert!(
             job_rx.try_recv().is_err(),
-            "first open enqueues exactly IndexCorpus + Compact"
+            "first open enqueues exactly IndexCorpus + Compact + Health"
         );
 
         // Second open of the same project: same engine handle, no new jobs.
@@ -759,6 +962,7 @@ mod tests {
         registry.request_reindex(&cwd);
         assert!(matches!(job_rx.try_recv(), Ok(Job::IndexCorpus { cwd: c }) if c == cwd));
         assert!(matches!(job_rx.try_recv(), Ok(Job::Compact { cwd: c }) if c == cwd));
+        assert!(matches!(job_rx.try_recv(), Ok(Job::Health { cwd: c }) if c == cwd));
         assert!(
             job_rx.try_recv().is_err(),
             "no second IndexCorpus on first open"

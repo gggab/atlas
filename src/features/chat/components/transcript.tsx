@@ -127,6 +127,7 @@ export interface TranscriptHandle {
 }
 
 interface TranscriptProps {
+  footer?: React.ReactNode;
   onRememberMessage?: (messageId: string) => void;
   tabId: string;
   acpSessionId: string;
@@ -273,6 +274,7 @@ function StallNotice({
 export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function Transcript(
   {
     tabId,
+    footer,
     acpSessionId,
     messages,
     isStreaming,
@@ -973,6 +975,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
             </div>
           )}
           {rowViews}
+          {footer}
           {working && (
             <WorkingIndicator
               key={workingEpoch}

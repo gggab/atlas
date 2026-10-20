@@ -1,3 +1,10 @@
+import type {
+  MemoryRevision,
+  Provenance,
+  ReviewQueue,
+} from "@/features/memory/lib/shared-memory-api";
+import type { HealthStatus } from "@/features/memory/lib/use-memory-health";
+import type { SessionWrite } from "@/features/memory/lib/use-session-memory-writes";
 // The Memory tab: Graph / Tree, Policy and Shared.
 //
 // Every one of its three views is gated on something expensive that a browser
@@ -1206,6 +1213,8 @@ function seededEntries(): MemoryEntry[] {
       const byAgent = !imported && source !== "user" && source !== "extractor";
       return {
         id: index + 1,
+        revision: 2,
+        state: source === "extractor" || imported ? "candidate" : "active",
         kind,
         key,
         content,
@@ -1289,6 +1298,18 @@ export interface MemoryResponses {
   memory_claude_import_preview: ClaudeImportPreview;
   memory_claude_import_confirm: number;
   memory_indexer_close_project: Unread;
+  memory_health_status: HealthStatus;
+  memory_entry_history: MemoryRevision[];
+  memory_entry_provenance: Provenance[];
+  memory_session_writes: SessionWrite[];
+  memory_review: ReviewQueue;
+  memory_promote: boolean;
+  memory_archive: number;
+  memory_merge: number;
+  memory_resolve_conflict: boolean;
+  memory_purge_entry: boolean;
+  memory_feedback_entry: MemoryEntry | null;
+  memory_accept_history: boolean;
 }
 
 export const memoryHandlers: TypedHandlers<MemoryResponses> = {
@@ -1428,6 +1449,8 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
       const now = Date.now();
       entries.push({
         id: nextId++,
+        revision: 1,
+        state: "candidate",
         kind: line.kind,
         key: line.file.replace(/\.md$/, ""),
         content: line.content,
@@ -1435,7 +1458,7 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
         source: "import:claude",
         agent: "",
         sessionId: "",
-        confidence: 0.7,
+        confidence: 0.3,
         createdAt: now,
         updatedAt: now,
         lastUsedAt: null,
@@ -1448,6 +1471,89 @@ export const memoryHandlers: TypedHandlers<MemoryResponses> = {
     return lines.length;
   },
 
+  memory_health_status: () => ({
+    checkedAt: Date.now(),
+    record: { checkedAt: Date.now(), found: [], repaired: [], deferred: [] },
+    corpus: { rebuiltVectors: 0, rebuiltFts: false, recreated: false },
+    restored: null,
+  }),
+  memory_entry_provenance: () => [],
+  memory_entry_history: ({ projectPath, id }) => {
+    const e = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    return e
+      ? [
+          {
+            rev: 1,
+            op: "insert",
+            content: "Earlier project convention",
+            agent: e.agent,
+            state: "active",
+            at: e.createdAt,
+          },
+          {
+            rev: 2,
+            op: "edit",
+            content: e.content,
+            agent: e.agent,
+            state: e.state,
+            at: e.updatedAt,
+          },
+        ]
+      : [];
+  },
+  memory_review: ({ projectPath }) => ({
+    candidates: entriesFor(String(projectPath)).filter((e) => e.state === "candidate"),
+    merges: [],
+    conflicts: [],
+  }),
+  memory_promote: ({ projectPath, id }) => {
+    const e = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!e) return false;
+    e.state = "active";
+    e.confidence = Math.max(0.7, e.confidence);
+    e.revision++;
+    return true;
+  },
+  memory_archive: ({ projectPath, ids }) => {
+    const rows = entriesFor(String(projectPath)).filter((e) => (ids as number[]).includes(e.id));
+    rows.forEach((e) => {
+      e.state = "archived";
+      e.revision++;
+    });
+    return rows.length;
+  },
+  memory_merge: () => 0,
+  memory_resolve_conflict: () => true,
+  memory_accept_history: () => true,
+  memory_purge_entry: ({ projectPath, id }) => {
+    const key = String(projectPath),
+      rows = entriesFor(key);
+    entryLog.set(
+      key,
+      rows.filter((e) => e.id !== Number(id)),
+    );
+    return true;
+  },
+  memory_feedback_entry: ({ projectPath, id, verdict }) => {
+    const e = entriesFor(String(projectPath)).find((e) => e.id === Number(id));
+    if (!e) return null;
+    e.state = verdict === "wrong" ? "archived" : verdict === "stale" ? "candidate" : "active";
+    e.revision++;
+    return e;
+  },
+  memory_session_writes: ({ projectPath, sessionId }) =>
+    entriesFor(String(projectPath))
+      .filter((e) => e.sessionId === sessionId)
+      .map((e) => ({
+        id: e.id,
+        rev: e.revision,
+        op: "insert",
+        kind: e.kind,
+        content: e.content,
+        state: e.state,
+        at: e.updatedAt,
+        live: e.state !== "archived",
+      })),
   // ── housekeeping ─────────────────────────────────────────────────────────
   memory_indexer_close_project: (): null => null,
 };

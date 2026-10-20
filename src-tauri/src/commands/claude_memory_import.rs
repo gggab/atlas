@@ -14,7 +14,7 @@
 //!   every mapped line with its kind and whether it would be new. It writes
 //!   nothing — cancelling the dialog is simply never calling confirm.
 //! - **Confirm** (`memory_claude_import_confirm`) re-reads the files and writes
-//!   the new lines the user kept (by preview id) with confidence 0.7 and
+//!   the new lines the user kept (by preview id) with confidence 0.3 and
 //!   source `import:claude`, then records the import of each source.
 //!
 //! **Mapping.** One memory file is one line: its `description` when it has
@@ -57,7 +57,7 @@ pub(crate) const CLAUDE_IMPORT_SOURCE: &str = "import:claude";
 
 /// Confidence of every imported entry: another program's memory, kept by the
 /// user's consent but not confirmed by them line by line.
-pub(crate) const CLAUDE_IMPORT_CONFIDENCE: f64 = 0.7;
+pub(crate) const CLAUDE_IMPORT_CONFIDENCE: f64 = 0.3;
 
 /// The envelope tag Atlas wraps injected context in. Stripped on read; a line
 /// that still carries it (a malformed envelope) is not imported.
@@ -307,7 +307,7 @@ impl SharedMemoryStore {
     }
 
     /// Import the new lines of `dirs` whose preview id is in `ids`: confidence
-    /// 0.7, source `import:claude`, through the record's usual write (redacted,
+    /// 0.3, source `import:claude`, through the record's usual write (redacted,
     /// hash identity, near-duplicate merge). Records every source read as
     /// imported — lines the user left unticked are not offered again — and
     /// announces the change. Returns how many lines were stored anew (a line
@@ -327,7 +327,7 @@ impl SharedMemoryStore {
         let now = self.now();
         let wanted: HashSet<&str> = ids.iter().map(String::as_str).collect();
         let mut written = 0;
-        let mut kinds: Vec<&str> = Vec::new();
+        let mut changed_kinds = HashSet::new();
         for line in preview
             .lines
             .into_iter()
@@ -335,32 +335,34 @@ impl SharedMemoryStore {
         {
             let kind = line.kind;
             let outcome = store
-                .upsert_outcome(NewEntry {
-                    kind,
-                    key: String::new(),
-                    content: line.content,
-                    source: CLAUDE_IMPORT_SOURCE.to_string(),
-                    agent: String::new(),
-                    session_id: String::new(),
-                    confidence: CLAUDE_IMPORT_CONFIDENCE,
-                    at: now,
-                })
+                .upsert_imported(
+                    NewEntry {
+                        kind,
+                        key: String::new(),
+                        content: line.content,
+                        source: CLAUDE_IMPORT_SOURCE.into(),
+                        agent: String::new(),
+                        session_id: String::new(),
+                        confidence: CLAUDE_IMPORT_CONFIDENCE,
+                        at: now,
+                    },
+                    &serde_json::json!({ "file": line.file, "claudeType": line.claude_type })
+                        .to_string(),
+                )
                 .map_err(err)?
                 .outcome;
+            changed_kinds.insert(kind.as_str());
             // A near-duplicate of a stored memory merges into it: nothing new.
             if outcome == WriteOutcome::Merged {
                 continue;
             }
             written += 1;
-            if !kinds.contains(&kind.as_str()) {
-                kinds.push(kind.as_str());
-            }
         }
         for dir in dirs {
             store.mark_imported(&source_name(dir), now).map_err(err)?;
         }
-        if !kinds.is_empty() {
-            self.announce(&store, &kinds);
+        if !changed_kinds.is_empty() {
+            self.announce(&store, &changed_kinds.into_iter().collect::<Vec<_>>());
         }
         Ok(written)
     }
@@ -611,9 +613,10 @@ mod tests {
         let entries = store.entries(&p);
         assert_eq!(entries.len(), 4);
         for e in &entries {
+            assert_eq!(e.state, "candidate", "imports await review");
             assert_eq!(
                 (e.source.as_str(), e.agent.as_str(), e.confidence),
-                ("import:claude", "", 0.7),
+                ("import:claude", "", 0.3),
                 "{e:?}"
             );
         }

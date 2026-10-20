@@ -34,6 +34,8 @@ import {
   X,
   Loader2,
   Download,
+  Eraser,
+  Inbox,
 } from "lucide-react";
 import { Dialog } from "@base-ui/react/dialog";
 import { DialogOverlay } from "@/ui/dialog";
@@ -44,13 +46,18 @@ import { AgentMark } from "@/components/agent-mark";
 import { agentMetaForSource, pluginIdForSource } from "../lib/memory-agent";
 import { timeAgo } from "@/lib/time-ago";
 import { cn } from "@/lib/utils";
+import { MemoryReviewView } from "./memory-review-view";
 import { HintGroup, HintItem } from "@/ui/hint-group";
 import { useSharedMemoryStore } from "../stores/shared-memory-store";
+import { useMemoryStore } from "../stores/memory-store";
+import { sharedMemory } from "../lib/shared-memory-api";
 import type {
   ClaudeImportLine,
   ClaudeImportPreview,
   MemoryEntry,
+  MemoryRevision,
   MemoryEvent,
+  Provenance,
 } from "../lib/shared-memory-api";
 
 interface Props {
@@ -58,7 +65,7 @@ interface Props {
   className?: string;
 }
 
-type Tab = "events" | "plans" | "memories";
+type Tab = "events" | "plans" | "memories" | "review";
 
 /* ── Column tracks (sticky header + rows line up; min-width → horizontal scroll) ── */
 const EVENT_COL = {
@@ -150,6 +157,16 @@ export function SharedMemoryView({ projectPath, className }: Props) {
   const [query, setQuery] = useState("");
   const [importing, setImporting] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const clearConfirmed = async () => {
+    setConfirmClear(false);
+    try {
+      await clear();
+    } catch (err) {
+      toast.error(
+        `Couldn't clear shared memory: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  };
 
   useEffect(() => {
     if (projectPath) void load(projectPath);
@@ -157,6 +174,17 @@ export function SharedMemoryView({ projectPath, className }: Props) {
 
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [kindFilter, setKindFilter] = useState<string>("");
+
+  // Asked to open an entry ("Memory updated" card): show the Memories table
+  // unfiltered, so the row is there for the table to expand.
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  useEffect(() => {
+    if (focusEntryId == null) return;
+    setTab("memories");
+    setQuery("");
+    setAgentFilter("");
+    setKindFilter("");
+  }, [focusEntryId]);
 
   const plans = useMemo(() => events.filter((e) => e.kind === "plan_set"), [events]);
 
@@ -238,6 +266,13 @@ export function SharedMemoryView({ projectPath, className }: Props) {
             label="Memories"
             count={entries.length}
           />
+          <SegBtn
+            active={tab === "review"}
+            onClick={() => setTab("review")}
+            icon={<Inbox size={11} />}
+            label="Review"
+            count={0}
+          />
         </div>
 
         {/* Column filters */}
@@ -295,12 +330,14 @@ export function SharedMemoryView({ projectPath, className }: Props) {
         title="Clear shared memory?"
         body="Every agent on this project loses every plan, decision, fact, failure and architecture note recorded here. This can't be undone."
         confirmLabel="Clear"
-        onConfirm={() => void clear()}
+        onConfirm={() => void clearConfirmed()}
         onOpenChange={setConfirmClear}
       />
 
       {/* Body */}
-      {!loaded ? (
+      {tab === "review" ? (
+        <MemoryReviewView projectPath={projectPath} />
+      ) : !loaded ? (
         <div className="p-3">
           <PanelSkeleton rows={8} />
         </div>
@@ -533,10 +570,23 @@ function PlanRow({
 
 function MemoriesTable({ rows }: { rows: MemoryEntry[] }) {
   const [expanded, setExpanded] = useState<number | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const focusEntryId = useMemoryStore.use.focusEntryId();
+  const { clearFocusEntry } = useMemoryStore.use.actions();
+  // Expand the entry asked for once its row is listed, then consume the ask.
+  useEffect(() => {
+    if (focusEntryId == null || !rows.some((r) => r.id === focusEntryId)) return;
+    setExpanded(focusEntryId);
+    clearFocusEntry();
+    scroller.current
+      ?.querySelector(`[data-entry-id="${focusEntryId}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [focusEntryId, rows, clearFocusEntry]);
   return (
-    <div className="flex-1 min-h-0 overflow-auto hide-scrollbar">
+    <div ref={scroller} className="flex-1 min-h-0 overflow-auto hide-scrollbar">
       <div style={{ minWidth: ENTRY_MIN_W }}>
         <HeaderRow>
+          <span className="w-6 shrink-0" />
           <span className={ENTRY_COL.time}>Updated</span>
           <span className={ENTRY_COL.kind}>Kind</span>
           <span className={ENTRY_COL.source}>Source</span>
@@ -572,54 +622,57 @@ function EntryRow({
   onToggle: () => void;
 }) {
   return (
-    <div className="border-b border-[var(--atlas-border-subtle)]">
-      <button
-        onClick={onToggle}
-        className={cn(
-          "w-full flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
-          expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
-        )}
-      >
-        <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
-          {eventTime(e.updatedAt)}
-        </span>
-        <span className={ENTRY_COL.kind}>
-          <KindChip kind={e.kind} />
-        </span>
-        <span className={cn(ENTRY_COL.source, "min-w-0 pr-2")}>
-          <SourceChip source={e.source} />
-        </span>
-        <span className={cn(ENTRY_COL.agent, "min-w-0")}>
-          {entryAgent(e.agent) ? (
-            <AgentTag agent={e.agent} />
-          ) : (
-            <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
-              {e.agent || "—"}
-            </span>
-          )}
-        </span>
-        <span
+    <div data-entry-id={e.id} className="border-b border-[var(--atlas-border-subtle)]">
+      <div className="flex items-center">
+        <button
+          onClick={onToggle}
           className={cn(
-            ENTRY_COL.confidence,
-            "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            "flex-1 min-w-0 flex items-center h-[40px] px-3 text-left transition-colors cursor-pointer",
+            expanded ? "bg-[var(--card)]/50" : "hover:bg-[var(--atlas-element-hover)]",
           )}
         >
-          {confidenceLabel(e.confidence)}
-        </span>
-        <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
-          <span className="block truncate text-sm text-[var(--secondary-foreground)]">
-            {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+          <span className={cn(ENTRY_COL.time, "text-2xs text-[var(--muted-foreground)]")}>
+            {eventTime(e.updatedAt)}
           </span>
-        </span>
-        <span
-          className={cn(
-            ENTRY_COL.chevron,
-            "flex items-center justify-end text-[var(--muted-foreground)]",
-          )}
-        >
-          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        </span>
-      </button>
+          <span className={ENTRY_COL.kind}>
+            <KindChip kind={e.kind} />
+          </span>
+          <span className={cn(ENTRY_COL.source, "min-w-0 pr-2 flex items-center gap-1")}>
+            <SourceChip source={e.source} />
+            {e.state && e.state !== "active" && <StateChip state={e.state} />}
+          </span>
+          <span className={cn(ENTRY_COL.agent, "min-w-0")}>
+            {entryAgent(e.agent) ? (
+              <AgentTag agent={e.agent} />
+            ) : (
+              <span className="font-mono text-2xs uppercase tracking-wider text-[var(--muted-foreground)]">
+                {e.agent || "—"}
+              </span>
+            )}
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.confidence,
+              "tabular-nums text-2xs text-[var(--muted-foreground)]",
+            )}
+          >
+            {confidenceLabel(e.confidence)}
+          </span>
+          <span className={cn(ENTRY_COL.content, "min-w-0 pr-3")}>
+            <span className="block truncate text-sm text-[var(--secondary-foreground)]">
+              {e.content || <span className="text-[var(--atlas-text-disabled)]">—</span>}
+            </span>
+          </span>
+          <span
+            className={cn(
+              ENTRY_COL.chevron,
+              "flex items-center justify-end text-[var(--muted-foreground)]",
+            )}
+          >
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
+        </button>
+      </div>
       {expanded && <EntryDetail entry={e} />}
     </div>
   );
@@ -628,11 +681,58 @@ function EntryRow({
 /** An expanded entry: its full provenance, its content, and the edit and
  *  forget actions. Editing follows the Policy view: a draft, save, revert. */
 function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
-  const { editEntry, forgetEntry } = useSharedMemoryStore.use.actions();
+  const { editEntry, forgetEntry, purgeEntry, refresh } = useSharedMemoryStore.use.actions();
+  const projectPath = useSharedMemoryStore.use.projectPath();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(e.content);
   const [saving, setSaving] = useState(false);
   const [confirmForget, setConfirmForget] = useState(false);
+  const [confirmErase, setConfirmErase] = useState(false);
+  const [provenance, setProvenance] = useState<Provenance[]>([]);
+  const [provenanceError, setProvenanceError] = useState<string | null>(null);
+  const [history, setHistory] = useState<MemoryRevision[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [rating, setRating] = useState(false);
+  const rate = async (verdict: "useful" | "wrong" | "stale") => {
+    if (!projectPath || rating) return;
+    setRating(true);
+    try {
+      await sharedMemory.feedback(projectPath, e.id, verdict);
+      await refresh();
+    } catch (error) {
+      toast.error(`Couldn't rate memory: ${String(error)}`);
+    } finally {
+      setRating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!projectPath) return;
+    let alive = true;
+    setHistory([]);
+    setHistoryError(null);
+    setProvenance([]);
+    setProvenanceError(null);
+    sharedMemory
+      .history(projectPath, e.id)
+      .then((revisions) => {
+        if (alive) setHistory(revisions ?? []);
+      })
+      .catch((error) => {
+        if (alive) setHistoryError(String(error));
+      });
+    sharedMemory
+      .provenance(projectPath, e.id)
+      .then((p) => {
+        if (alive) setProvenance(p ?? []);
+      })
+      .catch((error) => {
+        if (alive) setProvenanceError(String(error));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectPath, e.id, e.revision]);
   const dirty = draft.trim() !== e.content.trim() && draft.trim().length > 0;
 
   useEffect(() => {
@@ -665,6 +765,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
       toast.success("Memory forgotten");
     } catch (err) {
       toast.error(`Couldn't forget: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const erase = async () => {
+    setConfirmErase(false);
+    try {
+      await purgeEntry(e.id);
+      toast.success("Memory erased with its history");
+    } catch (err) {
+      toast.error(`Couldn't erase: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -702,6 +812,9 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
               <IconButton label="Forget memory" onClick={() => setConfirmForget(true)}>
                 <Trash2 size={12} />
               </IconButton>
+              <IconButton label="Erase with history" onClick={() => setConfirmErase(true)}>
+                <Eraser size={12} />
+              </IconButton>
             </>
           )}
         </div>
@@ -734,6 +847,51 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
           </pre>
         </div>
       )}
+      {(history.length > 0 || historyError) && (
+        <details className="text-xs text-[var(--muted-foreground)]">
+          <summary className="cursor-pointer">Revision history</summary>
+          {historyError ? (
+            <p role="alert">Couldn't load history: {historyError}</p>
+          ) : (
+            history
+              .slice()
+              .reverse()
+              .map((revision) => (
+                <div key={revision.rev} className="mt-2 border-l border-[var(--border)] pl-2">
+                  <p>
+                    #{revision.rev} · {revision.op} · {revision.agent} · {eventTime(revision.at)}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words">{revision.content}</p>
+                </div>
+              ))
+          )}
+        </details>
+      )}
+      <div
+        className="flex gap-3 text-xs text-[var(--muted-foreground)]"
+        aria-label="Memory feedback"
+      >
+        {(["useful", "wrong", "stale"] as const).map((verdict) => (
+          <button
+            key={verdict}
+            disabled={rating}
+            onClick={() => void rate(verdict)}
+            className="underline disabled:opacity-50"
+          >
+            {verdict === "useful" ? "Useful" : verdict === "wrong" ? "Wrong" : "Stale"}
+          </button>
+        ))}
+      </div>
+      {provenanceError && <p role="alert">Couldn't load provenance: {provenanceError}</p>}
+      {provenance.length > 0 && (
+        <div className="space-y-0.5">
+          {provenance.map((p, i) => (
+            <p key={`${p.source}-${i}`} className="text-xs text-[var(--muted-foreground)]">
+              {provenanceLine(p)}
+            </p>
+          ))}
+        </div>
+      )}
       <FileTreeConfirmDelete
         open={confirmForget}
         name={e.content}
@@ -743,6 +901,16 @@ function EntryDetail({ entry: e }: { entry: MemoryEntry }) {
         confirmLabel="Forget"
         onConfirm={() => void forget()}
         onOpenChange={setConfirmForget}
+      />
+      <FileTreeConfirmDelete
+        open={confirmErase}
+        name={e.content}
+        isDir={false}
+        title="Erase this memory and its history?"
+        body="It is forgotten, and every earlier wording is overwritten on disk. Use this for a secret that slipped into memory. This can't be undone. Recorded sessions in the Timeline keep their own copy of the conversation; this does not change them."
+        confirmLabel="Erase"
+        onConfirm={() => void erase()}
+        onOpenChange={setConfirmErase}
       />
     </div>
   );
@@ -847,7 +1015,7 @@ function ImportClaudeMemoryModal({
           <p className="px-4 pt-3 text-xs leading-relaxed text-muted-foreground">
             {preview?.alreadyImported
               ? "Already imported: Claude's memory for this project was brought in before, so there is nothing new to import."
-              : "Bring the memories Claude Code kept for this project into shared memory, so every agent sees them. Imported lines are marked as from Claude, at 70% confidence."}
+              : "Bring the memories Claude Code kept for this project into shared memory, as unconfirmed candidates. Review and approve them before they enter an Agent briefing."}
           </p>
 
           <div className="flex-1 overflow-auto hide-scrollbar px-2 py-2">
@@ -1115,6 +1283,26 @@ function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex max-w-full items-center rounded bg-[var(--card)] px-1.5 py-0.5 text-2xs text-[var(--muted-foreground)]">
       <span className="truncate">{children}</span>
+    </span>
+  );
+}
+
+/** "Learned in “title” · agent · date → sha", or the bare source. */
+export function provenanceLine(p: Provenance): string {
+  const date = p.added ?? "";
+  if (p.title) {
+    const commit = p.commits[0] ? ` → ${p.commits[0].slice(0, 7)}` : "";
+    return `Learned in “${p.title}” · ${p.agent} · ${date}${commit}`;
+  }
+  if (p.source === "atlas-user") return `Written by you · ${date}`;
+  return `From ${p.source} · ${date}`;
+}
+
+/** A candidate or archived entry's state, beside its source. */
+function StateChip({ state }: { state: string }) {
+  return (
+    <span className="text-3xs uppercase tracking-wide text-[var(--muted-foreground)] border border-[var(--border)] rounded px-1 py-px">
+      {state}
     </span>
   );
 }

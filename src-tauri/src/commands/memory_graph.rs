@@ -188,7 +188,7 @@ pub async fn memory_index_build(
             .map_err(|e| format!("index task: {e}"))??;
 
     if !fresh.is_empty() {
-        let engine = registry.engine_for(&project_path);
+        let engine = registry.try_engine_for(&project_path)?;
         let mut guard = engine.write().await;
         // A model switch since the lookup leaves this batch in the old space;
         // the indexer re-embeds everything after its reset instead.
@@ -372,7 +372,7 @@ pub async fn memory_index_query(
         .map_err(|e| format!("query task: {e}"))?
         .map_err(|e| format!("embed query: {e}"))?;
 
-    let engine = registry.engine_for(&project_path);
+    let engine = registry.try_engine_for(&project_path)?;
     let guard = engine.read().await;
     // Vectors from another embedding model live in a different space; until the
     // indexer rebuilds, there is nothing comparable to rank.

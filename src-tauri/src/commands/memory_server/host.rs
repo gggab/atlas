@@ -10,7 +10,7 @@ use tokio::sync::oneshot;
 
 use super::briefing::{SessionClocks, SessionReads};
 use super::tokens::{require_token, MemoryTokens};
-use super::tools::{BootstrapSource, IndexEvict, IndexSearch, MemoryTools};
+use super::tools::{BootstrapSource, CitationCheck, IndexEvict, IndexSearch, MemoryTools};
 use super::MCP_PATH;
 use crate::commands::shared_memory::SharedMemoryStore;
 
@@ -31,6 +31,8 @@ pub struct Sources {
     /// Drop one document from the index now (`memory_forget`). Without it a
     /// forgotten entry's text stays retrievable until the next corpus pass.
     pub evict: Option<IndexEvict>,
+    pub capture: crate::commands::memory_capture::CaptureReader,
+    pub check: Option<CitationCheck>,
 }
 
 /// The running server. Dropping it (or [`shutdown`](Self::shutdown)) stops it.

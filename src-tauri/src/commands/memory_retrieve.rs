@@ -78,12 +78,14 @@ async fn retrieve_engine(
         return Vec::new();
     }
     let registry = app.state::<Arc<MemoryRegistry>>();
-    // Shared on-device provider (loaded once, reused by the indexer). Absent until
-    // the MiniLM model is downloaded → nothing to retrieve, skip silently.
-    let Some(provider) = registry.provider(app).await else {
-        return Vec::new();
+    let provider = registry.provider(app).await;
+    let engine = match registry.try_engine_for(project_path) {
+        Ok(engine) => engine,
+        Err(error) => {
+            tracing::warn!(target: "atlas::memory", "memory index unavailable: {error}");
+            return Vec::new();
+        }
     };
-    let engine = registry.engine_for(project_path);
     // try_read, never read().await: the indexer holds the WRITE lock for the
     // whole of a re-embed pass, and a big working-tree churn keeps it busy for
     // minutes. Queueing a tool call behind indexing turned "agent is thinking"
@@ -96,7 +98,16 @@ async fn retrieve_engine(
         );
         return Vec::new();
     };
-    let docs = guard.retrieve(query, top_k, &provider).await;
+    let docs = match provider {
+        Some(provider) => guard.retrieve(query, top_k, &provider).await,
+        None => match guard.retrieve_lexical(query, top_k) {
+            Ok(docs) => docs,
+            Err(error) => {
+                tracing::warn!(target: "atlas::memory", "lexical memory retrieval failed: {error:#}");
+                Vec::new()
+            }
+        },
+    };
     drop(guard);
 
     docs.into_iter()
@@ -127,7 +138,13 @@ const EVICT_LOCK_TIMEOUT_SECS: u64 = 2;
 /// Returns whether the document was actually removed.
 pub async fn evict_doc(app: &AppHandle, project_path: &str, doc_id: &str) -> bool {
     let registry = app.state::<Arc<MemoryRegistry>>();
-    let engine = registry.engine_for(project_path);
+    let engine = match registry.try_engine_for(project_path) {
+        Ok(engine) => engine,
+        Err(error) => {
+            tracing::warn!(target: "atlas::memory", "memory index eviction failed: {error}");
+            return false;
+        }
+    };
     let Ok(mut guard) =
         tokio::time::timeout(Duration::from_secs(EVICT_LOCK_TIMEOUT_SECS), engine.write()).await
     else {

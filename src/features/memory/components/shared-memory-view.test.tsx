@@ -116,6 +116,47 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+it("reports a provenance read failure in the expanded entry", async () => {
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (cmd: string, args: Record<string, unknown>) => {
+    if (cmd === "memory_entry_provenance") throw new Error("record unavailable");
+    return base(cmd, args);
+  });
+  const user = await openMemories();
+  await user.click(await screen.findByText("Mocking the DB hid a migration bug"));
+  expect((await screen.findByRole("alert")).textContent).toContain("record unavailable");
+});
+
+it("shows earlier revision contents and sends explicit feedback", async () => {
+  const base = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (cmd: string, ...args: unknown[]) => {
+    if (cmd === "memory_entry_history")
+      return [
+        {
+          rev: 1,
+          op: "insert",
+          content: "An earlier wording",
+          agent: "codex",
+          state: "active",
+          at: 1,
+        },
+      ];
+    return base(cmd, ...args);
+  });
+  const user = await openMemories();
+  await user.click(
+    await screen.findByRole("button", { name: /Mocking the DB hid a migration bug/ }),
+  );
+  await user.click(await screen.findByText("Revision history"));
+  expect(await screen.findByText("An earlier wording")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Wrong" }));
+  expect(invoke).toHaveBeenCalledWith("memory_feedback_entry", {
+    projectPath: "/repo",
+    id: 1,
+    verdict: "wrong",
+  });
+});
+
 async function openMemories() {
   const user = userEvent.setup();
   render(<SharedMemoryView projectPath="/repo" />);

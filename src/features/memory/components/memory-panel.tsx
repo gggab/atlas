@@ -1,4 +1,7 @@
 import { Share2, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { FileTreeConfirmDelete } from "@/features/explorer/components/file-tree-confirm-delete";
 import { cn } from "@/lib/utils";
 import { MemoryGraphView } from "./memory-graph-view";
 import { MemoryPolicyView } from "./memory-policy-view";
@@ -6,6 +9,8 @@ import { MemorySharingControls } from "./memory-sharing-controls";
 import { SharedMemoryView } from "./shared-memory-view";
 import { useAppStore } from "@/features/app/stores/app-store";
 import { useMemoryStore } from "../stores/memory-store";
+import { chainBroken, healthLine, useMemoryHealth } from "../lib/use-memory-health";
+import { sharedMemory } from "../lib/shared-memory-api";
 
 // ── Panel shell ─────────────────────────────────────────────────────────────
 //
@@ -31,6 +36,9 @@ export function MemoryPanel() {
   const projectPath = useAppStore.use.currentProject()?.path ?? null;
   const sub = useMemoryStore.use.subTab();
   const { setSubTab } = useMemoryStore.use.actions();
+  const health = useMemoryHealth(projectPath);
+  const healthStatus = healthLine(health);
+  const [confirmHistory, setConfirmHistory] = useState(false);
 
   return (
     <div className="h-full flex flex-col bg-[var(--background)]">
@@ -62,13 +70,42 @@ export function MemoryPanel() {
         </div>
       </div>
 
+      {healthStatus && (
+        <div
+          role="status"
+          className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1 text-xs text-[var(--muted-foreground)]"
+        >
+          <span>{healthStatus}</span>
+          {chainBroken(health) && (
+            <button className="underline" onClick={() => setConfirmHistory(true)}>
+              Review history change
+            </button>
+          )}
+        </div>
+      )}
+      <FileTreeConfirmDelete
+        open={confirmHistory}
+        name="Memory history"
+        isDir={false}
+        title="Trust externally edited memory history?"
+        body="Confirm only if you made or reviewed these changes. The saved history will become the source used to rebuild current memories."
+        confirmLabel="Trust changes"
+        onConfirm={() => {
+          setConfirmHistory(false);
+          if (projectPath)
+            void sharedMemory
+              .acceptHistory(projectPath)
+              .catch((e) => toast.error(`Couldn't accept memory history: ${String(e)}`));
+        }}
+        onOpenChange={setConfirmHistory}
+      />
       <div className="flex-1 min-h-0">
         {sub === "graph" ? (
           <MemoryGraphView />
         ) : sub === "policy" ? (
           <MemoryPolicyView />
         ) : projectPath ? (
-          <SharedMemoryView projectPath={projectPath} />
+          <SharedMemoryView key={projectPath} projectPath={projectPath} />
         ) : (
           <Centered>
             <p className="text-sm text-[var(--muted-foreground)]">

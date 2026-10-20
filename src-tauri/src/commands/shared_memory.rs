@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use atlas_memory::citation::Citation;
 use atlas_memory::record::{
     self, Embedder, Entry, EntryKind, NewEntry, NewEvent, Origin, RecordStore, Remembered,
 };
@@ -176,6 +177,38 @@ pub struct MemoryEntry {
     pub updated_at: i64,
     pub last_used_at: Option<i64>,
     pub uses: u32,
+    /// The revision the entry currently is.
+    pub revision: i64,
+    /// `active`, `candidate` (captured, not confirmed) or `archived`.
+    pub state: String,
+}
+
+/// At most this many candidates and merge proposals in the review queue.
+const REVIEW_MAX: usize = 200;
+
+/// Near-duplicates the user may merge into `keep`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeProposalView {
+    pub keep: MemoryEntry,
+    pub drop: Vec<MemoryEntry>,
+}
+
+/// Two current memories that disagree.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictPair {
+    pub a: MemoryEntry,
+    pub b: MemoryEntry,
+}
+
+/// What waits for the user in the Memory panel's Review tab (M4).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewQueue {
+    pub candidates: Vec<MemoryEntry>,
+    pub merges: Vec<MergeProposalView>,
+    pub conflicts: Vec<ConflictPair>,
 }
 
 impl From<Entry> for MemoryEntry {
@@ -194,8 +227,19 @@ impl From<Entry> for MemoryEntry {
             updated_at: e.updated_at,
             last_used_at: e.last_used_at,
             uses: e.uses,
+            revision: e.rev,
+            state: e.state.as_str().to_string(),
         }
     }
+}
+
+/// Only active entries reach agents and the summary view: an archived one
+/// is out of every briefing, and a candidate is not confirmed.
+fn active(entries: Vec<Entry>) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter(|e| e.state == record::State::Active)
+        .collect()
 }
 
 fn fact_view(e: Entry) -> FactView {
@@ -206,11 +250,12 @@ fn fact_view(e: Entry) -> FactView {
     }
 }
 
-/// Build the summary view from the record. Only entries folded from the event
-/// log are shown here, as before: memdir imports (and, later, direct writes)
-/// live in the same record but reach agents through their own paths.
+/// Build the summary view from the record. Only active entries folded from
+/// the event log are shown here, as before: memdir imports (and, later,
+/// direct writes) live in the same record but reach agents through their own
+/// paths.
 fn read_state(store: &RecordStore) -> anyhow::Result<SharedState> {
-    let list = |kind, cap| store.list(kind, cap, Origin::EventLog);
+    let list = |kind, cap| store.list(kind, cap, Origin::EventLog).map(active);
     let (last_seq, updated_at) = store.last_event()?.unwrap_or((0, 0));
     Ok(SharedState {
         last_seq,
@@ -329,7 +374,7 @@ fn opened() -> &'static Mutex<HashMap<String, Arc<RecordStore>>> {
     OPENED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The durable entries the summary view shows (decisions, failures,
+/// The active durable entries the summary view shows (decisions, failures,
 /// architecture, facts — in that order, each capped as displayed), plus the
 /// record's last-update time. Feeds the retrieval corpus; ids are entry ids.
 pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
@@ -344,7 +389,9 @@ pub fn durable_entries(project_path: &str) -> (i64, Vec<Entry>) {
         (EntryKind::Architecture, record::CAP_ARCHITECTURE),
         (EntryKind::Fact, record::CAP_FACTS),
     ] {
-        out.extend(store.list(kind, cap, Origin::EventLog).unwrap_or_default());
+        out.extend(active(
+            store.list(kind, cap, Origin::EventLog).unwrap_or_default(),
+        ));
     }
     (updated_at, out)
 }
@@ -590,9 +637,21 @@ impl SharedMemoryStore {
     pub fn session_ended(&self, session_id: &str) -> Option<SessionMeta> {
         let meta = self.inner.live.lock().remove(session_id)?;
         let written = store_for(&meta.cwd).and_then(|store| {
+            let now = (self.inner.clock)();
             store
-                .session_ended(session_id, &meta.agent, (self.inner.clock)())
+                .session_ended(session_id, &meta.agent, now)
                 .map_err(|e| format!("{e:#}"))?;
+            // The note the next agent is handed (M4). An empty session
+            // leaves none, unless the recorder saw it work.
+            match atlas_memory::handoff::build_handoff(&store, session_id, &meta.agent, now) {
+                Ok(note) if !note.is_empty() || recorded_work(&meta.cwd, session_id) => {
+                    store.record_episode(&note).map_err(|e| format!("{e:#}"))?;
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(target: "atlas::shared_memory", "handoff note not built: {e:#}");
+                }
+            }
             self.announce(&store, &[affected_kind(EventKind::SessionEnd)]);
             Ok(())
         });
@@ -655,12 +714,102 @@ impl SharedMemoryStore {
     }
 }
 
+/// Whether the session recorder saw `session_id` (run in `cwd`) do work:
+/// files written, tools failing, commits, or a turn left open. Decides only
+/// whether a handoff note is kept; the note stores none of it.
+fn recorded_work(cwd: &str, session_id: &str) -> bool {
+    let stores = super::memory_capture::CaptureReader::default().stores(cwd);
+    stores
+        .find(session_id)
+        .is_some_and(|found| !super::memory_capture::session_facts(&found).is_empty())
+}
+
 /// The provenance of every entry the extractor writes.
-#[cfg(test)]
-pub const EXTRACTOR_SOURCE: &str = "extractor";
+pub const EXTRACTOR_SOURCE: &str = record::EXTRACTOR_SOURCE;
 
 /// The provenance of every edit made from the Memory panel.
 pub const USER_SOURCE: &str = "user";
+
+/// How a durable write lands.
+#[derive(Debug, Clone)]
+enum How {
+    /// A captured line: upserted, not logged, last writer wins.
+    Candidate,
+    /// An imported line: as `Candidate`, with `note` (where it came from and
+    /// its own metadata, untrusted) kept on the revision as provenance.
+    Imported { note: String },
+    /// The extractor: logged, last writer wins.
+    Logged,
+    /// An agent's `memory_remember`: logged, and a keyed replace of another
+    /// writer's entry needs the revision it read. `evidence` is the code the
+    /// memory rests on, already read and hashed here.
+    Agent {
+        expected_revision: Option<i64>,
+        evidence: Vec<Citation>,
+    },
+}
+
+/// One code citation as an agent gives it to `memory_remember` (M3).
+#[derive(Debug, Clone, Deserialize)]
+pub struct EvidenceArg {
+    pub path: String,
+    /// `"12-30"` or `"12"`. Required: the symbol only finds them again later.
+    #[serde(default)]
+    pub lines: Option<String>,
+    #[serde(default)]
+    pub symbol: Option<String>,
+}
+
+/// The agent's cited lines as citations rooted at the scope root, hashed
+/// from disk now. A path is taken relative to the session's launch directory
+/// (`project_path`) and must land inside the scope root or one of its
+/// worktrees. A worktree's file is stored under its repository path (the
+/// path under the deepest worktree holding it) and hashed from the worktree
+/// the session runs in.
+fn citations_for(
+    store: &RecordStore,
+    project_path: &str,
+    evidence: &[EvidenceArg],
+) -> Result<Vec<Citation>, String> {
+    if evidence.len() > atlas_memory::citation::MAX_CITATIONS {
+        return Err(format!(
+            "at most {} citations per memory",
+            atlas_memory::citation::MAX_CITATIONS
+        ));
+    }
+    if evidence.is_empty() {
+        return Ok(Vec::new());
+    }
+    let root = dunce::canonicalize(store.root()).unwrap_or_else(|_| store.root().to_path_buf());
+    let worktrees = super::memory_capture::worktree_roots(&root);
+    evidence
+        .iter()
+        .map(|ev| {
+            let lines = ev
+                .lines
+                .as_deref()
+                .ok_or("give lines (\"12-30\"); the symbol is used to find them again later")?;
+            let bad = || format!("bad lines `{lines}`: give \"12-30\" or \"12\"");
+            let (a, b) = lines.split_once('-').unwrap_or((lines, lines));
+            let a = a.trim().parse::<u32>().map_err(|_| bad())?;
+            let b = b.trim().parse::<u32>().map_err(|_| bad())?;
+            let abs = dunce::canonicalize(Path::new(project_path).join(&ev.path))
+                .map_err(|_| format!("`{}` does not exist", ev.path))?;
+            let (tree, rel) = worktrees
+                .iter()
+                .filter_map(|w| abs.strip_prefix(w).ok().map(|rel| (w, rel)))
+                .min_by_key(|(_, rel)| rel.components().count())
+                .ok_or_else(|| format!("`{}` is outside the repository", ev.path))?;
+            atlas_memory::citation::cite(
+                &atlas_memory::citation::FileResolver::new(tree.as_path()),
+                &rel.to_string_lossy().replace('\\', "/"),
+                a,
+                b,
+                ev.symbol.clone().filter(|s| !s.trim().is_empty()),
+            )
+        })
+        .collect()
+}
 
 /// Who a write is attributed to: the agent and session a memory-server token
 /// belongs to, or the session the extractor distilled.
@@ -678,6 +827,7 @@ impl SharedMemoryStore {
     /// confidence 1.0, source = the agent, redacted, key-or-hash identity with
     /// near-duplicate merge, logged as an event so the Shared tab shows it.
     /// Working-memory kinds are refused — they are delta-captured only.
+    #[allow(clippy::too_many_arguments)]
     pub fn remember(
         &self,
         project_path: &str,
@@ -685,17 +835,20 @@ impl SharedMemoryStore {
         kind: EntryKind,
         content: &str,
         key: &str,
+        expected_revision: Option<i64>,
+        evidence: &[EvidenceArg],
     ) -> Result<Remembered, String> {
         if !kind.is_durable() {
             return Err(format!(
                 "`{}` is working memory, captured from the session automatically; \
-                 remember records only decision, fact, failure or architecture",
+                 remember records only decision, fact, failure, architecture or preference",
                 kind.as_str()
             ));
         }
         if content.trim().is_empty() {
             return Err("nothing to remember: content is empty".into());
         }
+        let evidence = citations_for(&*store_for(project_path)?, project_path, evidence)?;
         self.write_durable(
             project_path,
             NewEntry {
@@ -707,6 +860,10 @@ impl SharedMemoryStore {
                 session_id: writer.session_id.clone(),
                 confidence: 1.0,
                 at: 0,
+            },
+            How::Agent {
+                expected_revision,
+                evidence,
             },
         )
     }
@@ -746,17 +903,104 @@ impl SharedMemoryStore {
                 confidence: confidence.clamp(0.0, 1.0),
                 at: 0,
             },
+            How::Logged,
         )
     }
 
-    /// Write one durable entry through the record (stamped now) and announce it.
-    fn write_durable(&self, project_path: &str, mut entry: NewEntry) -> Result<Remembered, String> {
+    /// Record a line captured from an assistant's own words as a candidate:
+    /// source `capture`, low confidence, redacted, deduplicated, announced —
+    /// but not logged as an event, so it never shows as a trusted fact in the
+    /// Shared tab's state view or the briefing's index. An agent restating it
+    /// (`memory_remember`) or the user editing it promotes it.
+    pub fn record_candidate(
+        &self,
+        project_path: &str,
+        writer: &Writer,
+        kind: EntryKind,
+        content: &str,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() || content.trim().is_empty() {
+            return Err("a candidate is a non-empty durable memory".into());
+        }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: String::new(),
+                content: content.to_string(),
+                source: atlas_memory::record::CAPTURE_SOURCE.to_string(),
+                agent: writer.agent.clone(),
+                session_id: writer.session_id.clone(),
+                confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
+                at: 0,
+            },
+            How::Candidate,
+        )
+    }
+
+    /// Record a line imported from another tool's memory as a candidate:
+    /// `source` names the import (`import:amr`), low confidence, redacted,
+    /// deduplicated, announced, never briefed until confirmed. `note` is
+    /// untrusted provenance kept on the revision, never its writer.
+    pub fn record_import_candidate(
+        &self,
+        project_path: &str,
+        kind: EntryKind,
+        content: &str,
+        source: &str,
+        note: &str,
+    ) -> Result<Remembered, String> {
+        if !kind.is_durable() || content.trim().is_empty() {
+            return Err("an imported line is a non-empty durable memory".into());
+        }
+        self.write_durable(
+            project_path,
+            NewEntry {
+                kind,
+                key: String::new(),
+                content: content.to_string(),
+                source: source.to_string(),
+                agent: String::new(),
+                session_id: String::new(),
+                confidence: atlas_memory::record::CANDIDATE_CONFIDENCE,
+                at: 0,
+            },
+            How::Imported {
+                note: note.to_string(),
+            },
+        )
+    }
+
+    /// Write one durable entry through the record (stamped now) and announce
+    /// it, the way `how` says.
+    fn write_durable(
+        &self,
+        project_path: &str,
+        mut entry: NewEntry,
+        how: How,
+    ) -> Result<Remembered, String> {
         let store = store_for(project_path)?;
         self.ensure_project_file(project_path);
         let now = (self.inner.clock)();
         entry.at = now;
         let kind = entry.kind;
-        let remembered = store.remember(entry, now).map_err(|e| format!("{e:#}"))?;
+        let written = match how {
+            How::Candidate => store.upsert_outcome(entry),
+            How::Imported { note } => store.upsert_imported(entry, &note),
+            How::Logged => store.remember(entry, now),
+            How::Agent {
+                expected_revision,
+                evidence,
+            } => store.remember_guarded(entry, now, expected_revision, &evidence),
+        };
+        let remembered =
+            written.map_err(
+                |e| match e.downcast_ref::<atlas_memory::record::Conflict>() {
+                    // The agent reads this: it names the revision to pass.
+                    Some(conflict) => conflict.to_string(),
+                    None => format!("{e:#}"),
+                },
+            )?;
         self.announce(&store, &[kind.as_str()]);
         Ok(remembered)
     }
@@ -797,9 +1041,24 @@ impl SharedMemoryStore {
         kinds: &[EntryKind],
         limit: usize,
     ) -> Vec<Entry> {
+        self.search_hits(project_path, query, kinds, limit)
+            .into_iter()
+            .map(|h| h.entry)
+            .collect()
+    }
+
+    /// [`search_entries`](Self::search_entries) with the legs that found each
+    /// hit (`bm25`, `dense`, by rank).
+    pub fn search_hits(
+        &self,
+        project_path: &str,
+        query: &str,
+        kinds: &[EntryKind],
+        limit: usize,
+    ) -> Vec<atlas_memory::record::SearchHit> {
         store_for(project_path)
             .and_then(|s| {
-                s.search(query, kinds, limit.max(1), (self.inner.clock)())
+                s.search_explained(query, kinds, limit.max(1), (self.inner.clock)())
                     .map_err(|e| format!("{e:#}"))
             })
             .unwrap_or_else(|e| {
@@ -808,8 +1067,234 @@ impl SharedMemoryStore {
             })
     }
 
-    /// Whether `id` is still a live entry. Never stamps it as used, so the
-    /// search-side filter can ask freely.
+    /// Every revision of entry `id`, oldest first (`memory_history`).
+    pub fn history(
+        &self,
+        project_path: &str,
+        id: i64,
+    ) -> Result<Vec<atlas_memory::record::Revision>, String> {
+        store_for(project_path)?
+            .history(id)
+            .map_err(|e| format!("{e:#}"))
+    }
+
+    /// Forget entry `id` if it is live, then erase its text from every table
+    /// of the record (revisions, log events, cached vectors). For a secret
+    /// that slipped into memory. `false` when there was nothing to erase.
+    pub fn purge_entry(&self, project_path: &str, id: i64) -> Result<bool, String> {
+        let forgotten = self.forget(project_path, id, "")?;
+        let store = store_for(project_path)?;
+        let erased = store.purge(id).map_err(|e| format!("{e:#}"))?;
+        if let Some(entry) = &forgotten {
+            self.announce(&store, &[entry.kind.as_str()]);
+        }
+        Ok(erased || forgotten.is_some())
+    }
+
+    /// An agent's verdict on a memory it used (`memory_feedback`): useful
+    /// counts it (and promotes a candidate another session vouches for),
+    /// wrong archives it, stale demotes it to a candidate. `Ok(None)` for an
+    /// unknown id.
+    pub fn feedback(
+        &self,
+        project_path: &str,
+        id: i64,
+        verdict: record::Verdict,
+        note: &str,
+        writer: &Writer,
+    ) -> Result<Option<Entry>, String> {
+        let store = store_for(project_path)?;
+        let out = store
+            .feedback(
+                id,
+                verdict,
+                note,
+                &writer.agent,
+                &writer.session_id,
+                (self.inner.clock)(),
+            )
+            .map_err(|e| format!("{e:#}"))?;
+        if let Some(e) = &out {
+            self.announce(&store, &[e.kind.as_str()]);
+        }
+        Ok(out)
+    }
+
+    /// The Memory panel's review queue: unconfirmed candidates, merge
+    /// proposals, and the pairs linked as contradicting.
+    pub fn review(&self, project_path: &str) -> Result<ReviewQueue, String> {
+        let store = store_for(project_path)?;
+        let e = |e: anyhow::Error| format!("{e:#}");
+        let candidates = store
+            .list_state(record::State::Candidate, REVIEW_MAX)
+            .map_err(e)?;
+        let (merges, _) = atlas_memory::consolidate::proposals(&store).map_err(e)?;
+        let mut conflicts = Vec::new();
+        for (a, b) in store.links(record::LINK_CONTRADICTS).map_err(e)? {
+            let (Some(a), Some(b)) = (store.peek(a).map_err(e)?, store.peek(b).map_err(e)?) else {
+                continue;
+            };
+            if a.state == record::State::Active && b.state == record::State::Active {
+                conflicts.push(ConflictPair {
+                    a: a.into(),
+                    b: b.into(),
+                });
+            }
+        }
+        Ok(ReviewQueue {
+            candidates: candidates.into_iter().map(MemoryEntry::from).collect(),
+            merges: merges
+                .into_iter()
+                .take(REVIEW_MAX)
+                .map(|m| MergeProposalView {
+                    keep: m.keep.into(),
+                    drop: m.drop.into_iter().map(MemoryEntry::from).collect(),
+                })
+                .collect(),
+            conflicts,
+        })
+    }
+
+    /// The user approved a candidate (or restored an archived memory).
+    pub fn promote(&self, project_path: &str, id: i64) -> Result<bool, String> {
+        let store = store_for(project_path)?;
+        let done = store
+            .promote(id, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        self.announce_ids(&store, &[id]);
+        Ok(done)
+    }
+
+    /// The user dismissed memories: archived, kept in history.
+    pub fn archive(&self, project_path: &str, ids: &[i64]) -> Result<usize, String> {
+        let store = store_for(project_path)?;
+        let n = store
+            .archive(ids, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        self.announce_ids(&store, ids);
+        Ok(n)
+    }
+
+    /// The user merged near-duplicates into `keep`: the others are archived
+    /// and linked as superseded by it.
+    pub fn merge(&self, project_path: &str, keep: i64, drop: &[i64]) -> Result<usize, String> {
+        let store = store_for(project_path)?;
+        let now = (self.inner.clock)();
+        let drop: Vec<i64> = drop.iter().copied().filter(|d| *d != keep).collect();
+        let n = store.archive(&drop, now).map_err(|e| format!("{e:#}"))?;
+        for d in &drop {
+            store
+                .link(keep, *d, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                .map_err(|e| format!("{e:#}"))?;
+        }
+        self.announce_ids(&store, &[keep]);
+        Ok(n)
+    }
+
+    /// The user settled a contradiction: keep `a`, keep `b`, or both hold
+    /// (the link becomes `distinct`, so the pair is never proposed again).
+    pub fn resolve_conflict(
+        &self,
+        project_path: &str,
+        a: i64,
+        b: i64,
+        keep: &str,
+    ) -> Result<bool, String> {
+        let store = store_for(project_path)?;
+        let now = (self.inner.clock)();
+        let (lo, hi) = (a.min(b), a.max(b));
+        let e = |e: anyhow::Error| format!("{e:#}");
+        match keep {
+            "a" => {
+                store.archive(&[b], now).map_err(e)?;
+                store
+                    .link(a, b, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            "b" => {
+                store.archive(&[a], now).map_err(e)?;
+                store
+                    .link(b, a, record::LINK_SUPERSEDES, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            "both" => {
+                store
+                    .link(lo, hi, record::LINK_DISTINCT, now, USER_SOURCE)
+                    .map_err(e)?;
+            }
+            other => return Err(format!("keep `{other}`: one of a, b, both")),
+        }
+        let removed = store.unlink(lo, hi, record::LINK_CONTRADICTS).map_err(e)?;
+        self.announce_ids(&store, &[a, b]);
+        Ok(removed)
+    }
+
+    /// Demote what `session` wrote in turns the agent took back (M4), and
+    /// tell listeners. Returns how many entries moved.
+    pub fn demote_rewound(
+        &self,
+        project_path: &str,
+        session: &str,
+        windows: &[(i64, i64)],
+    ) -> Result<usize, String> {
+        if windows.is_empty() {
+            return Ok(0);
+        }
+        let store = store_for(project_path)?;
+        let ids = store
+            .demote_rewound(session, windows, (self.inner.clock)())
+            .map_err(|e| format!("{e:#}"))?;
+        if !ids.is_empty() {
+            self.announce_ids(&store, &ids);
+        }
+        Ok(ids.len())
+    }
+
+    /// What `session` wrote to memory after `since` (the "Memory updated"
+    /// card), newest first.
+    pub fn session_writes(
+        &self,
+        project_path: &str,
+        session: &str,
+        since: i64,
+    ) -> Result<Vec<record::SessionWrite>, String> {
+        // Every chat asks, sharing on or off: a scope whose memory database
+        // does not exist yet has recorded nothing, and is not created here.
+        let open = opened().lock().contains_key(project_path);
+        if !open {
+            let root = atlas_checkpoint::git::scope_root(Path::new(project_path));
+            if !record::memory_dir(&root).join(record::DB_FILE).exists() {
+                return Ok(Vec::new());
+            }
+        }
+        store_for(project_path)?
+            .session_writes(session, since)
+            .map_err(|e| format!("{e:#}"))
+    }
+
+    /// Announce a change to the kinds of `ids` (all durable kinds when none
+    /// can be read).
+    fn announce_ids(&self, store: &RecordStore, ids: &[i64]) {
+        let mut kinds: Vec<&'static str> = ids
+            .iter()
+            .filter_map(|id| store.peek(*id).ok().flatten())
+            .map(|e| e.kind.as_str())
+            .collect();
+        kinds.sort_unstable();
+        kinds.dedup();
+        if kinds.is_empty() {
+            kinds = EntryKind::ALL
+                .into_iter()
+                .filter(|k| k.is_durable())
+                .map(EntryKind::as_str)
+                .collect();
+        }
+        self.announce(store, &kinds);
+    }
+
+    /// Whether `id` is still a live entry: it exists and is active (an
+    /// archived or unconfirmed one is not served to agents). Never stamps it
+    /// as used, so the search-side filter can ask freely.
     ///
     /// Unknown (no store, read failed) answers `true`: the only caller drops
     /// documents on a `false`, and wrongly dropping a live document is a worse
@@ -818,7 +1303,10 @@ impl SharedMemoryStore {
         let Ok(store) = store_for(project_path) else {
             return true;
         };
-        store.exists(id).unwrap_or(true)
+        match store.peek(id) {
+            Ok(entry) => entry.is_some_and(|e| e.state == record::State::Active),
+            Err(_) => true,
+        }
     }
 
     /// The newest entries of `kind`, or of every kind, each kind capped at its
@@ -1017,6 +1505,111 @@ pub async fn memory_edit_entry(
     Ok(edited)
 }
 
+/// Forget one entry and erase its text from every table of the record
+/// ("Erase with history"). `false` when there was nothing to erase. The
+/// retrieval index is nudged so relevant memory stops finding it. Recorded
+/// sessions keep their own copy of the conversation; this does not touch them.
+#[tauri::command]
+pub async fn memory_purge_entry(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    let cwd = project_path.clone();
+    let erased = off_main(move || store.purge_entry(&project_path, id)).await?;
+    registry.enqueue_index(&cwd);
+    Ok(erased)
+}
+
+/// The user confirmed that an edit of the memory history made outside Atlas
+/// was theirs: re-seal the hash chain from the first bad revision and heal,
+/// so the view follows the accepted history. `false` when the chain was
+/// intact. Only from the panel's confirmed button, never automatic.
+#[tauri::command]
+pub async fn memory_accept_history(
+    project_path: String,
+    registry: State<'_, Arc<super::memory_indexer::MemoryRegistry>>,
+) -> Result<bool, String> {
+    let cwd = project_path.clone();
+    let accepted = off_main(move || {
+        let store = store_for(&project_path)?;
+        let accepted = store.accept_history().map_err(|e| format!("{e:#}"))?;
+        if accepted {
+            store
+                .heal(chrono::Utc::now().timestamp_millis())
+                .map_err(|e| format!("{e:#}"))?;
+        }
+        Ok(accepted)
+    })
+    .await?;
+    if accepted {
+        let _ = registry.enqueue(super::memory_indexer::Job::Health { cwd });
+    }
+    Ok(accepted)
+}
+
+/// Where a memory was learned, as the panel's entry detail shows it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProvenanceView {
+    pub source: String,
+    pub agent: String,
+    pub added: Option<String>,
+    pub title: Option<String>,
+    pub commits: Vec<String>,
+}
+
+/// The panel's "Learned in …" lines for entry `id`, resolved against the
+/// capture record (read-only). Plain sources when capture is off.
+#[tauri::command]
+pub async fn memory_entry_provenance(
+    project_path: String,
+    id: i64,
+    app: tauri::AppHandle,
+) -> Result<Vec<ProvenanceView>, String> {
+    use tauri::Manager;
+    let transcripts = app
+        .state::<Arc<super::agent_transcript::TranscriptState>>()
+        .config_dir()
+        .to_path_buf();
+    off_main(move || {
+        let store = store_for(&project_path)?;
+        let mut sources = store
+            .sources_for(&[id])
+            .map_err(|e| format!("{e:#}"))?
+            .remove(&id)
+            .unwrap_or_default();
+        let reader = super::memory_capture::CaptureReader {
+            transcripts_dir: Some(transcripts),
+        };
+        super::memory_capture::resolve_sources(&reader.stores(&project_path), &mut sources);
+        Ok(sources
+            .iter()
+            .map(|s| ProvenanceView {
+                source: atlas_memory::record::source_uri(s),
+                agent: s.agent.clone(),
+                added: chrono::DateTime::from_timestamp_millis(s.at)
+                    .map(|d| d.format("%Y-%m-%d").to_string()),
+                title: s.title.clone(),
+                commits: s.commits.clone(),
+            })
+            .collect())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn memory_entry_history(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Vec<atlas_memory::record::Revision>, String> {
+    let store = store.inner().clone();
+    off_main(move || store.history(&project_path, id)).await
+}
+
 /// Forget (delete) one entry. `false` when it was already gone. The
 /// retrieval index is nudged so relevant memory stops finding it.
 #[tauri::command]
@@ -1031,6 +1624,98 @@ pub async fn memory_forget_entry(
     let gone = off_main(move || store.forget_entry(&project_path, id)).await?;
     registry.enqueue_index(&cwd);
     Ok(gone)
+}
+
+/// The user's verdict on one entry from the panel: `useful`, `wrong` or
+/// `stale`. `None` for an unknown id.
+#[tauri::command]
+pub async fn memory_feedback_entry(
+    project_path: String,
+    id: i64,
+    verdict: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Option<MemoryEntry>, String> {
+    let store = store.inner().clone();
+    off_main(move || {
+        let verdict = record::Verdict::parse(&verdict)
+            .ok_or_else(|| format!("unknown verdict `{verdict}`; one of useful, wrong, stale"))?;
+        let user = Writer {
+            agent: USER_SOURCE.to_string(),
+            session_id: String::new(),
+        };
+        Ok(store
+            .feedback(&project_path, id, verdict, "", &user)?
+            .map(MemoryEntry::from))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn memory_session_writes(
+    project_path: String,
+    session_id: String,
+    since: i64,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<Vec<record::SessionWrite>, String> {
+    let store = store.inner().clone();
+    off_main(move || store.session_writes(&project_path, &session_id, since)).await
+}
+
+/// The Review tab: candidates, merge proposals and contradictions.
+#[tauri::command]
+pub async fn memory_review(
+    project_path: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<ReviewQueue, String> {
+    let store = store.inner().clone();
+    off_main(move || store.review(&project_path)).await
+}
+
+/// Approve a candidate from the Review tab.
+#[tauri::command]
+pub async fn memory_promote(
+    project_path: String,
+    id: i64,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    off_main(move || store.promote(&project_path, id)).await
+}
+
+/// Dismiss memories from the Review tab: archived, kept in history.
+#[tauri::command]
+pub async fn memory_archive(
+    project_path: String,
+    ids: Vec<i64>,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<usize, String> {
+    let store = store.inner().clone();
+    off_main(move || store.archive(&project_path, &ids)).await
+}
+
+/// Merge near-duplicates into `keep` from the Review tab.
+#[tauri::command]
+pub async fn memory_merge(
+    project_path: String,
+    keep: i64,
+    drop: Vec<i64>,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<usize, String> {
+    let store = store.inner().clone();
+    off_main(move || store.merge(&project_path, keep, &drop)).await
+}
+
+/// Settle a contradiction from the Review tab: `keep` is `a`, `b` or `both`.
+#[tauri::command]
+pub async fn memory_resolve_conflict(
+    project_path: String,
+    a: i64,
+    b: i64,
+    keep: String,
+    store: State<'_, SharedMemoryStore>,
+) -> Result<bool, String> {
+    let store = store.inner().clone();
+    off_main(move || store.resolve_conflict(&project_path, a, b, &keep)).await
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1627,5 +2312,158 @@ mod tests {
             s.session_agents.get("abc").map(std::string::String::as_str),
             Some("codex")
         );
+    }
+
+    #[test]
+    fn restating_a_candidate_makes_it_trusted() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("candidate"));
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let c = store
+            .record_candidate(&p, &w, EntryKind::Fact, "the API speaks JSON over REST")
+            .unwrap();
+        assert!(c.entry.is_candidate());
+        let r = store
+            .remember(
+                &p,
+                &w,
+                EntryKind::Fact,
+                "The API speaks JSON over REST",
+                "",
+                None,
+                &[],
+            )
+            .unwrap();
+        assert_eq!(r.outcome.as_str(), "merged");
+        assert!(!r.entry.is_candidate(), "restated by an agent: trusted");
+    }
+
+    /// Archived entries and extractor candidates stay in the record but are
+    /// not served: not in the summary view, not in the retrieval corpus, and
+    /// not live for the search-side filter.
+    #[test]
+    fn archived_and_candidate_entries_are_not_served() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("served"));
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let kept = store
+            .remember(
+                &p,
+                &w,
+                EntryKind::Fact,
+                "Deploys go through Fly",
+                "",
+                None,
+                &[],
+            )
+            .unwrap()
+            .entry;
+        let wrong = store
+            .remember(&p, &w, EntryKind::Fact, "CI runs on Jenkins", "", None, &[])
+            .unwrap()
+            .entry;
+        store.archive(&p, &[wrong.id]).unwrap();
+        let unsure = store
+            .record_extracted(&p, &w, EntryKind::Fact, "The cache is warmed nightly", 0.2)
+            .unwrap()
+            .entry;
+        assert!(unsure.is_candidate());
+
+        let facts: Vec<String> = store
+            .get_state(&p)
+            .facts
+            .into_iter()
+            .map(|f| f.text)
+            .collect();
+        assert_eq!(facts, vec!["Deploys go through Fly".to_string()]);
+        let corpus: Vec<i64> = durable_entries(&p).1.iter().map(|e| e.id).collect();
+        assert_eq!(corpus, vec![kept.id]);
+        assert!(store.entry_exists(&p, kept.id));
+        assert!(!store.entry_exists(&p, wrong.id));
+        assert!(!store.entry_exists(&p, unsure.id));
+    }
+
+    /// A chat in a project whose memory was never opened asks for its writes
+    /// without creating the database; a forgotten write reads as not live.
+    #[test]
+    fn session_writes_create_nothing_and_say_what_still_stands() {
+        let (store, p) = (SharedMemoryStore::new(), temp_project("writes"));
+        assert!(store.session_writes(&p, "s1", 0).unwrap().is_empty());
+        assert!(!record::memory_dir(Path::new(&p)).exists());
+
+        let w = Writer {
+            agent: "codex".into(),
+            session_id: "s1".into(),
+        };
+        let id = store
+            .remember(&p, &w, EntryKind::Fact, "always force-push", "", None, &[])
+            .unwrap()
+            .entry
+            .id;
+        let before = store.session_writes(&p, "s1", 0).unwrap();
+        assert!(before.iter().any(|r| r.id == id && r.live), "{before:?}");
+        assert!(store.forget_entry(&p, id).unwrap());
+        let after = store.session_writes(&p, "s1", 0).unwrap();
+        assert!(
+            !after.is_empty() && after.iter().all(|r| !r.live),
+            "{after:?}"
+        );
+    }
+
+    /// A citation from a linked worktree is stored under its repository
+    /// path, hashed from the worktree's file.
+    #[test]
+    fn a_linked_worktree_cites_by_repository_path() {
+        let main = PathBuf::from(temp_project("cite-main"));
+        git(&main, &["init", "--initial-branch=main"]);
+        git(
+            &main,
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@e",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "init",
+            ],
+        );
+        let linked = PathBuf::from(temp_project("cite-linked-parent")).join("feature");
+        git(
+            &main,
+            &["worktree", "add", "-b", "feature", linked.to_str().unwrap()],
+        );
+        fs::create_dir_all(linked.join("src")).unwrap();
+        fs::write(linked.join("src/auth.rs"), "pub fn sign() {}\n").unwrap();
+
+        let store = SharedMemoryStore::new();
+        let w = Writer {
+            agent: "claude-code".into(),
+            session_id: "s1".into(),
+        };
+        let evidence: Vec<EvidenceArg> =
+            serde_json::from_value(serde_json::json!([{"path": "src/auth.rs", "lines": "1"}]))
+                .unwrap();
+        let entry = store
+            .remember(
+                &linked.to_string_lossy(),
+                &w,
+                EntryKind::Fact,
+                "Signing lives in src/auth.rs",
+                "",
+                None,
+                &evidence,
+            )
+            .unwrap()
+            .entry;
+        let paths: Vec<String> = entry.citations().into_iter().map(|c| c.path).collect();
+        assert_eq!(paths, vec!["src/auth.rs".to_string()]);
     }
 }

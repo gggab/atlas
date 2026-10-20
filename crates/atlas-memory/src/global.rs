@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::record::{self, EntryKind, Origin, RecordStore};
+use crate::record::{self, EntryKind, Origin, RecordStore, State};
 
 /// Minimum confidence for a Fact to be eligible for global promotion.
 pub const PROMOTION_MIN_CONFIDENCE: f64 = 0.8;
@@ -137,11 +137,37 @@ struct Promoted {
     content: String,
 }
 
-fn load_ledger(dir: &Path) -> Ledger {
-    std::fs::read(ledger_path(dir))
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+/// One load-modify-save of the ledger at a time (two projects opening at
+/// once used to race and drop a repository root).
+static LEDGER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The ledger, or an empty one when there is none. An unreadable ledger is
+/// kept as `global-candidates.json.corrupt-<ms>` before the empty one is
+/// returned, so the next save does not overwrite the evidence.
+fn load_ledger(dir: &Path) -> Result<Ledger> {
+    let path = ledger_path(dir);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Ledger::default()),
+        Err(error) => return Err(error).context("read global memory ledger"),
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(ledger) => Ok(ledger),
+        Err(e) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
+            let quarantine = dir.join(format!("global-candidates.json.corrupt-{now}"));
+            std::fs::rename(&path, &quarantine)
+                .context("quarantine damaged global memory ledger")?;
+            tracing::warn!(
+                target: "atlas_memory",
+                "global ledger unreadable ({e}); kept as {}",
+                quarantine.display()
+            );
+            Ok(Ledger::default())
+        }
+    }
 }
 
 fn save_ledger(dir: &Path, ledger: &Ledger) -> Result<()> {
@@ -162,7 +188,7 @@ pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize>
     let facts = store.list(EntryKind::Fact, store.count(EntryKind::Fact)?, Origin::Any)?;
     let items: Vec<Candidate> = facts
         .into_iter()
-        .filter(|e| e.confidence >= PROMOTION_MIN_CONFIDENCE)
+        .filter(|e| e.state == State::Active && e.confidence >= PROMOTION_MIN_CONFIDENCE)
         .map(|e| Candidate {
             content_hash: e.content_hash,
             content: e.content,
@@ -181,7 +207,7 @@ pub fn promote_facts_in(global_dir: &Path, store: &RecordStore) -> Result<usize>
 }
 
 /// Drop `repository_root` from every ledger row it no longer holds (the fact
-/// was forgotten, edited away or fell below the confidence floor). A
+/// was forgotten, archived, edited away or fell below the confidence floor). A
 /// promoted row left in fewer than [`PROMOTION_MIN_REPOSITORIES`] is
 /// demoted: unmarked, and removed from the recall archive and `MEMORY.md`.
 /// Rows from before the record store (no repository roots) are untouched.
@@ -193,7 +219,10 @@ pub fn reconcile_roots_in(
     if !ledger_path(global_dir).exists() {
         return Ok(());
     }
-    let mut ledger = load_ledger(global_dir);
+    let _guard = LEDGER_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut ledger = load_ledger(global_dir)?;
     let mut demoted: BTreeSet<String> = BTreeSet::new();
     let mut dirty = false;
     for (hash, entry) in ledger.candidates.iter_mut() {
@@ -247,7 +276,10 @@ pub fn record_candidates_in(
     items: &[Candidate],
 ) -> Result<usize> {
     std::fs::create_dir_all(global_dir).context("create global memory dir")?;
-    let mut ledger = load_ledger(global_dir);
+    let _guard = LEDGER_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut ledger = load_ledger(global_dir)?;
     let listed: BTreeSet<String> = listed_contents(global_dir)
         .iter()
         .map(|c| record::normalize(c))
@@ -526,7 +558,7 @@ mod tests {
             md(&global),
             "# Global Memory (promoted, cross-project)\n\n- **[fact]** always  use tabs *(confidence: 90%)*\n"
         );
-        let ledger = load_ledger(&global);
+        let ledger = load_ledger(&global).unwrap();
         assert_eq!(ledger.candidates.len(), 1);
         let row = ledger
             .candidates
@@ -557,7 +589,7 @@ mod tests {
             !memory_md_path(&global).exists(),
             "nothing promoted, no list"
         );
-        let ledger = load_ledger(&global);
+        let ledger = load_ledger(&global).unwrap();
         assert_eq!(
             ledger.candidates.len(),
             1,
@@ -645,7 +677,7 @@ mod tests {
 
         assert_eq!(md(&dir).lines().filter(|l| l.starts_with("- ")).count(), 1);
         assert_eq!(
-            load_ledger(&dir).candidates.len(),
+            load_ledger(&dir).unwrap().candidates.len(),
             2,
             "the older row is kept"
         );
@@ -756,5 +788,49 @@ mod tests {
         assert!(!md(&dir).contains("Tabs over spaces"));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A promoted fact one repository archives (state changes, confidence is
+    /// kept) is demoted the same way as a forgotten one.
+    #[test]
+    fn archiving_a_promoted_fact_demotes_it() {
+        let dir = tmp_dir("demote-archived");
+        let base = tmp_dir("demote-archived-repos");
+        let a = repository(&base, "a", &[("CI runs on Jenkins", 1.0)]);
+        let b = repository(&base, "b", &[("CI runs on Jenkins", 1.0)]);
+        promote_facts_in(&dir, &a).unwrap();
+        assert_eq!(promote_facts_in(&dir, &b).unwrap(), 1);
+        assert_eq!(global_recall_in(&dir, "jenkins", 5).len(), 1);
+
+        let id = a.list(EntryKind::Fact, 10, Origin::Any).unwrap()[0].id;
+        a.archive(&[id], 5).unwrap();
+        promote_facts_in(&dir, &a).unwrap();
+
+        assert!(global_recall_in(&dir, "jenkins", 5).is_empty(), "demoted");
+        assert!(!md(&dir).contains("CI runs on Jenkins"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_corrupt_ledger_is_quarantined_not_overwritten() {
+        let dir = tmp_dir("ledger-corrupt");
+        std::fs::write(ledger_path(&dir), b"{ not json").unwrap();
+        let item = Candidate {
+            content_hash: "h".into(),
+            content: "Tabs".into(),
+            confidence: 0.9,
+        };
+        record_candidates_in(&dir, "/a", &[item]).unwrap();
+        let kept = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("global-candidates.json.corrupt-")
+            });
+        assert!(kept, "the corrupt ledger is kept for inspection");
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

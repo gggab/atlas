@@ -318,6 +318,17 @@ impl OutboundMiddleware<SessionDeltaEnvelope> for MemoryIngestMiddleware {
             });
         }
 
+        if matches!(envelope.delta, SessionDelta::HistoryRewound { .. }) {
+            if let Some(cwd) = cwd.clone() {
+                let _ = self.app.state::<Arc<MemoryRegistry>>().enqueue(
+                    super::memory_indexer::Job::RewoundCheck {
+                        cwd,
+                        session: envelope.session_id.clone(),
+                        retried: false,
+                    },
+                );
+            }
+        }
         if is_turn_finished {
             // Background reindex nudge: the FS watcher watches markdown files.
             // not session transcripts, so a finished turn needs an explicit nudge to
@@ -436,7 +447,20 @@ impl SharingGatedLifecycle {
                         LifecycleWrite::Ended { session_id } => {
                             // The end-of-session extraction, queued behind the
                             // session's last turn-finished pass.
-                            memory.session_ended(&session_id);
+                            if let Some(ended) = memory.session_ended(&session_id) {
+                                if let Some(windows) = super::memory_capture::rewound_windows_for(
+                                    &super::memory_capture::CaptureReader::default(),
+                                    &ended.cwd,
+                                    &session_id,
+                                    memory.now(),
+                                ) {
+                                    if let Err(e) =
+                                        memory.demote_rewound(&ended.cwd, &session_id, &windows)
+                                    {
+                                        tracing::warn!("memory rewind check failed: {e}");
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -667,6 +691,12 @@ pub fn install_manager(app: &AppHandle) {
                 index: Some(index),
                 bootstrap: Some(bootstrap),
                 evict: Some(evict),
+                capture: super::memory_capture::CaptureReader {
+                    transcripts_dir: app
+                        .try_state::<Arc<super::agent_transcript::TranscriptState>>()
+                        .map(|s| s.config_dir().to_path_buf()),
+                },
+                check: None,
             },
             vec![
                 code_router,

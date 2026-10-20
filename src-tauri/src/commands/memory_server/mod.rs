@@ -8,11 +8,15 @@
 //! - **One bearer token per (session, scope)** ([`tokens`]): minted when a
 //!   session starts, revoked when it ends, checked on every request. The
 //!   token says who is calling and which scope's record to open.
-//! - **Handed to ACP agents through stdio** ([`offers`]): credentials stay in
-//!   private files; the bridge forwards to the session-authorized HTTP service.
-//! - **Seven tools** ([`tools`]), read first, write last: `memory_briefing`,
+//! - **Handed to every agent** ([`offers`]): every ACP agent as a stdio
+//!   server (this binary's `mcp-bridge`, ADR-0020), the token in a private
+//!   file the entry names and never in the entry itself, which an adapter may
+//!   put on a command line (ADR-0020); the native agent over HTTP through its
+//!   thread's engine config.
+//! - **Ten tools** ([`tools`]), read first, write last: `memory_briefing`,
 //!   `memory_changes`, `memory_search`, `memory_get`, `memory_list`,
-//!   `memory_remember`, `memory_forget`. The server's instructions
+//!   `memory_history`, `memory_why`, `memory_remember`, `memory_feedback`,
+//!   `memory_forget`. The server's instructions
 //!   ([`INSTRUCTIONS`]) tell the agent when to call each — the briefing first
 //!   in every session — because with nothing pushed, the protocol is what
 //!   makes memory reach the model.
@@ -22,9 +26,13 @@
 //! - **Failure is "no memory", never a crash.** A read that fails returns an
 //!   empty result; a write that fails returns a tool error the agent can read.
 
+#[cfg(test)]
+mod bench;
 mod briefing;
 mod host;
-mod offers;
+pub(crate) mod offers;
+#[cfg(test)]
+mod review_tests;
 #[cfg(test)]
 mod tests;
 mod tokens;
@@ -41,9 +49,13 @@ pub use offers::{MemorySessionOffers, OfferDecision, BRIDGE_ARG};
 pub(crate) use tokens::require_token;
 #[allow(unused_imports)]
 pub use tokens::{Grant, MemoryTokens};
+/// How long an agent may cache a `tools/list` answer; the UI tool server
+/// answers under the same rule.
 pub(crate) use tools::TOOLS_LIST_TTL_MS;
 #[allow(unused_imports)]
-pub use tools::{Bootstrap, BootstrapSource, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS};
+pub use tools::{
+    Bootstrap, BootstrapSource, CitationCheck, IndexDoc, IndexEvict, IndexSearch, INSTRUCTIONS,
+};
 
 /// The path the MCP endpoint is served at.
 pub const MCP_PATH: &str = "/mcp";

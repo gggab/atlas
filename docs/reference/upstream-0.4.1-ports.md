@@ -90,7 +90,7 @@ ACP-thread integration suite; they were not rewritten by these ports.
 
 ## Deferred decisions
 
-Memory schema/revisions/evidence, model-driven consolidation, default
+Memory schema, revisions, evidence and selected review/handoff behavior are now selectively ported; see [shared memory](shared-memory.md). Model-driven consolidation, Dream, exports/mirrors, automatic expiry, default
 `atlasOnlyMemory`, code-index removal and transcript-tail liveness inference are
 not included. Git write UI, embedded Browser, native engine, account, organization
 and cloud infrastructure remain removed. Existing profiles, sessions,

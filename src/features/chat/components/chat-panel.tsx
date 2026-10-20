@@ -173,6 +173,7 @@ import { useAppStore } from "@/features/app/stores/app-store";
 import { loadCachedAcpModels } from "../lib/acp-models-cache";
 import { resolveEffectiveMode, applyModeOnResume, holdUnrestoredMode } from "../lib/resume-mode";
 import { snapshotMessageToWire } from "../lib/snapshot-message";
+import { MemoryUpdatedCard } from "@/features/memory/components/memory-updated-card";
 
 interface ChatPanelProps {
   tabId: string;
@@ -1535,6 +1536,16 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
           <div className="relative flex-1 min-h-0 flex flex-col">
             <Suspense fallback={<LoadingTranscriptState />}>
               <Transcript
+                footer={
+                  personal ? undefined : (
+                    <div className="mx-auto w-full max-w-[760px] px-6">
+                      <MemoryUpdatedCard
+                        projectPath={session.workingDirectory || projectPathForTab(tabId) || null}
+                        sessionId={session.acpSessionId ?? null}
+                      />
+                    </div>
+                  )
+                }
                 ref={messagesListRef}
                 tabId={tabId}
                 acpSessionId={acpSessionId}

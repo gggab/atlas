@@ -63,16 +63,17 @@ Glossary of domain terms as this project uses them. Decisions with lasting conse
 
 ## Shared memory domain
 
-**Shared memory** is the one record every agent on a project reads and writes, across external ACP agents, so that a second agent inherits what the first learned. It is DeskMate-owned; no agent's private store is shared memory. It holds exactly six kinds of entry (decided 2026-09-17):
+**Shared memory** is the one record every agent on a project reads and writes, across external ACP agents, so that a second agent inherits what the first learned. It is DeskMate-owned; no agent's private store is shared memory. It holds seven kinds of entry:
 
 - **Active plan** — the agent's own structured plan list. One per project; a newer plan replaces the older one, and a plan that is done or abandoned clears it.
 - **Decision** — a choice made and why. Keyed; a newer decision with the same key replaces the older one. Shown capped; never evicted.
 - **File changed** — one entry per path with a summary of what was done. A repeat edit to the same path replaces the earlier entry. Shown capped; never evicted.
+- **Preference** — how the user wants work done in this project; briefed before other durable memories.
 - **Fact** — a durable project fact or convention. Shown capped; never evicted.
 - **Failure** — a dead end or anti-pattern, kept so a second agent does not repeat it. Shown capped; never evicted.
 - **Architecture** — a structural note about how the system fits together. Shown capped; never evicted.
 
-The six kinds have two lifetimes. **Working memory** is Active plan and File changed: it describes the current stretch of work, replaces by key, is always shown to an agent fresh, and never ages or travels beyond the project. **Durable memory** is Decision, Fact, Failure and Architecture: it accumulates, stays true across sessions, is what agents search, and is what can be promoted beyond one project. Both are shared memory.
+The seven kinds have two lifetimes. **Working memory** is Active plan and File changed: it describes the current stretch of work, replaces by key, is always shown to an agent fresh, and never ages or travels beyond the project. **Durable memory** is Decision, Fact, Failure, Architecture and Preference: it accumulates, stays true across sessions, is what agents search, and is what can be promoted beyond one project. Both are shared memory.
 
 **Scope** of shared memory is the repository: every worktree and every subdirectory launch of one repository shares one memory. Outside a repository the scope is the directory the agent was started in.
 
@@ -80,13 +81,15 @@ Shared memory also records **session lifecycle** (session start and end, todo ad
 
 Terms that are *not* shared memory: **capture** (raw transcripts, see Timeline), **knowledge notes** (user-written pages in the Knowledge panel), the **codebase index** (derived from source), and any agent's own memory files (`CLAUDE.md`, `AGENTS.md`, Claude's auto-memory directory). These may be *sources* shared memory cites or imports, but an entry in them is not an entry in shared memory.
 
-Shared memory reaches an agent one way only: it **pulls** it through the **memory tool server**, the in-process MCP server DeskMate hands every session that can take it (ADR-0010). Nothing is prepended to a user's message; the text goes to the agent exactly as typed. The server's **instructions** are the protocol — read first, write as you learn — and its tools are, in that order: **`memory_briefing`** (the first look of a session: working memory, the **durable index**, the **curated pack** and the **recent-session handoff**), **`memory_changes`** (what *other* sessions recorded since this session's **last look**), **`memory_search`** (the record plus the codebase index's documents), **`memory_get`**, **`memory_list`**, **`memory_remember`** and **`memory_forget`**.
+Shared memory reaches an agent one way only: it **pulls** it through the **memory tool server**, the in-process MCP server DeskMate hands every session that can take it (ADR-0010). Nothing is prepended to a user's message; the text goes to the agent exactly as typed. The server's **instructions** are the protocol — read first, write as you learn — and its tools are, in that order: **`memory_briefing`** (the first look of a session: working memory, the **durable index**, the **curated pack** and the **recent-session handoff**), **`memory_changes`** (what *other* sessions recorded since this session's **last look**), **`memory_search`** (the record plus the codebase index's documents), **`memory_get`**, **`memory_list`**, **`memory_history`**, **`memory_why`**, **`memory_remember`**, **`memory_feedback`** and **`memory_forget`**.
 
 - The **durable index** is one capped line per durable entry, each kind's best up to its display cap, ranked by recency (two-week half-life), use count and confidence; `memory_get` expands a line. It lists shared-memory entries; it is not the codebase index, and not the retrieval index `memory_search` also searches.
 - The **curated pack** is the high-signal part of the project's foreign memory files (Claude's memory directory, `CLAUDE.md`, `AGENTS.md`), recency-ranked and budget-bounded. The **recent-session handoff** is the tail of the most recent other session in the scope, whichever agent ran it, read from capture (or, where capture was never enabled, from DeskMate's own session transcripts) — never from an agent's own files.
 - A session's **last look** is the newest write it has seen, set by its briefing or its last changes call and forgotten when the session ends. It belongs to the session, not to the send path.
 
 The **injected-context envelope** — `<atlas-memory>` … `</atlas-memory>` — is what DeskMate *used to* prepend. Every DeskMate reader still strips it (`atlas_agent_transcript::strip_injected_context`): the Claude memory directory, capture transcripts, the session handoff, the chat's echoed prompts. Files written while DeskMate pushed still carry it, and the loop it once caused (an agent saved DeskMate's block into its own memory file and DeskMate read the copy back in as a new fact) must stay closed.
+
+Revision history is canonical; entries and search indexes are repairable views. A different session must supply the revision it read to replace a keyed memory. Candidates are excluded from briefings until confirmed; stale evidence is reported and excluded from briefings, without automatic expiry. See [shared memory](docs/reference/shared-memory.md).
 
 ## External Agent ownership
 

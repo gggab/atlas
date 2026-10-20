@@ -16,7 +16,7 @@
 - **完整的会话体验**：流式消息、操作审批、取消、历史记录、归档，以及支持相应能力的 Agent 会话恢复。
 - **个人助手**：侧边栏固定聊天窗口，无需打开工作项目；持续保留聊天记录，保存个人事实和偏好，通过聊天登记提醒，建议计划需在卡片中确认。Agent 的连接由后台管理。
 - **项目工具随手可用**：文件浏览与编辑、终端、本地会话记录和检查点；历史卡片展示状态、用时及已记录的 Git 分支。
-- **共享本地记忆**：在项目范围内保存决策、事实、计划和工作进展，通过本地 MCP 服务供支持 HTTP MCP 的 Agent 读取与写入。
+- **Shared local memory**: project decisions, facts, preferences, plans and progress, with revision history, concurrent-write protection, evidence checks and explicit review. External ACP Agents read and write through local MCP tools.
 - **本地代码检索**：文本、文件、符号、调用关系及语义检索；嵌入模型需要明确下载，检索会避开被忽略的文件与敏感文件。
 - **浏览器协作**：通过 DeskMate Browser 扩展控制 Chrome 或 Edge，在独立任务标签页中工作，支持网站授权、暂停、接管和继续执行。
 - **受控 SSH**：管理连接和项目关联，保留执行记录；凭据存放在操作系统凭据库中，连接使用需要用户授权。
@@ -110,6 +110,8 @@ cleanup, see [independent background execution](docs/reference/background-servic
 
 删除个人记忆只移除已保存条目，不删除聊天、模型已有上下文、独立提醒或厂商记录。更正记忆不会自动修改已登记的计划。
 详见[个人助手](docs/reference/personal-assistant.md)。
+
+Project shared-memory upgrades, candidate review, history, snapshots and recovery are described in [shared memory](docs/reference/shared-memory.md).
 
 “本地优先”指工作台的配置和记录保存在本地。外部 Agent 与其模型服务、CLI 安装下载、明确发起的模型下载、浏览器访问及可选 BYOK 功能仍可能联网。
 

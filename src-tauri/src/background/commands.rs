@@ -117,9 +117,21 @@ pub fn owns(command: &str) -> bool {
             | "memory_clear_project"
             | "memory_append_event"
             | "memory_list_entries"
+            | "memory_purge_entry"
+            | "memory_accept_history"
+            | "memory_entry_provenance"
+            | "memory_entry_history"
+            | "memory_feedback_entry"
+            | "memory_session_writes"
+            | "memory_review"
+            | "memory_promote"
+            | "memory_archive"
+            | "memory_merge"
+            | "memory_resolve_conflict"
             | "memory_edit_entry"
             | "memory_forget_entry"
             | "force_reindex"
+            | "memory_health_status"
             | "memory_indexer_close_project"
             | "codebase_index_status"
             | "codebase_index_build"
@@ -167,6 +179,7 @@ pub const EVENTS: &[&str] = &[
     "atlas:config-error",
     "atlas:browser-use-changed",
     "atlas:memory-changed",
+    "atlas:memory-health",
     "atlas:capture-changed",
     "atlas:registry-install:progress",
     "ssh-changed",
