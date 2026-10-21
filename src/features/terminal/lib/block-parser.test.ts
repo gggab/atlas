@@ -144,3 +144,80 @@ describe("BlockStreamParser events", () => {
     expect(pw).toHaveLength(1);
   });
 });
+
+describe("BlockStreamParser malformed sequence recovery", () => {
+  const text = (p: BlockStreamParser) =>
+    p.blocks
+      .flatMap((b) => b.lines)
+      .map((l) => l.segments.map((s) => s.text).join(""))
+      .join("\n");
+
+  it("recovers output and subsequent command markers after an unterminated OSC", () => {
+    const { p } = make();
+    p.push(PROMPT + CMD("cat blob.bin") + "head\x1b]garbage");
+    for (let i = 0; i < 128; i++) p.push("x".repeat(1022) + "\r\n");
+    p.push("TAIL\r\n");
+    p.flushNow();
+    expect(text(p)).toContain("TAIL");
+    p.push(END(0) + CMD("echo recovered") + "recovered\r\n" + END(0));
+    expect(p.blocks[p.blocks.length - 1]).toMatchObject({
+      command: "echo recovered",
+      running: false,
+    });
+  });
+
+  it("abandons an OSC only after its pending body exceeds 64 KiB", () => {
+    const { p } = make();
+    p.push(PROMPT + CMD("cat") + "\x1b]" + "x".repeat(64 * 1024));
+    p.flushNow();
+    expect(text(p)).not.toContain("xxx");
+    p.push("xTAIL\r\n");
+    p.flushNow();
+    expect(text(p)).toContain("TAIL");
+  });
+
+  it.each(["\x07", "\x1b\\"])(
+    "keeps a long valid OSC at the limit, including a split %j terminator",
+    (terminator) => {
+      const { p } = make();
+      const command = "x".repeat(64 * 1024 - "6973;C;".length);
+      p.push(PROMPT + "\x1b]6973;C;" + command);
+      for (const ch of terminator) p.push(ch);
+      p.push(OSC("133;C") + "done\r\n");
+      p.flushNow();
+      expect(p.blocks[p.blocks.length - 1]?.command).toBe(command);
+      expect(text(p)).toContain("done");
+    },
+  );
+
+  it("abandons an overlong CSI before it can swallow the next output", () => {
+    const { p } = make();
+    p.push(PROMPT + CMD("cat") + "\x1b[" + "1;".repeat(400));
+    p.push("TAIL\r\n");
+    p.flushNow();
+    expect(text(p)).toContain("TAIL");
+  });
+
+  it("keeps valid CSI and command markers split over chunks", () => {
+    const { p } = make();
+    for (const ch of PROMPT + CMD("echo colored") + "\x1b[31mred\x1b[0m\r\n" + END(0)) {
+      p.push(ch);
+    }
+    expect(p.blocks[p.blocks.length - 1]).toMatchObject({
+      command: "echo colored",
+      running: false,
+    });
+    expect(text(p)).toContain("red");
+  });
+
+  it("accepts a CSI final byte arriving after exactly 256 body characters", () => {
+    const { p, sink } = make();
+    const prefix = "\x1b[?" + "0".repeat(255);
+    p.push(PROMPT + CMD("app") + prefix);
+    expect(sink).not.toHaveBeenCalled();
+    p.push("hTAIL\r\n");
+    p.flushNow();
+    expect(sink).toHaveBeenCalledWith(prefix + "h");
+    expect(text(p)).toContain("TAIL");
+  });
+});

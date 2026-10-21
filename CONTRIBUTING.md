@@ -8,6 +8,14 @@ Use `develop` as the starting and PR target branch for this fork. Inspect the br
 
 Keep external Agent behavior capability-driven through ACP negotiation. Preserve vendor CLI authentication, local configuration, sessions, checkpoints and memory. MCP availability is not proof of retrieval or automatic context injection. Do not hide errors or introduce silent fallbacks.
 
+For the [selected 0.4.1 fixes](docs/reference/upstream-0.4.1-ports.md#selected-post-alpha-fixes),
+run the focused regression commands there and frontend typecheck/lint/build.
+Keep every chat jump tab-addressed. When changing tool-file extraction, cover
+live/replayed summaries, transcript markers and diff sources together. Parser
+tests must preserve valid fragmented control sequences as well as malformed
+sequence recovery. Simulated DOM checks do not establish native window behavior
+or real vendor turns; the reference lists the corresponding desktop checks.
+
 For [steering](docs/reference/steering.md), verify both the queued-message UI and
 the negotiated transport. Run `cargo test --locked -p atlas-agent-servers --test steering`
 and `cargo test --locked -p atlas-agent-manager --test steering`; the stdio suite

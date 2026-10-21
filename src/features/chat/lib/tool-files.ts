@@ -34,7 +34,11 @@ export interface EditPart {
 const asStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
 /** Before/after text pairs for an edit tool call, straight from its args. */
-export function getEditParts(toolName: string, args: Record<string, unknown>): EditPart[] {
+export function getEditParts(
+  toolName: string,
+  args: Record<string, unknown>,
+  kind?: string | null,
+): EditPart[] {
   const parts: EditPart[] = [];
   const edits = args.edits;
   if (Array.isArray(edits)) {
@@ -51,8 +55,9 @@ export function getEditParts(toolName: string, args: Record<string, unknown>): E
   const old = asStr(args.old_string) ?? asStr(args.oldString) ?? asStr(args.old_str);
   const neu = asStr(args.new_string) ?? asStr(args.newString) ?? asStr(args.new_str);
   if (old != null || neu != null) return [{ old: old ?? "", neu: neu ?? "" }];
-  // Whole-file write/create — only when the tool is actually an editor.
-  if (EDIT_TOOLS.has(toolName.toLowerCase())) {
+  // ACP can name the call with its display title ("Write src/x.ts"). Its edit
+  // kind still identifies editor content; this remains a tool-report heuristic.
+  if (kind === "edit" || EDIT_TOOLS.has(toolName.toLowerCase())) {
     const content =
       asStr(args.content) ?? asStr(args.new_content) ?? asStr(args.text) ?? asStr(args.file_text);
     if (content != null) return [{ old: "", neu: content }];
@@ -72,15 +77,18 @@ export function classifyToolFileKind(
   return null;
 }
 
-/** Trim common prefix/suffix and count changed lines (matches `EditDiffView`).
+/** Trim common prefix/suffix and count changed lines.
  *
  *  Exported because an edit reaches Atlas two ways — as recognisable tool
  *  arguments, and as an ACP `diff` content block — and both must count it the
  *  same, or the same change reads as a different size depending on which
  *  shape the agent happened to send. */
 export function countChangedLines(oldStr: string, neu: string): { added: number; removed: number } {
-  const o = oldStr.split("\n");
-  const n = neu.split("\n");
+  // Empty text has no lines. One terminating newline ends the last line;
+  // further newlines are real blank lines. Newline-only changes do not count.
+  const lines = (text: string) => (text === "" ? [] : text.replace(/\n$/, "").split("\n"));
+  const o = lines(oldStr);
+  const n = lines(neu);
   let start = 0;
   while (start < o.length && start < n.length && o[start] === n[start]) start++;
   let eo = o.length;
@@ -92,10 +100,14 @@ export function countChangedLines(oldStr: string, neu: string): { added: number;
   return { removed: Math.max(0, eo - start), added: Math.max(0, en - start) };
 }
 
-/** True when an edit tool call CREATED the file (every edit op had empty prior
- *  content) → git-status "A". A normal edit (non-empty `old`) is "M". */
-export function isFileCreated(toolName: string, args: Record<string, unknown>): boolean {
-  const parts = getEditParts(toolName, args);
+/** Creation inferred from the tool's text (every prior side empty), not Git
+ *  status. A whole-file write may also overwrite an existing file. */
+export function isFileCreated(
+  toolName: string,
+  args: Record<string, unknown>,
+  kind?: string | null,
+): boolean {
+  const parts = getEditParts(toolName, args, kind);
   return parts.length > 0 && parts.every((p) => p.old === "");
 }
 
@@ -103,10 +115,11 @@ export function isFileCreated(toolName: string, args: Record<string, unknown>): 
 export function countEditLines(
   toolName: string,
   args: Record<string, unknown>,
+  kind?: string | null,
 ): { added: number; removed: number } {
   let added = 0;
   let removed = 0;
-  for (const p of getEditParts(toolName, args)) {
+  for (const p of getEditParts(toolName, args, kind)) {
     const c = countChangedLines(p.old, p.neu);
     added += c.added;
     removed += c.removed;

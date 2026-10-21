@@ -627,8 +627,8 @@ function markerFor(tc: ToolCallDisplay, turnId: string, first: boolean): MarkerR
     fileKind === "edit" && argsPath
       ? {
           path: argsPath,
-          created: isFileCreated(tc.toolName, args),
-          ...countEditLines(tc.toolName, args),
+          created: isFileCreated(tc.toolName, args, tc.kind),
+          ...countEditLines(tc.toolName, args, tc.kind),
         }
       : diffEditOf(tc);
   // The path the marker reports: whatever the arguments named, else whatever

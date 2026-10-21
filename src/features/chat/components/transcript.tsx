@@ -883,7 +883,11 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ index: number; highlightRowIds?: string[] }>).detail;
+      const detail = (
+        e as CustomEvent<{ index: number; tabId: string; highlightRowIds?: string[] }>
+      ).detail;
+      // Other mounted chats must retain their own reading position.
+      if (detail?.tabId !== tabId) return;
       if (typeof detail?.index === "number") {
         pendingHighlightRef.current = detail.highlightRowIds ?? null;
         scrollToMessage(detail.index);
@@ -891,7 +895,7 @@ export const Transcript = forwardRef<TranscriptHandle, TranscriptProps>(function
     };
     window.addEventListener("atlas:chat-jump", handler);
     return () => window.removeEventListener("atlas:chat-jump", handler);
-  }, [scrollToMessage]);
+  }, [scrollToMessage, tabId]);
 
   // ── Turn-footer actions ──────────────────────────────────────────────
   const onSaveKb = useCallback(() => void saveThreadToKb(tabId), [tabId]);

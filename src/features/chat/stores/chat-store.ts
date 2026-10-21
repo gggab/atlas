@@ -75,8 +75,8 @@ function reconstructTurnSummaries(messages: ChatMessage[]): void {
         const kind = classifyToolFileKind(tc.kind, tc.toolName);
         if (!path || !kind) continue;
         const counts =
-          kind === "edit" ? countEditLines(tc.toolName, args) : { added: 0, removed: 0 };
-        const created = kind === "edit" ? isFileCreated(tc.toolName, args) : undefined;
+          kind === "edit" ? countEditLines(tc.toolName, args, tc.kind) : { added: 0, removed: 0 };
+        const created = kind === "edit" ? isFileCreated(tc.toolName, args, tc.kind) : undefined;
         const ex = byPath.get(path);
         if (!ex) byPath.set(path, { path, kind, ...counts, created });
         else {
@@ -2225,8 +2225,10 @@ function applyDeltaToDraft(s: ChatDraft, env: AgentDelta): void {
         const kind = classifyToolFileKind(tc.kind, tc.tool_name);
         if (path && kind) {
           const { added, removed } =
-            kind === "edit" ? countEditLines(tc.tool_name, args) : { added: 0, removed: 0 };
-          const created = kind === "edit" ? isFileCreated(tc.tool_name, args) : undefined;
+            kind === "edit"
+              ? countEditLines(tc.tool_name, args, tc.kind)
+              : { added: 0, removed: 0 };
+          const created = kind === "edit" ? isFileCreated(tc.tool_name, args, tc.kind) : undefined;
           session.turnScratch.tools[tc.id] = {
             path,
             kind,

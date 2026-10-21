@@ -56,6 +56,25 @@ function markers(messages: ChatMessage[]): MarkerRow[] {
 }
 
 describe("a tool call that reports its edit as a diff content block", () => {
+  it("counts a titled ACP edit the same as its diff content block", () => {
+    const args = toolCall({
+      toolName: "Write src/x.ts",
+      kind: "edit",
+      arguments: { file_path: "/repo/src/x.ts", content: "a\nb\nc\n" },
+    });
+    const diff = toolCall({
+      contentBlocks: [{ type: "diff", path: "/repo/src/x.ts", newText: "a\nb\nc\n" }],
+    });
+    for (const call of [args, diff]) {
+      expect(markers(turn(call))[0]).toMatchObject({
+        verb: "Created",
+        path: "/repo/src/x.ts",
+        added: 3,
+        removed: 0,
+      });
+    }
+  });
+
   // The ACP shape: the agent's own tool has whatever name and arguments it
   // likes, and the edit is reported structurally as a `diff` block. Nothing in
   // `arguments` says "this wrote a file", so every marker field has to come

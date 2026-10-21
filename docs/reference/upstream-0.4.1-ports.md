@@ -1,9 +1,48 @@
-# Selective alpha-0.4.1 ports
+# Selective 0.4.1 ports
 
 Source: upstream `alpha-0.4.1` (`7476d112`). These ports retain the local external
 CLI scope. They do not merge the upstream branch or restore removed modules.
 
-## Behavior
+## Selected post-alpha fixes
+
+The following fixes are extracted from `origin/0.4.1` at `e747d560`:
+
+- `b836e6e7`: incomplete terminal OSC/CSI sequences have bounded pending bodies
+  (64 * 1024 characters for OSC, 256 for CSI). Overlong incomplete sequences
+  abandon their introducer so later output can be displayed. Normal fragmented
+  sequences remain supported, including an ST terminator split at the OSC limit.
+  A legitimate incomplete OSC beyond the limit is intentionally abandoned too.
+- `19244e80`: search, pins and command-history jumps address their own chat tab.
+  Other mounted transcripts retain their reading position and highlights.
+  Unaddressed events are ignored; all three local senders supply `tabId`.
+- `f3661618`: tool-reported file counts recognize ACP edit kind even when the
+  call's name is a display title. Empty text contributes zero lines; only one
+  terminating newline is excluded, preserving additional blank lines. Live
+  summaries, restored summaries, transcript markers and existing diff sources
+  use the same kind-aware extraction. Creation labels remain inferred from tool
+  text, not verified Git status; newline-only changes may not affect counts.
+
+ACP `locations` propagation is deferred pending a real vendor example. Native
+`paths` arrays, new capture/session-changes IPC, cloud comments/voting, overview
+redesign, PTY input queues and terminal render budgets are not part of these
+fixes. Existing knowledge-saving actions remain available.
+
+Focused regression checks (component tests use simulated DOM geometry):
+
+```sh
+bun run test -- src/features/chat/components/chat-panel-jump.test.tsx src/features/chat/components/transcript-jump.test.tsx src/features/chat/lib/tool-files.test.ts src/features/chat/lib/turn-edits.test.ts src/features/chat/lib/turn-rows.test.ts src/features/chat/stores/chat-store.deltas.test.ts src/features/terminal/lib/block-parser.test.ts
+bun run typecheck
+bun run lint
+bun run build
+```
+
+Desktop verification: open two chat columns, leave the second browsing history,
+then use search, a pin and command history in the first; the second must stay
+put. In a real vendor turn, compare a titled whole-file edit's marker, summary
+and diff before and after reloading the session. These checks are separate from
+the simulated component tests and do not require a change to vendor settings.
+
+## Alpha behavior
 
 - ACP npm and managed-Node installations run independently of a connect caller;
   callers join a running job. A failed upgrade preserves a runnable copy and

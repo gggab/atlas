@@ -120,6 +120,10 @@ const MAX_LINES = 5000;
 // Rows the cursor can still redraw. Floored so prompt libraries that draw
 // frames taller than a short pane still get their whole frame back.
 const MIN_HOT_ROWS = 64;
+// An incomplete sequence is rescanned on every push. Bound the pending body
+// so a stray escape in binary output cannot swallow all subsequent output.
+const MAX_OSC_BODY = 64 * 1024;
+const MAX_CSI_BODY = 256;
 
 // Matches the tail of common password / passphrase prompts:
 //   "[sudo] password for user:"  "Password:"  "user@host's password:"
@@ -398,7 +402,13 @@ export class BlockStreamParser {
           }
           j++;
         }
-        if (term === -1) break; // incomplete OSC; wait
+        if (term === -1) {
+          // A final ESC may be the first half of a split ST terminator.
+          const bodyLength = n - i - 2 - (s.charCodeAt(n - 1) === ESC ? 1 : 0);
+          if (bodyLength <= MAX_OSC_BODY) break;
+          i += 2;
+          continue;
+        }
         const body = s.slice(i + 2, term);
         if (this.handleOsc(body)) changed = true;
         i = term + termLen;
@@ -408,8 +418,18 @@ export class BlockStreamParser {
       if (t === "[") {
         // CSI — final byte in @-~.
         let j = i + 2;
-        while (j < n && !/[@-~]/.test(s[j])) j++;
-        if (j >= n) break; // incomplete CSI; wait
+        // Include the final byte after a body exactly at the limit.
+        const limit = Math.min(n, i + 2 + MAX_CSI_BODY + 1);
+        while (j < limit) {
+          const c = s.charCodeAt(j);
+          if (c >= 0x40 && c <= 0x7e) break;
+          j++;
+        }
+        if (j >= limit) {
+          if (limit === n && n - i - 2 <= MAX_CSI_BODY) break;
+          i += 2;
+          continue;
+        }
         const seq = s.slice(i, j + 1);
         const body = s.slice(i + 2, j);
         const fin = s[j];

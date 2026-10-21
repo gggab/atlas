@@ -1067,7 +1067,7 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
         return;
       }
       setRoleFilter("all");
-      window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index } }));
+      window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index, tabId } }));
     },
     [tabId],
   );
@@ -1636,7 +1636,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
             messages={visibleMessages}
             onJump={(idx) => {
               if (roleFilter !== "all") setRoleFilter("all");
-              window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index: idx } }));
+              window.dispatchEvent(
+                new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
+              );
             }}
             onClose={() => setBashPanelOpen(false)}
           />
@@ -1697,7 +1699,9 @@ export const ChatPanel = memo(function ChatPanel({ tabId, personal }: ChatPanelP
             onOpenChange={setSearchPaletteOpen}
             messages={visibleMessages}
             onJump={(idx) =>
-              window.dispatchEvent(new CustomEvent("atlas:chat-jump", { detail: { index: idx } }))
+              window.dispatchEvent(
+                new CustomEvent("atlas:chat-jump", { detail: { index: idx, tabId } }),
+              )
             }
           />
         </Suspense>

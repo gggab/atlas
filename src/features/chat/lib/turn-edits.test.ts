@@ -96,6 +96,22 @@ describe("edits reported as ACP diff blocks", () => {
 });
 
 describe("edits reported as tool arguments", () => {
+  it("includes whole-file edits whose ACP tool name is a title", () => {
+    const edits = collectTurnEdits(
+      turn(
+        toolCall({
+          toolName: "Write src/x.ts",
+          kind: "edit",
+          arguments: { file_path: "/repo/src/x.ts", content: "a\nb\nc\n" },
+        }),
+      ),
+      "t:m1",
+      REPO,
+    );
+    expect(edits.files).toEqual(["src/x.ts"]);
+    expect(edits.sources["src/x.ts"]).toEqual({ old: "", new: "a\nb\nc\n" });
+  });
+
   it("still concatenates fragments, which is what Edit arguments carry", () => {
     // Unlike a diff block, an `Edit` names only the text it replaced, so two
     // edits to one file legitimately add up to one fragment pair.

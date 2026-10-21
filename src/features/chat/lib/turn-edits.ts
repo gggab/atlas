@@ -82,7 +82,7 @@ export function collectTurnEdits(
           whole[path] = { old: seen ? seen.old : (block.oldText ?? ""), new: block.newText };
         }
         const args = tc.arguments ?? {};
-        const parts = getEditParts(tc.toolName, args);
+        const parts = getEditParts(tc.toolName, args, tc.kind);
         if (parts.length === 0) continue;
         const abs = getFilePathFromInput(args);
         if (!abs) continue;

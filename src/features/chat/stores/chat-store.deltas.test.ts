@@ -477,6 +477,37 @@ describe("applyAgentDelta: status transitions", () => {
 });
 
 describe("applyAgentDelta: turn terminals", () => {
+  it("keeps titled edit counts consistent across live, settled and restored messages", () => {
+    boundTab();
+    apply(
+      d("status", { status: "running", turn_seq: 1 }),
+      d("tool_call_upserted", {
+        message_id: "t",
+        tool_call: wireTool("tc-write", {
+          tool_name: "Write src/x.ts",
+          kind: "edit",
+          status: "completed",
+          arguments: { file_path: "/tmp/project/x.ts", content: "a\nb\nc\n" },
+        }),
+      }),
+    );
+    const expected = [
+      {
+        path: "/tmp/project/x.ts",
+        kind: "edit",
+        added: 3,
+        removed: 0,
+        created: true,
+      },
+    ];
+    expect(Object.values(session().turnScratch!.tools)).toEqual(expected);
+    apply(d("turn_finished", { stop_reason: "end_turn", turn_seq: 1 }));
+    expect(last().turnSummary?.files).toEqual(expected);
+    const restored = messages().map((m) => ({ ...m }));
+    useChatStore.getState().actions.replaceMessages(TAB, restored);
+    expect(last().turnSummary?.files).toEqual(expected);
+  });
+
   it("turn_finished(end_turn) goes idle and settles every live tool call", () => {
     boundTab();
     apply(
