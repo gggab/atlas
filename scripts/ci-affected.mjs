@@ -156,6 +156,7 @@ export const NON_RUST = [
   ".github/CODE_OF_CONDUCT.md",
   ".github/dependabot.yml",
   ".github/workflows/release-linux.yml",
+  ".github/workflows/release-windows.yml",
   "*.md",
   "LICENSE",
   "package.json",

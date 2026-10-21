@@ -12,6 +12,10 @@ export default defineConfig({
     },
   },
   test: {
+    // Windows shell startup and fixture imports miss the 5s deadline when a
+    // worker per CPU competes with the repository scans. Keep assertions and
+    // timeouts intact while bounding that contention on Windows.
+    maxWorkers: process.platform === "win32" ? 4 : undefined,
     // `node` by default: the contract tests read the repo off disk and the
     // API-seam tests only need a mocked `invoke`. Files that need a DOM opt in
     // per-file with `// @vitest-environment happy-dom`.

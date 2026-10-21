@@ -57,6 +57,12 @@ popup captures when running the native fixtures.
 
 Use repository-pinned Bun, Node and Rust versions from `mise.toml`, `package.json` and `rust-toolchain.toml`, plus the Tauri prerequisites listed in the README.
 
+The pre-push hook runs the complete `bun run test` suite. On Windows, Vitest
+uses at most four workers so shell startup and fixture imports do not contend
+with one repository scan per CPU; test timeouts and assertions remain active.
+Keep CI path classification and retired-name exceptions aligned with tracked
+files. Do not bypass the hook to hide a failing check.
+
 ```sh
 git clone --branch develop https://github.com/gggab/atlas.git
 cd atlas

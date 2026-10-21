@@ -69,35 +69,15 @@ const RETIRED_SDK_RESIDUE: [pattern: RegExp, reason: string][] = [
   [/^docs\/adr\//, "decision records are history"],
   [/^docs\/archive\//, "archived specs and research predate the rename"],
   [/^tests\/no-legacy-names\.test\.ts$/, "this file"],
-  [
-    /^scripts\/one-off\/rename-engine\.py$/,
-    "the one-off sweep script; delete it once the rename has landed",
-  ],
 ];
 
 /** Files the upstream name may still appear in outright, even in engine territory. */
 const UPSTREAM_RESIDUE: [pattern: RegExp, reason: string][] = [
   [
-    /^vendor\/atlas-engine\/(LICENSE|NOTICE)$/,
-    "Apache-2.0 §4(a)/(d): upstream's licence and notice travel verbatim",
-  ],
-  [
-    /^vendor\/atlas-engine\/core\/gpt[^/]*codex[^/]*_prompt\.md$/,
-    "model-keyed prompt files: the model id belongs to the model's vendor",
-  ],
-  [
-    /^vendor\/atlas-engine\/core\/templates\/[^/]+\/gpt-5\.2-codex_[^/]+\.md$/,
-    "model-keyed prompt files: the model id belongs to the model's vendor",
-  ],
-  [
     /^tests\/vendor-licensing\.test\.ts$/,
     "names the path the engine was vendored under, where its git history lives",
   ],
   [/^tests\/no-legacy-names\.test\.ts$/, "this file"],
-  [
-    /^scripts\/one-off\/rename-engine\.py$/,
-    "the one-off sweep script; delete it once the rename has landed",
-  ],
   [/^docs\/adr\//, "decision records are history"],
   [/^docs\/archive\//, "archived specs and research predate the rename"],
 ];

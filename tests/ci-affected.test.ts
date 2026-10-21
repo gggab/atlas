@@ -168,6 +168,12 @@ describe("the CI plan", () => {
     });
   });
 
+  it("leaves release-only workflows to their own build jobs and frontend contracts", () => {
+    const p = run([".github/workflows/release-linux.yml", ".github/workflows/release-windows.yml"]);
+    expect(p.affected).not.toBeNull();
+    expect({ app: p.app, crates: p.crates }).toEqual({ app: false, crates: [] });
+  });
+
   it("runs the app for a file it include_str!s from outside src-tauri", () => {
     const p = run(["docs/reference/configuration.md"]);
     expect(p.app).toBe(true);
